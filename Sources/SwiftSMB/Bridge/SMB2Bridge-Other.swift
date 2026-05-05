@@ -14,7 +14,7 @@ func listShares(
     context: SMB2Context,
     server: String,
     user: String? = nil,
-    includeHidden: Bool = false,
+    includeHidden: Bool = false
 ) throws -> [SMB2Share] {
     setSecurityMode(.signingEnabled, on: context)
     try connectShare(context: context, server: server, share: "IPC$", user: user)
@@ -34,7 +34,7 @@ func listShares(
 /// Enumerates shares using SRVSVC on a context that is already connected to IPC$.
 func listSharesOnConnectedIPCShare(
     context: SMB2Context,
-    level: SMB2ShareEnumerationLevel = .detailed,
+    level: SMB2ShareEnumerationLevel = .detailed
 ) throws -> [SMB2Share] {
     guard let response = smb2_share_enum_sync(context.raw, level.rawValue) else {
         throw SMB2Error.from(context, operation: "smb2_share_enum_sync")
@@ -50,7 +50,7 @@ func listSharesOnConnectedIPCShare(
     default:
         throw SMB2Error.invalidArgument(
             operation: "smb2_share_enum_sync",
-            message: "Unsupported share enumeration level \(response.pointee.ses.Level)",
+            message: "Unsupported share enumeration level \(response.pointee.ses.Level)"
         )
     }
 }
@@ -71,7 +71,7 @@ private func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [SMB2Share
             name: string(from: buffer[index].netname),
             kind: nil,
             attributes: [],
-            remark: nil,
+            remark: nil
         )
     }
 }
@@ -88,7 +88,7 @@ private func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [SMB2Share
             name: string(from: info.netname),
             kind: SMB2ShareKind(rawValue: info.type),
             attributes: SMB2ShareAttributes(rawShareType: info.type),
-            remark: string(from: info.remark),
+            remark: string(from: info.remark)
         )
     }
 }

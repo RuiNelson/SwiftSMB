@@ -333,7 +333,7 @@ func truncate(context: SMB2Context, path: String, length: UInt64) throws {
 }
 
 /// Truncates an open file handle to a length in bytes.
-func ftruncate(context: SMB2Context, file: SMB2FileHandle, length: UInt64) throws {
+func truncate(context: SMB2Context, file: SMB2FileHandle, length: UInt64) throws {
     try check(smb2_ftruncate(context.raw, file.raw, length), context: context, operation: "smb2_ftruncate")
 }
 
@@ -398,45 +398,4 @@ func tellDir(context: SMB2Context, directory: SMB2DirectoryHandle) -> Int {
 /// Moves a directory handle to a previously returned stream location.
 func seekDir(context: SMB2Context, directory: SMB2DirectoryHandle, location: Int) {
     smb2_seekdir(context.raw, directory.raw, numericCast(location))
-}
-
-/// Throws an SMB2Error if a C status code represents failure.
-@discardableResult
-private func check(
-    _ status: Int32,
-    context: SMB2Context,
-    operation: String,
-) throws -> Int32 {
-    guard status >= 0 else {
-        throw SMB2Error.from(context, operation: operation, status: status)
-    }
-
-    return status
-}
-
-extension Int {
-    /// Converts the integer to UInt32 or throws if it cannot be represented.
-    func asUInt32(operation: String) throws -> UInt32 {
-        guard self >= 0, self <= Int(UInt32.max) else {
-            throw SMB2Error.invalidArgument(
-                operation: operation,
-                message: "Byte count \(self) cannot be represented as UInt32",
-            )
-        }
-
-        return UInt32(self)
-    }
-}
-
-extension String? {
-    /// Calls a closure with either a temporary C string pointer or nil.
-    func withOptionalCString<Result>(
-        _ body: (UnsafePointer<CChar>?) throws -> Result,
-    ) rethrows -> Result {
-        guard let string = self else {
-            return try body(nil)
-        }
-
-        return try string.withCString(body)
-    }
 }

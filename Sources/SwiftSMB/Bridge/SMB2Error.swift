@@ -54,18 +54,18 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
                 "Unknown SMB2 status error",
                 context: context,
                 posixCode: posixCode,
-                ntStatusRawValue: rawValue,
+                ntStatusRawValue: rawValue
             )
         case let .unknown(context):
             Self.describe("Unknown SMB2 error", context: context)
         }
     }
+    
+    var localizedDescription: String {
+        description
+    }
 
-    static func from(
-        _ context: SMB2Context,
-        operation: String,
-        status: Int32? = nil,
-    ) -> SMB2Error {
+    static func from(_ context: SMB2Context, operation: String, status: Int32? = nil) -> SMB2Error {
         let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""
         let posixCode = status.map { $0 < 0 ? -$0 : $0 }
         let ntStatusCode = smb2_get_nterror(context.raw)
@@ -73,7 +73,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         let ntStatus = ntStatusCode == 0 ? nil : SMB2Status(rawValue: ntStatusRawValue)
         let errorContext = SMB2ErrorContext(
             operation: operation,
-            message: message,
+            message: message
         )
 
         if let ntStatus {
@@ -95,15 +95,12 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         return .unknown(errorContext)
     }
 
-    static func invalidArgument(
-        operation: String,
-        message: String,
-    ) -> SMB2Error {
+    static func invalidArgument(operation: String, message: String) -> SMB2Error {
         .invalidArgument(
             SMB2ErrorContext(
                 operation: operation,
-                message: message,
-            ),
+                message: message
+            )
         )
     }
 
@@ -113,12 +110,12 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         posixError: POSIXError? = nil,
         posixCode: Int32? = nil,
         ntStatus: SMB2Status? = nil,
-        ntStatusRawValue: UInt32? = nil,
+        ntStatusRawValue: UInt32? = nil
     ) -> String {
         var parts = ["\(label) in \(context.operation)"]
 
         if let posixError {
-            parts.append("errno=\(posixError.code.rawValue)")
+            parts.append("errno=\(posixError.code.rawValue) (\(posixError.localizedDescription))")
         }
 
         if let posixCode {
@@ -139,4 +136,13 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
 
         return parts.joined(separator: ": ")
     }
+}
+
+/// Throws an SMB2Error if a C status code represents failure.
+@discardableResult func check(_ status: Int32, context: SMB2Context, operation: String) throws -> Int32 {
+    guard status >= 0 else {
+        throw SMB2Error.from(context, operation: operation, status: status)
+    }
+    
+    return status
 }
