@@ -1,8 +1,9 @@
 //
-//  SMB2Status.swift
+// Part of SwiftSMB
+// SMB2Status.swift
 //
-//  Part of SwiftSMB.
-//   Licensed under LGPL v2.1
+// Licensed under LGPL v2.1
+// Copyright it's respective authors
 //
 
 import SMB2

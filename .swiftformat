@@ -38,7 +38,7 @@
 --group-blank-lines false
 --grouped-extension "MARK: %c"
 --guard-else same-line
---header "//\n//  {file} \n//\n//  Part of SwiftSMB.\n  Licensed under LGPL v2.1\n//"
+--header "\nPart of SwiftSMB\n{file}\n\nLicensed under LGPL v2.1\nCopyright it's respective authors\n"
 --hex-grouping 4,8
 --hex-literal-case uppercase
 --ifdef indent

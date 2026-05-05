@@ -1,8 +1,9 @@
 //
-//  SwiftSMBTests.swift
+// Part of SwiftSMB
+// SwiftSMBTests.swift
 //
-//  Part of SwiftSMB.
-//   Licensed under LGPL v2.1
+// Licensed under LGPL v2.1
+// Copyright it's respective authors
 //
 
 @testable import SwiftSMB
