@@ -5,10 +5,18 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftSMB",
+    platforms: [
+        .macOS(.v10_15),
+        .iOS(.v13),
+        .macCatalyst(.v13),
+        .tvOS(.v13),
+        .visionOS(.v1),
+        .watchOS(.v6),
+    ],
     products: [
         .library(
             name: "SwiftSMB",
-            targets: ["SwiftSMB"]
+            targets: ["SwiftSMB"],
         ),
     ],
     targets: [
@@ -37,15 +45,15 @@ let package = Package(
                 .headerSearchPath("lib"),
                 .define("_U_", to: "__attribute__((unused))"),
                 .define("HAVE_CONFIG_H", to: "1"),
-            ]
+            ],
         ),
         .target(
             name: "SwiftSMB",
-            dependencies: ["libsmb2"]
+            dependencies: ["libsmb2"],
         ),
         .testTarget(
             name: "SwiftSMBTests",
-            dependencies: ["SwiftSMB"]
+            dependencies: ["SwiftSMB"],
         ),
-    ]
+    ],
 )
