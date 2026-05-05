@@ -169,7 +169,7 @@ func close(context: SMB2Context, file: SMB2FileHandle) throws {
 }
 
 /// Flushes pending writes for an open file handle.
-func fsync(context: SMB2Context, file: SMB2FileHandle) throws {
+func sync(context: SMB2Context, file: SMB2FileHandle) throws {
     try check(smb2_fsync(context.raw, file.raw), context: context, operation: "smb2_fsync")
 }
 
@@ -184,7 +184,7 @@ func getMaxWriteSize(context: SMB2Context) -> UInt32 {
 }
 
 /// Reads bytes from a file at an explicit offset.
-func pread(
+func read(
     context: SMB2Context,
     file: SMB2FileHandle,
     into buffer: consuming MutableRawSpan,
@@ -202,7 +202,7 @@ func pread(
 }
 
 /// Writes bytes to a file at an explicit offset.
-func pwrite(
+func write(
     context: SMB2Context,
     file: SMB2FileHandle,
     bytes: RawSpan,
@@ -252,7 +252,7 @@ func write(
 }
 
 /// Moves the current file offset and returns the resulting offset.
-func lseek(
+func seek(
     context: SMB2Context,
     file: SMB2FileHandle,
     offset: Int64,
@@ -294,14 +294,14 @@ func statVFS(context: SMB2Context, path: String) throws -> SMB2StatVFS {
 }
 
 /// Returns file statistics for an open file handle.
-func fstat(context: SMB2Context, file: SMB2FileHandle) throws -> SMB2Stat {
+func fileStatistics(context: SMB2Context, file: SMB2FileHandle) throws -> SMB2Stat {
     var stat = smb2_stat_64()
     try check(smb2_fstat(context.raw, file.raw, &stat), context: context, operation: "smb2_fstat")
     return SMB2Stat(stat)
 }
 
 /// Returns file statistics for a path.
-func stat(context: SMB2Context, path: String) throws -> SMB2Stat {
+func fileStatistics(context: SMB2Context, path: String) throws -> SMB2Stat {
     var stat = smb2_stat_64()
     try check(
         path.withCString { smb2_stat(context.raw, $0, &stat) },
@@ -413,7 +413,7 @@ private func check(
     return status
 }
 
-private extension Int {
+extension Int {
     /// Converts the integer to UInt32 or throws if it cannot be represented.
     func asUInt32(operation: String) throws -> UInt32 {
         guard self >= 0, self <= Int(UInt32.max) else {
@@ -427,7 +427,7 @@ private extension Int {
     }
 }
 
-private extension String? {
+extension String? {
     /// Calls a closure with either a temporary C string pointer or nil.
     func withOptionalCString<Result>(
         _ body: (UnsafePointer<CChar>?) throws -> Result,
