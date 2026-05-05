@@ -54,7 +54,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
                 "Unknown SMB2 status error",
                 context: context,
                 posixCode: posixCode,
-                ntStatusRawValue: rawValue
+                ntStatusRawValue: rawValue,
             )
         case let .unknown(context):
             Self.describe("Unknown SMB2 error", context: context)
@@ -73,7 +73,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         let ntStatus = ntStatusCode == 0 ? nil : SMB2Status(rawValue: ntStatusRawValue)
         let errorContext = SMB2ErrorContext(
             operation: operation,
-            message: message
+            message: message,
         )
 
         if let ntStatus {
@@ -99,8 +99,8 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         .invalidArgument(
             SMB2ErrorContext(
                 operation: operation,
-                message: message
-            )
+                message: message,
+            ),
         )
     }
 
@@ -110,7 +110,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         posixError: POSIXError? = nil,
         posixCode: Int32? = nil,
         ntStatus: SMB2Status? = nil,
-        ntStatusRawValue: UInt32? = nil
+        ntStatusRawValue: UInt32? = nil,
     ) -> String {
         var parts = ["\(label) in \(context.operation)"]
 

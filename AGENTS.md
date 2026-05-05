@@ -8,7 +8,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 
 - `Sources/SwiftSMB/Bridge` is an **internal** bridge over `libsmb2`. It should not define public API.
 - Keep `SMB2Bridge.swift` focused on the high-level synchronous POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`.
-- Put necessary non-POSIX helpers, such as share enumeration through SRVSVC/DCERPC, in `SMB2Bridge-Other.swift`.
+- Put share enumeration through SRVSVC/DCERPC in `SMB2Bridge-ListShares.swift`.
 - Prefer free internal functions over namespace enums for bridge calls.
 - Bridge functions should expose Swift-shaped arguments and return values (`String`, `Bool`, `UInt64`, `Int64`, Swift structs/enums/options) and convert to C types only at the boundary.
 - Functions that correspond directly to C `get` functions should keep `get` in the Swift bridge name, even though this is not typical Swift style.
