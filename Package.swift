@@ -18,6 +18,11 @@ let package = Package(
             name: "SwiftSMB",
             targets: ["SwiftSMB"],
         ),
+        .library(
+            name: "libsmb2",
+            type: .dynamic,
+            targets: ["libsmb2"],
+        ),
     ],
     targets: [
         .target(

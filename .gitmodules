@@ -1,3 +1,4 @@
 [submodule "libsmb2"]
 	path = libsmb2
-	url = https://github.com/sahlberg/libsmb2.git
+	url = https://github.com/RuiNelson/libsmb2.git
+	branch = xcode_compat
