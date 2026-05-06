@@ -399,7 +399,6 @@ struct SymlinkTests {
             #expect(target.contains("hello.txt"))
         }
     }
-
 }
 
 // MARK: - Read-only share tests
@@ -540,6 +539,35 @@ struct LargeFileTests {
             let bytes = try readAllBytes(context: ctx, file: fh)
             let hash = bytes.reduce(0 as UInt8, ^)
             #expect(hash == 0x08)
+        }
+    }
+
+    @Test("upload and download 10 MB file preserves data") func uploadAndDownload10MBFilePreservesData() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("large") + ".bin"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let size = 10 * 1024 * 1024
+            let content = [UInt8](unsafeUninitializedCapacity: size) { buf, count in
+                for i in 0 ..< size {
+                    buf[i] = UInt8(i % 251)
+                }
+                count = size
+            }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            let written = try writeAllBytesChunked(context: ctx, file: wh, data: content)
+            try close(context: ctx, file: wh)
+            #expect(written == size)
+
+            let rh = try open(context: ctx, path: path)
+            defer { try? close(context: ctx, file: rh) }
+            let readBack = try readAllBytes(context: ctx, file: rh)
+            #expect(readBack == content)
         }
     }
 }

@@ -95,7 +95,7 @@
 --suite-name-format standard-identifiers
 --tab-width unspecified
 --test-case-access-control internal
---test-case-name-format raw-identifiers
+--test-case-name-format standard-identifiers
 --throw-capturing
 --timezone system
 --trailing-closures
@@ -125,5 +125,5 @@
 --xcode-indentation enabled
 --xctest-symbols
 --yoda-swap always
---disable docComments,environmentEntry,noForceTryInTests,noForceUnwrapInTests,preferForLoop,redundantAsync,redundantEquatable,redundantMemberwiseInit,redundantSelf,redundantThrows,unusedArguments,wrapMultilineStatementBraces
+--disable docComments,environmentEntry,noForceTryInTests,noForceUnwrapInTests,preferForLoop,redundantAsync,redundantEquatable,redundantMemberwiseInit,redundantSelf,redundantThrows,swiftTestingTestCaseNames,unusedArguments,wrapMultilineStatementBraces
 --enable acronyms,blockComments,wrapEnumCases

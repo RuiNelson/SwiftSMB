@@ -74,7 +74,9 @@ struct ShareTests {
         }
     }
 
-    @Test("names only enumeration returns shares without kind or remark") func namesOnlyEnumerationReturnsSharesWithoutKindOrRemark() throws {
+    @Test(
+        "names only enumeration returns shares without kind or remark",
+    ) func namesOnlyEnumerationReturnsSharesWithoutKindOrRemark() throws {
         try withFreshContext { ctx in
             setSecurityMode(.signingEnabled, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: "IPC$")
@@ -101,7 +103,9 @@ struct ShareTests {
         }
     }
 
-    @Test("share remark from detailed enumeration is not nil for public share") func shareRemarkFromDetailedEnumerationIsNotNilForPublicShare() throws {
+    @Test(
+        "share remark from detailed enumeration is not nil for public share",
+    ) func shareRemarkFromDetailedEnumerationIsNotNilForPublicShare() throws {
         try withFreshContext { ctx in
             let shares = try listShares(context: ctx, server: testServerHost)
             let publicShare = try #require(shares.first { $0.name == TestShare.public })
