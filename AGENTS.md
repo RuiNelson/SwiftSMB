@@ -51,6 +51,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 - C return values that signal errors through negative `errno` values or `NULL` should become `throw`.
 - Keep SMB/NT status handling granular. Public status values live under `SMB.SMBStatus` and `SMB.SMBStatusSeverity`; unknown NTSTATUS values should still preserve their raw value in `SMB2Error`.
 - Passing `SMB2Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
+- Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
 
 ## Public API
 
