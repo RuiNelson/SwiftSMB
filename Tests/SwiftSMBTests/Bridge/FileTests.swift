@@ -547,7 +547,7 @@ struct LargeFileTests {
             let path = uniquePath("large") + ".bin"
             defer { try? unlink(context: ctx, path: path) }
 
-            let size = 10 * 1024 * 1024
+            let size = 10 * 1024 * 1024 + 1
             let content = [UInt8](unsafeUninitializedCapacity: size) { buf, count in
                 for i in 0 ..< size {
                     buf[i] = UInt8(i % 251)
