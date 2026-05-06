@@ -32,6 +32,7 @@ COPY --chmod=644 <<'SMB_CONF' /etc/samba/smb.conf
     browseable = yes
     read only = no
     guest ok = yes
+    force user = smbuser
     create mask = 0644
     directory mask = 0755
 
@@ -55,6 +56,7 @@ COPY --chmod=644 <<'SMB_CONF' /etc/samba/smb.conf
     browseable = no
     read only = no
     valid users = smbadmin
+    force user = smbadmin
     create mask = 0644
     directory mask = 0755
 SMB_CONF
@@ -86,8 +88,7 @@ RUN mkdir -p /shares/public/testdir/subdir && \
     ln -s /shares/public/testdir/subdir /shares/public/testdir/link_to_dir && \
     echo "readme" > /shares/readonly/readme.txt && \
     echo "private file" > /shares/private/secret.txt && \
-    dd if=/dev/urandom of=/shares/private/largefile.bin bs=1M count=5 && \
-    sha256sum /shares/private/largefile.bin > /shares/private/largefile.bin.sha256 && \
+    awk 'BEGIN{n=5*1024*1024;for(i=0;i<n;i++)printf "%c",i%251}' > /shares/private/largefile.bin && \
     echo "hidden file" > /shares/hidden/hidden.txt
 
 EXPOSE 445

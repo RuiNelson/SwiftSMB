@@ -17,6 +17,20 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 - Keep SMB/NT status handling granular. `SMB2Status` is a `UInt32` enum for known `SMB2_STATUS_*` error codes, with computed `name` and `severity`; unknown NTSTATUS values should still preserve their raw value in `SMB2Error`.
 - Passing `SMB2Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
 
+## Testing
+
+- Tests live in `Tests/SwiftSMBTests/Bridge/` organized by area (Connection, Share, Directory, File, Type).
+- Unit tests (no server needed): `TypeTests.swift` covers value types, error cases, and enum raw values.
+- Integration tests (need server): all other test files. Tagged with `.integration`.
+- Run all tests: `swift test`
+- Run a subset: `swift test --filter 'ConnectionTests'`
+- The test server is a Docker-based Samba container defined in `TestServer/`.
+  - Start: `source TestServer/up.sh`
+  - Stop: `source TestServer/down.sh`
+  - Dockerfile with SAMBA configuration in `TestServer/Dockerfile`
+  - Port: localhost:44445 (mapped from container 445)
+- If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
+
 ## Code Style & Commits
 
 - **Before committing**, always format the Swift source code with `swiftformat`:
