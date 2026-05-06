@@ -3,7 +3,7 @@
 // SMB2Bridge.swift
 //
 // Licensed under LGPL v2.1
-// Copyright it's respective authors
+// Copyright its respective authors
 //
 
 import SMB2
