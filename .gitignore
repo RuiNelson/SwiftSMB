@@ -64,3 +64,4 @@ fastlane/test_output
 /.agents
 /.claude
 /.swiftpm
+opencode.json
