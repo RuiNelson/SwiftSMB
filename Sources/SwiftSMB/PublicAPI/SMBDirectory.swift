@@ -1,0 +1,121 @@
+//
+// Part of SwiftSMB
+// SMBDirectory.swift
+//
+// Licensed under LGPL v2.1
+// Copyright it's respective authors
+//
+
+public extension SMB {
+    /// An open directory handle on an SMB share.
+    final class Directory: Sendable {
+        /// The path used to open the directory.
+        public let path: String
+
+        private let connection: Connection
+        private let protectedHandle = SMBProtected<SMB2DirectoryHandle?>(nil, label: "SwiftSMB.SMB.Directory.handle")
+
+        /// The live bridge directory handle, if the directory is still open.
+        private var handle: SMB2DirectoryHandle? {
+            get {
+                protectedHandle.current
+            }
+            set {
+                protectedHandle.current = newValue
+            }
+        }
+
+        /// Creates a public directory wrapper around an open bridge handle.
+        init(connection: Connection, path: String, handle: SMB2DirectoryHandle) {
+            self.connection = connection
+            self.path = path
+            self.handle = handle
+        }
+
+        deinit {
+            if let handle = takeHandle(), let context = try? connection.requireContext(operation: "smb2_closedir") {
+                SwiftSMB.closeDir(context: context, directory: handle)
+            }
+        }
+
+        /// A Boolean value indicating whether the directory handle is still open.
+        public var isOpen: Bool {
+            handle != nil
+        }
+
+        /// Closes the directory handle.
+        ///
+        /// Calling this method more than once is allowed.
+        public func close() {
+            guard let handle = takeHandle(),
+                  let context = try? connection.requireContext(operation: "smb2_closedir") else {
+                return
+            }
+            SwiftSMB.closeDir(context: context, directory: handle)
+        }
+
+        /// Reads the next directory entry.
+        ///
+        /// - Returns: The next entry, or `nil` when the directory stream is exhausted.
+        /// - Throws: ``SMB/Error`` if the directory is closed.
+        public func readNext() throws -> DirectoryEntry? {
+            let context = try connection.requireContext(operation: "smb2_readdir")
+            let handle = try requireHandle(operation: "smb2_readdir")
+            return SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+        }
+
+        /// Reads all remaining entries from the directory stream.
+        ///
+        /// - Returns: The remaining directory entries.
+        /// - Throws: ``SMB/Error`` if the directory is closed.
+        public func readAll() throws -> [DirectoryEntry] {
+            var entries: [DirectoryEntry] = []
+            while let entry = try readNext() {
+                entries.append(entry)
+            }
+            return entries
+        }
+
+        /// Rewinds the directory stream to the beginning.
+        ///
+        /// - Throws: ``SMB/Error`` if the directory is closed.
+        public func rewind() throws {
+            let context = try connection.requireContext(operation: "smb2_rewinddir")
+            let handle = try requireHandle(operation: "smb2_rewinddir")
+            SwiftSMB.rewindDir(context: context, directory: handle)
+        }
+
+        /// Returns the current directory stream location.
+        ///
+        /// - Returns: A stream position that can be passed to ``seek(to:)``.
+        /// - Throws: ``SMB/Error`` if the directory is closed.
+        public func tell() throws -> Int {
+            let context = try connection.requireContext(operation: "smb2_telldir")
+            let handle = try requireHandle(operation: "smb2_telldir")
+            return SwiftSMB.tellDir(context: context, directory: handle)
+        }
+
+        /// Moves the directory stream to a previous location.
+        ///
+        /// - Parameter location: A position returned by ``tell()``.
+        /// - Throws: ``SMB/Error`` if the directory is closed.
+        public func seek(to location: Int) throws {
+            let context = try connection.requireContext(operation: "smb2_seekdir")
+            let handle = try requireHandle(operation: "smb2_seekdir")
+            SwiftSMB.seekDir(context: context, directory: handle, location: location)
+        }
+
+        /// Returns the live bridge handle or throws if the directory is closed.
+        private func requireHandle(operation: String) throws -> SMB2DirectoryHandle {
+            guard let handle else {
+                throw SMB.Error.invalidArgument(operation: operation, message: "Directory is already closed")
+            }
+            return handle
+        }
+
+        /// Takes ownership of the handle and marks the directory closed.
+        private func takeHandle() -> SMB2DirectoryHandle? {
+            protectedHandle.take(replacingWith: nil)
+        }
+    }
+}

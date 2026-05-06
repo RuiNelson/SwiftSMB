@@ -64,6 +64,8 @@ struct SMB2OpenOptions: OptionSet, Equatable {
     static let synchronous = SMB2OpenOptions(rawValue: O_SYNC)
     static let create = SMB2OpenOptions(rawValue: O_CREAT)
     static let exclusive = SMB2OpenOptions(rawValue: O_EXCL)
+    static let truncate = SMB2OpenOptions(rawValue: O_TRUNC)
+    static let append = SMB2OpenOptions(rawValue: O_APPEND)
 }
 
 struct SMB2OpenFlags: Equatable {
