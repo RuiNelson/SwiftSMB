@@ -164,6 +164,17 @@ func writeAllBytesAt(
     }
 }
 
+func writeAllBytesChunked(context: SMB2Context, file: SMB2FileHandle, data: [UInt8]) throws -> Int {
+    let chunkSize = min(65536, Int(getMaxWriteSize(context: context)))
+    var offset = 0
+    while offset < data.count {
+        let chunk = Array(data[offset ..< min(offset + chunkSize, data.count)])
+        let n = try writeAllBytesAt(context: context, file: file, data: chunk, offset: UInt64(offset))
+        offset += n
+    }
+    return offset
+}
+
 // MARK: - Test isolation
 
 func uniquePath(_ prefix: String = "test") -> String {

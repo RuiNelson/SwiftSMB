@@ -38,7 +38,7 @@ struct ContextConfigurationTests {
 // MARK: - URL parsing (context required, no server connection)
 
 struct URLParsingTests {
-    @Test("parses basic URL") func parsesBasicUrl() throws {
+    @Test("parses basic URL") func parsesBasicURL() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver/myshare", context: ctx)
             #expect(url.server == "myserver")
@@ -49,7 +49,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test("parses URL with user") func parsesUrlWithUser() throws {
+    @Test("parses URL with user") func parsesURLWithUser() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://alice@myserver/myshare", context: ctx)
             #expect(url.user == "alice")
@@ -58,7 +58,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test("parses URL with domain") func parsesUrlWithDomain() throws {
+    @Test("parses URL with domain") func parsesURLWithDomain() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://CORP;alice@myserver/myshare", context: ctx)
             #expect(url.domain == "CORP")
@@ -67,7 +67,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test("parses URL with port") func parsesUrlWithPort() throws {
+    @Test("parses URL with port") func parsesURLWithPort() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver:4445/myshare", context: ctx)
             // libsmb2 embeds the port in the server string
@@ -76,7 +76,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test("parses URL with path") func parsesUrlWithPath() throws {
+    @Test("parses URL with path") func parsesURLWithPath() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver/myshare/some/path", context: ctx)
             #expect(url.server == "myserver")
@@ -85,7 +85,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test("invalid URL throws") func invalidUrlThrows() throws {
+    @Test("invalid URL throws") func invalidURLThrows() throws {
         try withFreshContext { ctx in
             #expect(throws: SMB2Error.self) {
                 try parseURL("not-an-smb-url", context: ctx)
@@ -127,7 +127,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test("session ID is non zero after connect") func sessionIdIsNonZeroAfterConnect() throws {
+    @Test("session ID is non zero after connect") func sessionIDIsNonZeroAfterConnect() throws {
         try withPublicShare { ctx in
             let sessionID = try getSessionID(context: ctx)
             #expect(sessionID != 0)
