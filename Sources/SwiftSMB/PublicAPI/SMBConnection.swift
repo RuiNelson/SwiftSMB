@@ -99,32 +99,6 @@ public extension SMB {
             }
         }
 
-        /// The default read block size accepted by the server.
-        ///
-        /// This value is the configured transfer block size, or the library
-        /// default, clamped to ``maxReadSize``.
-        ///
-        /// - Throws: ``SMB/Error`` if the connection is closed or no valid block
-        ///   size can be determined.
-        public var acceptedReadBlockSize: Int {
-            get throws {
-                try acceptedReadBlockSize()
-            }
-        }
-
-        /// The default write block size accepted by the server.
-        ///
-        /// This value is the configured transfer block size, or the library
-        /// default, clamped to ``maxWriteSize``.
-        ///
-        /// - Throws: ``SMB/Error`` if the connection is closed or no valid block
-        ///   size can be determined.
-        public var acceptedWriteBlockSize: Int {
-            get throws {
-                try acceptedWriteBlockSize()
-            }
-        }
-
         /// Disconnects from the share and destroys the underlying context.
         ///
         /// Calling this method more than once is allowed. After disconnection,
@@ -145,15 +119,6 @@ public extension SMB {
                 destroyContext(context)
                 throw error
             }
-        }
-
-        /// Closes the connection.
-        ///
-        /// This is equivalent to ``disconnect()``.
-        ///
-        /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
-        public func close() throws {
-            try disconnect()
         }
 
         /// Sends an SMB echo request and returns the round-trip latency.
@@ -196,43 +161,6 @@ public extension SMB {
             return File(connection: self, path: path, handle: handle)
         }
 
-        /// Reads an entire file into memory.
-        ///
-        /// - Parameters:
-        ///   - path: The path to the file, relative to the share root.
-        ///   - chunkSize: The preferred read block size. Values above the
-        ///     server maximum are clamped automatically.
-        /// - Returns: The file contents.
-        /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
-        public func readFile(at path: String, chunkSize: Int? = nil) throws -> Data {
-            let file = try openFile(at: path)
-            defer { try? file.close() }
-            return try file.readToEnd(chunkSize: chunkSize)
-        }
-
-        /// Writes data to a file.
-        ///
-        /// By default, this creates the file if needed and truncates any
-        /// existing file at `path`.
-        ///
-        /// - Parameters:
-        ///   - data: The bytes to write.
-        ///   - path: The path to write, relative to the share root.
-        ///   - options: File open options.
-        ///   - chunkSize: The preferred write block size. Values above the
-        ///     server maximum are clamped automatically.
-        /// - Throws: ``SMB/Error`` if the file cannot be opened or written.
-        public func writeFile(
-            _ data: Data,
-            to path: String,
-            options: File.OpenOptions = [.create, .truncate],
-            chunkSize: Int? = nil,
-        ) throws {
-            let file = try openFile(at: path, accessMode: .writeOnly, options: options)
-            defer { try? file.close() }
-            _ = try file.writeAll(data, chunkSize: chunkSize)
-        }
-
         /// Opens a directory on the connected share.
         ///
         /// - Parameter path: The directory path, relative to the share root.
@@ -244,17 +172,6 @@ public extension SMB {
                 try SwiftSMB.openDir(context: context, path: path)
             }
             return Directory(connection: self, path: path, handle: handle)
-        }
-
-        /// Lists all entries in a directory.
-        ///
-        /// - Parameter path: The directory path, relative to the share root.
-        /// - Returns: The directory entries returned by the server.
-        /// - Throws: ``SMB/Error`` if the directory cannot be opened or read.
-        public func listDirectory(at path: String = "") throws -> [DirectoryEntry] {
-            let directory = try openDirectory(at: path)
-            defer { directory.close() }
-            return try directory.readAll()
         }
 
         /// Creates a directory.
@@ -365,56 +282,6 @@ public extension SMB {
         /// Takes ownership of the context and marks the connection closed.
         private func takeContext() -> SMB2Context? {
             protectedContext.take(replacingWith: nil)
-        }
-
-        /// Returns a read block size accepted by the server.
-        ///
-        /// - Parameter preferredBlockSize: A preferred block size, or `nil` to
-        ///   use the connection configuration/default.
-        /// - Returns: The smaller of the preferred size and server maximum.
-        /// - Throws: ``SMB/Error`` if no valid block size can be determined.
-        public func acceptedReadBlockSize(_ preferredBlockSize: Int? = nil) throws -> Int {
-            try acceptedBlockSize(
-                preferredBlockSize,
-                serverMaximum: Int(maxReadSize),
-                operation: "smb2_get_max_read_size",
-            )
-        }
-
-        /// Returns a write block size accepted by the server.
-        ///
-        /// - Parameter preferredBlockSize: A preferred block size, or `nil` to
-        ///   use the connection configuration/default.
-        /// - Returns: The smaller of the preferred size and server maximum.
-        /// - Throws: ``SMB/Error`` if no valid block size can be determined.
-        public func acceptedWriteBlockSize(_ preferredBlockSize: Int? = nil) throws -> Int {
-            try acceptedBlockSize(
-                preferredBlockSize,
-                serverMaximum: Int(maxWriteSize),
-                operation: "smb2_get_max_write_size",
-            )
-        }
-
-        /// Clamps a preferred block size to a server maximum.
-        private func acceptedBlockSize(
-            _ preferredBlockSize: Int?,
-            serverMaximum: Int,
-            operation: String,
-        ) throws -> Int {
-            let chunkSize = preferredBlockSize ?? configuration.transferBlockSize ?? 65536
-            guard chunkSize > 0 else {
-                throw SMB.Error.invalidArgument(
-                    operation: operation,
-                    message: "Block size must be greater than zero",
-                )
-            }
-            guard serverMaximum > 0 else {
-                throw SMB.Error.invalidArgument(
-                    operation: operation,
-                    message: "Server maximum block size must be greater than zero",
-                )
-            }
-            return min(chunkSize, serverMaximum)
         }
     }
 }
