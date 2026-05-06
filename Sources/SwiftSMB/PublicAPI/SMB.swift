@@ -3,7 +3,7 @@
 // SMB.swift
 //
 // Licensed under LGPL v2.1
-// Copyright it's respective authors
+// Copyright its respective authors
 //
 
 /// A namespace for working with SMB servers and shares.

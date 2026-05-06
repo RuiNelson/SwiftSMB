@@ -3,7 +3,7 @@
 // String?.swift
 //
 // Licensed under LGPL v2.1
-// Copyright it's respective authors
+// Copyright its respective authors
 //
 
 extension String? {
