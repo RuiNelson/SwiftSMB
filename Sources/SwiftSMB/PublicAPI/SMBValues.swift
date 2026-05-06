@@ -6,6 +6,8 @@
 // Copyright its respective authors
 //
 
+import Foundation
+
 public extension SMB {
     /// A share advertised by an SMB server.
     struct Share: Equatable, Hashable, Sendable {
@@ -149,28 +151,56 @@ public extension SMB {
         public let size: UInt64
 
         /// The access time, in seconds since the Unix epoch.
-        public let accessTime: UInt64
+        public let accessTimeSeconds: UInt64
 
         /// Nanoseconds component for ``accessTime``.
         public let accessTimeNanoseconds: UInt64
 
         /// The modification time, in seconds since the Unix epoch.
-        public let modificationTime: UInt64
+        public let modificationTimeSeconds: UInt64
 
         /// Nanoseconds component for ``modificationTime``.
         public let modificationTimeNanoseconds: UInt64
 
         /// The metadata change time, in seconds since the Unix epoch.
-        public let changeTime: UInt64
+        public let changeTimeSeconds: UInt64
 
         /// Nanoseconds component for ``changeTime``.
         public let changeTimeNanoseconds: UInt64
 
         /// The creation time, in seconds since the Unix epoch.
-        public let birthTime: UInt64
+        public let birthTimeSeconds: UInt64
 
         /// Nanoseconds component for ``birthTime``.
         public let birthTimeNanoseconds: UInt64
+        
+        /// The time the file was last accessed.
+        public var accessTime: Date {
+            let secs = Double(accessTimeSeconds)
+            let nanos = Double(accessTimeNanoseconds) / 1_000_000_000.0
+            return Date(timeIntervalSince1970: secs + nanos)
+        }
+
+        /// The time the file was last modified.
+        public var modificationTime: Date {
+            let secs = Double(modificationTimeSeconds)
+            let nanos = Double(modificationTimeNanoseconds) / 1_000_000_000.0
+            return Date(timeIntervalSince1970: secs + nanos)
+        }
+
+        /// The time the file's metadata was last changed.
+        public var changeTime: Date {
+            let secs = Double(changeTimeSeconds)
+            let nanos = Double(changeTimeNanoseconds) / 1_000_000_000.0
+            return Date(timeIntervalSince1970: secs + nanos)
+        }
+
+        /// The time the file was created.
+        public var birthTime: Date {
+            let secs = Double(birthTimeSeconds)
+            let nanos = Double(birthTimeNanoseconds) / 1_000_000_000.0
+            return Date(timeIntervalSince1970: secs + nanos)
+        }
 
         /// Creates a public stat value from a bridge value.
         init(_ bridgeValue: SMB2Stat) {
@@ -178,13 +208,13 @@ public extension SMB {
             linkCount = bridgeValue.linkCount
             inode = bridgeValue.inode
             size = bridgeValue.size
-            accessTime = bridgeValue.accessTime
+            accessTimeSeconds = bridgeValue.accessTime
             accessTimeNanoseconds = bridgeValue.accessTimeNanoseconds
-            modificationTime = bridgeValue.modificationTime
+            modificationTimeSeconds = bridgeValue.modificationTime
             modificationTimeNanoseconds = bridgeValue.modificationTimeNanoseconds
-            changeTime = bridgeValue.changeTime
+            changeTimeSeconds = bridgeValue.changeTime
             changeTimeNanoseconds = bridgeValue.changeTimeNanoseconds
-            birthTime = bridgeValue.birthTime
+            birthTimeSeconds = bridgeValue.birthTime
             birthTimeNanoseconds = bridgeValue.birthTimeNanoseconds
         }
     }
