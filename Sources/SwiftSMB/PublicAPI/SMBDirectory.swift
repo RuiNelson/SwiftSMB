@@ -64,18 +64,6 @@ public extension SMB {
             return SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
         }
 
-        /// Reads all remaining entries from the directory stream.
-        ///
-        /// - Returns: The remaining directory entries.
-        /// - Throws: ``SMB/Error`` if the directory is closed.
-        public func readAll() throws -> [DirectoryEntry] {
-            var entries: [DirectoryEntry] = []
-            while let entry = try readNext() {
-                entries.append(entry)
-            }
-            return entries
-        }
-
         /// Rewinds the directory stream to the beginning.
         ///
         /// - Throws: ``SMB/Error`` if the directory is closed.
