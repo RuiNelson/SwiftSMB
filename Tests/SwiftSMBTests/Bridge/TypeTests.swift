@@ -12,76 +12,76 @@ import Foundation
 import SMB2
 import Testing
 
-// MARK: - SMB2Status
+// MARK: - SMB.SMBStatus
 
-struct SMB2StatusTests {
+struct SMBStatusTests {
     @Test("success severity is success") func successSeverityIsSuccess() {
-        #expect(SMB2Status.success.severity == .success)
+        #expect(SMB.SMBStatus.success.severity == .success)
     }
 
     @Test("pending severity is success") func pendingSeverityIsSuccess() {
         // 0x0000_0103: bits 30-31 = 0b00 → success per NT status convention
-        #expect(SMB2Status.pending.severity == .success)
+        #expect(SMB.SMBStatus.pending.severity == .success)
     }
 
     @Test("no more files severity is warning") func noMoreFilesSeverityIsWarning() {
         // 0x8000_0006: bits 30-31 = 0b10 → warning
-        #expect(SMB2Status.noMoreFiles.severity == .warning)
+        #expect(SMB.SMBStatus.noMoreFiles.severity == .warning)
     }
 
     @Test("buffer overflow severity is warning") func bufferOverflowSeverityIsWarning() {
         // 0x8000_0005
-        #expect(SMB2Status.bufferOverflow.severity == .warning)
+        #expect(SMB.SMBStatus.bufferOverflow.severity == .warning)
     }
 
     @Test("unsuccessful severity is error") func unsuccessfulSeverityIsError() {
         // 0xC000_0001: bits 30-31 = 0b11 → error
-        #expect(SMB2Status.unsuccessful.severity == .error)
+        #expect(SMB.SMBStatus.unsuccessful.severity == .error)
     }
 
     @Test("no such file severity is error") func noSuchFileSeverityIsError() {
-        #expect(SMB2Status.noSuchFile.severity == .error)
+        #expect(SMB.SMBStatus.noSuchFile.severity == .error)
     }
 
     @Test("access denied severity is error") func accessDeniedSeverityIsError() {
-        #expect(SMB2Status.accessDenied.severity == .error)
+        #expect(SMB.SMBStatus.accessDenied.severity == .error)
     }
 
     @Test("description contains hex") func descriptionContainsHex() {
-        let desc = SMB2Status.success.description
+        let desc = SMB.SMBStatus.success.description
         #expect(desc.contains("0x"))
         #expect(desc.contains("SMB2_STATUS_SUCCESS"))
     }
 
     @Test("name matches constant") func nameMatchesConstant() {
-        #expect(SMB2Status.success.name == "SMB2_STATUS_SUCCESS")
-        #expect(SMB2Status.noSuchFile.name == "SMB2_STATUS_NO_SUCH_FILE")
-        #expect(SMB2Status.accessDenied.name == "SMB2_STATUS_ACCESS_DENIED")
-        #expect(SMB2Status.logonFailure.name == "SMB2_STATUS_LOGON_FAILURE")
-        #expect(SMB2Status.objectNameNotFound.name == "SMB2_STATUS_OBJECT_NAME_NOT_FOUND")
+        #expect(SMB.SMBStatus.success.name == "SMB2_STATUS_SUCCESS")
+        #expect(SMB.SMBStatus.noSuchFile.name == "SMB2_STATUS_NO_SUCH_FILE")
+        #expect(SMB.SMBStatus.accessDenied.name == "SMB2_STATUS_ACCESS_DENIED")
+        #expect(SMB.SMBStatus.logonFailure.name == "SMB2_STATUS_LOGON_FAILURE")
+        #expect(SMB.SMBStatus.objectNameNotFound.name == "SMB2_STATUS_OBJECT_NAME_NOT_FOUND")
     }
 
     @Test("raw values are unique") func rawValuesAreUnique() {
-        let values = SMB2Status.allCases.map(\.rawValue)
+        let values = SMB.SMBStatus.allCases.map(\.rawValue)
         let unique = Set(values)
         #expect(values.count == unique.count)
     }
 
     @Test("raw value round trips") func rawValueRoundTrips() {
-        for status in SMB2Status.allCases {
-            #expect(SMB2Status(rawValue: status.rawValue) == status)
+        for status in SMB.SMBStatus.allCases {
+            #expect(SMB.SMBStatus(rawValue: status.rawValue) == status)
         }
     }
 }
 
-// MARK: - SMB2StatusSeverity
+// MARK: - SMB.SMBStatusSeverity
 
-struct SMB2StatusSeverityTests {
+struct SMBStatusSeverityTests {
     @Test("raw values") func rawValues() {
-        #expect(SMB2StatusSeverity.success.rawValue == 0x0000_0000)
-        #expect(SMB2StatusSeverity.info.rawValue == 0x4000_0000)
-        #expect(SMB2StatusSeverity.warning.rawValue == 0x8000_0000)
-        #expect(SMB2StatusSeverity.error.rawValue == 0xC000_0000)
+        #expect(SMB.SMBStatusSeverity.success.rawValue == 0x0000_0000)
+        #expect(SMB.SMBStatusSeverity.info.rawValue == 0x4000_0000)
+        #expect(SMB.SMBStatusSeverity.warning.rawValue == 0x8000_0000)
+        #expect(SMB.SMBStatusSeverity.error.rawValue == 0xC000_0000)
     }
 }
 

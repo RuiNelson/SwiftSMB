@@ -286,7 +286,7 @@ private func notifyChangeError(
         message: smb2_get_error(context.raw).map(String.init(cString:)) ?? "",
     )
 
-    if let knownStatus = SMB2Status(rawValue: rawStatus) {
+    if let knownStatus = SMB.SMBStatus(rawValue: rawStatus) {
         return .ntStatus(knownStatus, posixCode: nil, context: errorContext)
     }
 

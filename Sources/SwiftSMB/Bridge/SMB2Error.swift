@@ -19,7 +19,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
     case invalidArgument(SMB2ErrorContext)
     case posix(POSIXError, context: SMB2ErrorContext)
     case unknownPOSIX(code: Int32, context: SMB2ErrorContext)
-    case ntStatus(SMB2Status, posixCode: Int32?, context: SMB2ErrorContext)
+    case ntStatus(SMB.SMBStatus, posixCode: Int32?, context: SMB2ErrorContext)
     case unknownNTStatus(rawValue: UInt32, posixCode: Int32?, context: SMB2ErrorContext)
     case unknown(SMB2ErrorContext)
 
@@ -70,7 +70,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         let posixCode = status.map { $0 < 0 ? -$0 : $0 }
         let ntStatusCode = smb2_get_nterror(context.raw)
         let ntStatusRawValue = UInt32(bitPattern: ntStatusCode)
-        let ntStatus = ntStatusCode == 0 ? nil : SMB2Status(rawValue: ntStatusRawValue)
+        let ntStatus = ntStatusCode == 0 ? nil : SMB.SMBStatus(rawValue: ntStatusRawValue)
         let errorContext = SMB2ErrorContext(
             operation: operation,
             message: message,
@@ -109,7 +109,7 @@ enum SMB2Error: Error, Equatable, CustomStringConvertible {
         context: SMB2ErrorContext,
         posixError: POSIXError? = nil,
         posixCode: Int32? = nil,
-        ntStatus: SMB2Status? = nil,
+        ntStatus: SMB.SMBStatus? = nil,
         ntStatusRawValue: UInt32? = nil,
     ) -> String {
         var parts = ["\(label) in \(context.operation)"]

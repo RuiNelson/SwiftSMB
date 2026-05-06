@@ -1,0 +1,168 @@
+//
+// Part of SwiftSMB
+// SMBOperations.swift
+//
+// Licensed under LGPL v2.1
+// Copyright it's respective authors
+//
+
+extension SMB {
+    /// Lists disk shares advertised by a server.
+    ///
+    /// The method connects to the server's `IPC$` share, enumerates shares
+    /// through SRVSVC, filters the result to disk shares, and disconnects before
+    /// returning.
+    ///
+    /// - Parameters:
+    ///   - server: The server to query.
+    ///   - credentials: Optional credentials for authenticated enumeration.
+    ///   - configuration: SMB negotiation and connection options.
+    ///   - includeHidden: Whether to include shares marked as hidden.
+    /// - Returns: The server's visible disk shares.
+    /// - Throws: ``SMB/Error`` when context creation, authentication,
+    ///   connection, enumeration, or disconnection fails.
+    public static func listShares(
+        server: Server,
+        credentials: Credentials? = nil,
+        configuration: Configuration = Configuration(),
+        includeHidden: Bool = false,
+    ) throws -> [Share] {
+        let context = try run {
+            try createContext()
+        }
+        defer { destroyContext(context) }
+
+        try configure(context, with: configuration)
+        configureCredentials(credentials, server: server, on: context)
+
+        return try run {
+            try SwiftSMB.listShares(
+                context: context,
+                server: server.address,
+                user: credentials?.user,
+                includeHidden: includeHidden,
+            ).map(Share.init)
+        }
+    }
+
+    /// Connects to an SMB share.
+    ///
+    /// The returned ``SMB/Connection`` owns the underlying SMB context and
+    /// disconnects automatically when deallocated. Call
+    /// ``SMB/Connection/disconnect()`` to close the connection explicitly.
+    ///
+    /// - Parameters:
+    ///   - server: The server hosting the share.
+    ///   - credentials: Optional credentials for the connection.
+    ///   - share: The share name to connect to.
+    ///   - configuration: SMB negotiation and transfer options.
+    /// - Returns: An open connection to `share`.
+    /// - Throws: ``SMB/Error`` when the context cannot be created or the share
+    ///   connection fails.
+    public static func connect(
+        server: Server,
+        credentials: Credentials? = nil,
+        share: String,
+        configuration: Configuration = Configuration(),
+    ) throws -> Connection {
+        let context = try run {
+            try createContext()
+        }
+
+        do {
+            try configure(context, with: configuration)
+            configureCredentials(credentials, server: server, on: context)
+            try run {
+                try SwiftSMB.connectShare(
+                    context: context,
+                    server: server.address,
+                    share: share,
+                    user: credentials?.user,
+                )
+            }
+            return Connection(server: server, share: share, configuration: configuration, context: context)
+        }
+        catch {
+            destroyContext(context)
+            throw error
+        }
+    }
+
+    /// Parses an SMB URL into its components.
+    ///
+    /// - Parameter string: An SMB URL, such as `smb://server/share/path`.
+    /// - Returns: The parsed URL components.
+    /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
+    public static func parseURL(_ string: String) throws -> ParsedURL {
+        let context = try run {
+            try createContext()
+        }
+        defer { destroyContext(context) }
+
+        return try run {
+            try ParsedURL(SwiftSMB.parseURL(string, context: context))
+        }
+    }
+
+    /// Applies negotiation options to a context before connection.
+    static func configure(_ context: SMB2Context, with configuration: Configuration) throws {
+        if let timeout = configuration.timeout {
+            guard timeout >= 0, timeout <= Int(Int32.max) else {
+                throw Error.invalidArgument(
+                    operation: "smb2_set_timeout",
+                    message: "Timeout must fit in Int32 seconds",
+                )
+            }
+            setTimeout(Int32(timeout), on: context)
+        }
+
+        if let dialect = configuration.dialect {
+            setVersion(dialect.bridgeValue, on: context)
+        }
+
+        if let securityMode = configuration.securityMode {
+            setSecurityMode(securityMode.bridgeValue, on: context)
+        }
+
+        if let requiresEncryption = configuration.requiresEncryption {
+            setSeal(requiresEncryption, on: context)
+        }
+
+        if let requiresSigning = configuration.requiresSigning {
+            setSign(requiresSigning, on: context)
+        }
+
+        if let authentication = configuration.authentication {
+            setAuthentication(authentication.bridgeValue, on: context)
+        }
+    }
+
+    /// Applies authentication settings to a context before connection.
+    static func configureCredentials(_ credentials: Credentials?, server: Server, on context: SMB2Context) {
+        if let user = credentials?.user {
+            setUser(user, on: context)
+        }
+        if let password = credentials?.password {
+            setPassword(password, on: context)
+        }
+        if let domain = credentials?.domain ?? server.domain {
+            setDomain(domain, on: context)
+        }
+        if let workstation = credentials?.workstation {
+            setWorkstation(workstation, on: context)
+        }
+    }
+
+    /// Converts bridge errors into public API errors.
+    static func run<T>(_ body: () throws -> T) throws -> T {
+        do {
+            return try body()
+        }
+        catch let error as SMB2Error {
+            throw Error(error)
+        }
+        catch {
+            throw error
+        }
+    }
+}
