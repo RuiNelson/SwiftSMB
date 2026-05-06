@@ -14,28 +14,28 @@ import Testing
 
 @Suite(.tags(.integration))
 struct StatTests {
-    @Test func `stat known file returns file type`() throws {
+    @Test("stat known file returns file type") func statKnownFileReturnsFileType() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.type == .file)
         }
     }
 
-    @Test func `stat known file has positive size`() throws {
+    @Test("stat known file has positive size") func statKnownFileHasPositiveSize() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.size > 0)
         }
     }
 
-    @Test func `stat known directory returns directory type`() throws {
+    @Test("stat known directory returns directory type") func statKnownDirectoryReturnsDirectoryType() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.testdirPath)
             #expect(stat.type == .directory)
         }
     }
 
-    @Test func `stat non existent path throws`() throws {
+    @Test("stat non existent path throws") func statNonExistentPathThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try fileStatistics(context: ctx, path: "nonexistent_\(uniquePath())")
@@ -43,7 +43,7 @@ struct StatTests {
         }
     }
 
-    @Test func `stat from handle matches stat from path`() throws {
+    @Test("stat from handle matches stat from path") func statFromHandleMatchesStatFromPath() throws {
         try withPublicShare { ctx in
             let pathStat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             let handle = try open(context: ctx, path: TestContent.helloPath)
@@ -55,21 +55,21 @@ struct StatTests {
         }
     }
 
-    @Test func `stat VFS has positive block size`() throws {
+    @Test("stat VFS has positive block size") func statVfsHasPositiveBlockSize() throws {
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
             #expect(vfs.blockSize > 0)
         }
     }
 
-    @Test func `stat VFS has positive block count`() throws {
+    @Test("stat VFS has positive block count") func statVfsHasPositiveBlockCount() throws {
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
             #expect(vfs.blocks > 0)
         }
     }
 
-    @Test func `stat VFS returns struct`() throws {
+    @Test("stat VFS returns struct") func statVfsReturnsStruct() throws {
         // Samba may return f_namemax = 0; just verify the call succeeds
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
@@ -77,7 +77,7 @@ struct StatTests {
         }
     }
 
-    @Test func `hello file has expected size`() throws {
+    @Test("hello file has expected size") func helloFileHasExpectedSize() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.size == UInt64(TestContent.helloBytes.count))
@@ -89,14 +89,14 @@ struct StatTests {
 
 @Suite(.tags(.integration))
 struct FileReadTests {
-    @Test func `open and close file`() throws {
+    @Test("open and close file") func openAndCloseFile() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             try close(context: ctx, file: fh)
         }
     }
 
-    @Test func `read hello file content`() throws {
+    @Test("read hello file content") func readHelloFileContent() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             defer { try? close(context: ctx, file: fh) }
@@ -105,7 +105,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `read nested file content`() throws {
+    @Test("read nested file content") func readNestedFileContent() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.nestedPath)
             defer { try? close(context: ctx, file: fh) }
@@ -114,7 +114,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `read at offset skips prefix`() throws {
+    @Test("read at offset skips prefix") func readAtOffsetSkipsPrefix() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             defer { try? close(context: ctx, file: fh) }
@@ -126,7 +126,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `read at offset beyond end returns empty`() throws {
+    @Test("read at offset beyond end returns empty") func readAtOffsetBeyondEndReturnsEmpty() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             defer { try? close(context: ctx, file: fh) }
@@ -137,7 +137,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `seek set and read`() throws {
+    @Test("seek set and read") func seekSetAndRead() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             defer { try? close(context: ctx, file: fh) }
@@ -151,7 +151,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `seek cur advances position`() throws {
+    @Test("seek cur advances position") func seekCurAdvancesPosition() throws {
         try withPublicShare { ctx in
             let fh = try open(context: ctx, path: TestContent.helloPath)
             defer { try? close(context: ctx, file: fh) }
@@ -161,7 +161,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `seek end positions at end of file`() throws {
+    @Test("seek end positions at end of file") func seekEndPositionsAtEndOfFile() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             let fh = try open(context: ctx, path: TestContent.helloPath)
@@ -172,7 +172,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `open non existent file throws`() throws {
+    @Test("open non existent file throws") func openNonExistentFileThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try open(context: ctx, path: "nonexistent_\(uniquePath()).txt")
@@ -180,7 +180,7 @@ struct FileReadTests {
         }
     }
 
-    @Test func `private share file is readable`() throws {
+    @Test("private share file is readable") func privateShareFileIsReadable() throws {
         try withPrivateShare { ctx in
             let fh = try open(context: ctx, path: "secret.txt")
             defer { try? close(context: ctx, file: fh) }
@@ -194,7 +194,7 @@ struct FileReadTests {
 
 @Suite(.tags(.integration))
 struct FileWriteTests {
-    @Test func `create write read and delete file`() throws {
+    @Test("create write read and delete file") func createWriteReadAndDeleteFile() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".txt"
             defer { try? unlink(context: ctx, path: path) }
@@ -217,7 +217,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `write at offset pads file`() throws {
+    @Test("write at offset pads file") func writeAtOffsetPadsFile() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".bin"
             defer { try? unlink(context: ctx, path: path) }
@@ -238,7 +238,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `truncate by path shortens file`() throws {
+    @Test("truncate by path shortens file") func truncateByPathShortensFile() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".txt"
             defer { try? unlink(context: ctx, path: path) }
@@ -264,7 +264,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `truncate by handle shortens file`() throws {
+    @Test("truncate by handle shortens file") func truncateByHandleShortensFile() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".txt"
             defer { try? unlink(context: ctx, path: path) }
@@ -284,7 +284,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `rename file`() throws {
+    @Test("rename file") func renameFile() throws {
         try withPublicShare { ctx in
             let oldPath = uniquePath("old") + ".txt"
             let newPath = uniquePath("new") + ".txt"
@@ -311,7 +311,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `sync file succeeds`() throws {
+    @Test("sync file succeeds") func syncFileSucceeds() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".txt"
             defer { try? unlink(context: ctx, path: path) }
@@ -328,7 +328,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `unlink removes file`() throws {
+    @Test("unlink removes file") func unlinkRemovesFile() throws {
         try withPublicShare { ctx in
             let path = uniquePath("file") + ".txt"
             let wh = try open(
@@ -346,7 +346,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `unlink non existent file throws`() throws {
+    @Test("unlink non existent file throws") func unlinkNonExistentFileThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try unlink(context: ctx, path: "nonexistent_\(uniquePath()).txt")
@@ -354,7 +354,7 @@ struct FileWriteTests {
         }
     }
 
-    @Test func `write to readonly share throws`() throws {
+    @Test("write to readonly share throws") func writeToReadonlyShareThrows() throws {
         try withReadonlyShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try open(
@@ -371,21 +371,21 @@ struct FileWriteTests {
 
 @Suite(.tags(.integration))
 struct SymlinkTests {
-    @Test func `read link for file symlink`() throws {
+    @Test("read link for file symlink") func readLinkForFileSymlink() throws {
         try withPublicShare { ctx in
             let target = try readLink(context: ctx, path: TestContent.linkToFilePath)
             #expect(!target.isEmpty)
         }
     }
 
-    @Test func `read link for directory symlink`() throws {
+    @Test("read link for directory symlink") func readLinkForDirectorySymlink() throws {
         try withPublicShare { ctx in
             let target = try readLink(context: ctx, path: TestContent.linkToDirPath)
             #expect(!target.isEmpty)
         }
     }
 
-    @Test func `read link on regular file throws`() throws {
+    @Test("read link on regular file throws") func readLinkOnRegularFileThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try readLink(context: ctx, path: TestContent.helloPath)
@@ -393,7 +393,7 @@ struct SymlinkTests {
         }
     }
 
-    @Test func `file symlink target contains filename`() throws {
+    @Test("file symlink target contains filename") func fileSymlinkTargetContainsFilename() throws {
         try withPublicShare { ctx in
             let target = try readLink(context: ctx, path: TestContent.linkToFilePath)
             #expect(target.contains("hello.txt"))
@@ -406,7 +406,7 @@ struct SymlinkTests {
 
 @Suite(.tags(.integration))
 struct ReadonlyShareTests {
-    @Test func `read file from readonly share`() throws {
+    @Test("read file from readonly share") func readFileFromReadonlyShare() throws {
         try withReadonlyShare { ctx in
             let fh = try open(context: ctx, path: "readme.txt")
             defer { try? close(context: ctx, file: fh) }
@@ -415,7 +415,7 @@ struct ReadonlyShareTests {
         }
     }
 
-    @Test func `stat from readonly share`() throws {
+    @Test("stat from readonly share") func statFromReadonlyShare() throws {
         try withReadonlyShare { ctx in
             let stat = try fileStatistics(context: ctx, path: "readme.txt")
             #expect(stat.type == .file)
@@ -428,56 +428,56 @@ struct ReadonlyShareTests {
 
 @Suite(.tags(.integration))
 struct StatDetailTests {
-    @Test func `stat has positive access time`() throws {
+    @Test("stat has positive access time") func statHasPositiveAccessTime() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.accessTime > 0)
         }
     }
 
-    @Test func `stat has positive modification time`() throws {
+    @Test("stat has positive modification time") func statHasPositiveModificationTime() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.modificationTime > 0)
         }
     }
 
-    @Test func `stat has positive inode`() throws {
+    @Test("stat has positive inode") func statHasPositiveInode() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.inode > 0)
         }
     }
 
-    @Test func `stat file has link count`() throws {
+    @Test("stat file has link count") func statFileHasLinkCount() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.helloPath)
             #expect(stat.linkCount >= 1)
         }
     }
 
-    @Test func `stat directory link count is at least one`() throws {
+    @Test("stat directory link count is at least one") func statDirectoryLinkCountIsAtLeastOne() throws {
         try withPublicShare { ctx in
             let stat = try fileStatistics(context: ctx, path: TestContent.testdirPath)
             #expect(stat.linkCount >= 1)
         }
     }
 
-    @Test func `stat VFS free blocks is positive`() throws {
+    @Test("stat VFS free blocks is positive") func statVfsFreeBlocksIsPositive() throws {
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
             #expect(vfs.freeBlocks > 0)
         }
     }
 
-    @Test func `stat VFS available blocks is positive`() throws {
+    @Test("stat VFS available blocks is positive") func statVfsAvailableBlocksIsPositive() throws {
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
             #expect(vfs.availableBlocks > 0)
         }
     }
 
-    @Test func `stat VFS file count is accessible`() throws {
+    @Test("stat VFS file count is accessible") func statVfsFileCountIsAccessible() throws {
         try withPublicShare { ctx in
             let vfs = try statVFS(context: ctx, path: "")
             _ = vfs.fileCount
@@ -489,7 +489,7 @@ struct StatDetailTests {
 
 @Suite(.tags(.integration))
 struct ReadWriteModeTests {
-    @Test func `open file readWrite and write read back`() throws {
+    @Test("open file readWrite and write read back") func openFileReadwriteAndWriteReadBack() throws {
         try withPublicShare { ctx in
             let path = uniquePath("rw") + ".txt"
             defer { try? unlink(context: ctx, path: path) }
@@ -510,7 +510,7 @@ struct ReadWriteModeTests {
         }
     }
 
-    @Test func `read private large file content length`() throws {
+    @Test("read private large file content length") func readPrivateLargeFileContentLength() throws {
         try withPrivateShare { ctx in
             let fh = try open(context: ctx, path: "largefile.bin")
             defer { try? close(context: ctx, file: fh) }
@@ -524,14 +524,14 @@ struct ReadWriteModeTests {
 
 @Suite(.tags(.integration))
 struct LargeFileTests {
-    @Test func `largefile 5 MB is on private share`() throws {
+    @Test("largefile 5 MB is on private share") func largefile5MbIsOnPrivateShare() throws {
         try withPrivateShare { ctx in
             let stat = try fileStatistics(context: ctx, path: "largefile.bin")
             #expect(stat.size == 5 * 1024 * 1024)
         }
     }
 
-    @Test func `largefile xor hash matches expected`() throws {
+    @Test("largefile xor hash matches expected") func largefileXorHashMatchesExpected() throws {
         // File is generated in the Docker image as bytes i%251 for i in 0..<5*1024*1024.
         // Pre-computed XOR of that sequence: 0x08.
         try withPrivateShare { ctx in

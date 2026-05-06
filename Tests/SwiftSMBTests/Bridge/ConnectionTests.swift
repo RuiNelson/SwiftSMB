@@ -13,21 +13,21 @@ import Testing
 // MARK: - Context configuration (no server required)
 
 struct ContextConfigurationTests {
-    @Test func `set and get user`() throws {
+    @Test("set and get user") func setAndGetUser() throws {
         try withFreshContext { ctx in
             setUser("alice", on: ctx)
             #expect(getUser(on: ctx) == "alice")
         }
     }
 
-    @Test func `set and get domain`() throws {
+    @Test("set and get domain") func setAndGetDomain() throws {
         try withFreshContext { ctx in
             setDomain("CORP", on: ctx)
             #expect(getDomain(on: ctx) == "CORP")
         }
     }
 
-    @Test func `set and get workstation`() throws {
+    @Test("set and get workstation") func setAndGetWorkstation() throws {
         try withFreshContext { ctx in
             setWorkstation("MYPC", on: ctx)
             #expect(getWorkstation(on: ctx) == "MYPC")
@@ -38,7 +38,7 @@ struct ContextConfigurationTests {
 // MARK: - URL parsing (context required, no server connection)
 
 struct URLParsingTests {
-    @Test func `parses basic URL`() throws {
+    @Test("parses basic URL") func parsesBasicUrl() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver/myshare", context: ctx)
             #expect(url.server == "myserver")
@@ -49,7 +49,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test func `parses URL with user`() throws {
+    @Test("parses URL with user") func parsesUrlWithUser() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://alice@myserver/myshare", context: ctx)
             #expect(url.user == "alice")
@@ -58,7 +58,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test func `parses URL with domain`() throws {
+    @Test("parses URL with domain") func parsesUrlWithDomain() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://CORP;alice@myserver/myshare", context: ctx)
             #expect(url.domain == "CORP")
@@ -67,7 +67,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test func `parses URL with port`() throws {
+    @Test("parses URL with port") func parsesUrlWithPort() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver:4445/myshare", context: ctx)
             // libsmb2 embeds the port in the server string
@@ -76,7 +76,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test func `parses URL with path`() throws {
+    @Test("parses URL with path") func parsesUrlWithPath() throws {
         try withFreshContext { ctx in
             let url = try parseURL("smb://myserver/myshare/some/path", context: ctx)
             #expect(url.server == "myserver")
@@ -85,7 +85,7 @@ struct URLParsingTests {
         }
     }
 
-    @Test func `invalid URL throws`() throws {
+    @Test("invalid URL throws") func invalidUrlThrows() throws {
         try withFreshContext { ctx in
             #expect(throws: SMB2Error.self) {
                 try parseURL("not-an-smb-url", context: ctx)
@@ -98,14 +98,14 @@ struct URLParsingTests {
 
 @Suite(.tags(.integration))
 struct ConnectionTests {
-    @Test func `connect to public share as guest`() throws {
+    @Test("connect to public share as guest") func connectToPublicShareAsGuest() throws {
         try withFreshContext { ctx in
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
             try disconnectShare(context: ctx)
         }
     }
 
-    @Test func `connect to private share with credentials`() throws {
+    @Test("connect to private share with credentials") func connectToPrivateShareWithCredentials() throws {
         try withFreshContext { ctx in
             setUser(TestCredentials.user, on: ctx)
             setPassword(TestCredentials.password, on: ctx)
@@ -114,46 +114,46 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `connect to readonly share`() throws {
+    @Test("connect to readonly share") func connectToReadonlyShare() throws {
         try withFreshContext { ctx in
             try connectShare(context: ctx, server: testServerHost, share: TestShare.readonly)
             try disconnectShare(context: ctx)
         }
     }
 
-    @Test func `echo succeeds on public share`() throws {
+    @Test("echo succeeds on public share") func echoSucceedsOnPublicShare() throws {
         try withPublicShare { ctx in
             try echo(context: ctx)
         }
     }
 
-    @Test func `session ID is non zero after connect`() throws {
+    @Test("session ID is non zero after connect") func sessionIdIsNonZeroAfterConnect() throws {
         try withPublicShare { ctx in
             let sessionID = try getSessionID(context: ctx)
             #expect(sessionID != 0)
         }
     }
 
-    @Test func `dialect is set after connect`() throws {
+    @Test("dialect is set after connect") func dialectIsSetAfterConnect() throws {
         try withPublicShare { ctx in
             let dialect = getDialect(on: ctx)
             #expect(dialect != 0)
         }
     }
 
-    @Test func `max read size is positive after connect`() throws {
+    @Test("max read size is positive after connect") func maxReadSizeIsPositiveAfterConnect() throws {
         try withPublicShare { ctx in
             #expect(getMaxReadSize(context: ctx) > 0)
         }
     }
 
-    @Test func `max write size is positive after connect`() throws {
+    @Test("max write size is positive after connect") func maxWriteSizeIsPositiveAfterConnect() throws {
         try withPublicShare { ctx in
             #expect(getMaxWriteSize(context: ctx) > 0)
         }
     }
 
-    @Test func `wrong password throws`() throws {
+    @Test("wrong password throws") func wrongPasswordThrows() throws {
         try withFreshContext { ctx in
             setUser(TestCredentials.user, on: ctx)
             setPassword("wrong_password", on: ctx)
@@ -163,7 +163,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `non existent share throws`() throws {
+    @Test("non existent share throws") func nonExistentShareThrows() throws {
         try withFreshContext { ctx in
             #expect(throws: SMB2Error.self) {
                 try connectShare(context: ctx, server: testServerHost, share: "doesnotexist")
@@ -171,7 +171,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `ntlmssp authentication works`() throws {
+    @Test("ntlmssp authentication works") func ntlmsspAuthenticationWorks() throws {
         try withFreshContext { ctx in
             setAuthentication(.ntlmssp, on: ctx)
             setUser(TestCredentials.user, on: ctx)
@@ -181,7 +181,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set timeout before connect`() throws {
+    @Test("set timeout before connect") func setTimeoutBeforeConnect() throws {
         try withFreshContext { ctx in
             setTimeout(30, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -189,7 +189,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set version SMB2 before connect`() throws {
+    @Test("set version SMB2 before connect") func setVersionSmb2BeforeConnect() throws {
         try withFreshContext { ctx in
             setVersion(SMB2_VERSION_ANY2, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -199,7 +199,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set version SMB3 before connect`() throws {
+    @Test("set version SMB3 before connect") func setVersionSmb3BeforeConnect() throws {
         try withFreshContext { ctx in
             setVersion(SMB2_VERSION_0300, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -209,7 +209,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set security mode before connect`() throws {
+    @Test("set security mode before connect") func setSecurityModeBeforeConnect() throws {
         try withFreshContext { ctx in
             setSecurityMode(.signingEnabled, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -217,7 +217,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `close context does not destroy`() throws {
+    @Test("close context does not destroy") func closeContextDoesNotDestroy() throws {
         try withFreshContext { ctx in
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
             closeContext(ctx)
@@ -225,7 +225,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `connect share with user parameter`() throws {
+    @Test("connect share with user parameter") func connectShareWithUserParameter() throws {
         try withFreshContext { ctx in
             setPassword(TestCredentials.password, on: ctx)
             try connectShare(
@@ -238,7 +238,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set seal false before connect`() throws {
+    @Test("set seal false before connect") func setSealFalseBeforeConnect() throws {
         try withFreshContext { ctx in
             setSeal(false, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -246,7 +246,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set seal true requires encryption`() throws {
+    @Test("set seal true requires encryption") func setSealTrueRequiresEncryption() throws {
         try withFreshContext { ctx in
             setSeal(true, on: ctx)
             #expect(throws: SMB2Error.self) {
@@ -255,7 +255,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set sign false before connect`() throws {
+    @Test("set sign false before connect") func setSignFalseBeforeConnect() throws {
         try withFreshContext { ctx in
             setSign(false, on: ctx)
             try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
@@ -263,7 +263,7 @@ struct ConnectionTests {
         }
     }
 
-    @Test func `set sign true requires signing`() throws {
+    @Test("set sign true requires signing") func setSignTrueRequiresSigning() throws {
         try withFreshContext { ctx in
             setSign(true, on: ctx)
             #expect(throws: SMB2Error.self) {

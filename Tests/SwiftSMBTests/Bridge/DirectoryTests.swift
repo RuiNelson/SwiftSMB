@@ -11,14 +11,14 @@ import Testing
 
 @Suite(.tags(.integration))
 struct DirectoryTests {
-    @Test func `open and close root directory`() throws {
+    @Test("open and close root directory") func openAndCloseRootDirectory() throws {
         try withPublicShare { ctx in
             let dir = try openDir(context: ctx, path: "")
             closeDir(context: ctx, directory: dir)
         }
     }
 
-    @Test func `root directory contains known entries`() throws {
+    @Test("root directory contains known entries") func rootDirectoryContainsKnownEntries() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: "")
             let names = entries.map(\.name)
@@ -27,7 +27,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `dot and dot dot are present`() throws {
+    @Test("dot and dot dot are present") func dotAndDotDotArePresent() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: "")
             let names = entries.map(\.name)
@@ -36,7 +36,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `dir contains hello file`() throws {
+    @Test("dir contains hello file") func dirContainsHelloFile() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: TestContent.testdirPath)
             let names = entries.map(\.name)
@@ -44,7 +44,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `dir contains subdir and links`() throws {
+    @Test("dir contains subdir and links") func dirContainsSubdirAndLinks() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: TestContent.testdirPath)
             let names = entries.map(\.name)
@@ -54,7 +54,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `empty dir has only dot entries`() throws {
+    @Test("empty dir has only dot entries") func emptyDirHasOnlyDotEntries() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: TestContent.emptyDirPath)
             let names = entries.map(\.name)
@@ -64,7 +64,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `rewind directory reads from start`() throws {
+    @Test("rewind directory reads from start") func rewindDirectoryReadsFromStart() throws {
         try withPublicShare { ctx in
             let dir = try openDir(context: ctx, path: TestContent.testdirPath)
             defer { closeDir(context: ctx, directory: dir) }
@@ -77,7 +77,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `tell dir at start is zero`() throws {
+    @Test("tell dir at start is zero") func tellDirAtStartIsZero() throws {
         try withPublicShare { ctx in
             let dir = try openDir(context: ctx, path: TestContent.testdirPath)
             defer { closeDir(context: ctx, directory: dir) }
@@ -85,7 +85,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `tell and seek return to same position`() throws {
+    @Test("tell and seek return to same position") func tellAndSeekReturnToSamePosition() throws {
         try withPublicShare { ctx in
             let dir = try openDir(context: ctx, path: TestContent.testdirPath)
             defer { closeDir(context: ctx, directory: dir) }
@@ -105,7 +105,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `create and remove directory`() throws {
+    @Test("create and remove directory") func createAndRemoveDirectory() throws {
         try withPublicShare { ctx in
             let path = uniquePath("dir")
             try makeDir(context: ctx, path: path)
@@ -119,7 +119,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `removing non existent directory throws`() throws {
+    @Test("removing non existent directory throws") func removingNonExistentDirectoryThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB2Error.self) {
                 try removeDir(context: ctx, path: "nonexistent_\(uniquePath())")
@@ -127,7 +127,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `nested directory listing`() throws {
+    @Test("nested directory listing") func nestedDirectoryListing() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: TestContent.subdirPath)
             let names = entries.map(\.name)
@@ -135,7 +135,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `directory entry type is directory`() throws {
+    @Test("directory entry type is directory") func directoryEntryTypeIsDirectory() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: "")
             let testdir = try #require(entries.first { $0.name == TestContent.testdirPath })
@@ -143,7 +143,7 @@ struct DirectoryTests {
         }
     }
 
-    @Test func `file entry type is file`() throws {
+    @Test("file entry type is file") func fileEntryTypeIsFile() throws {
         try withPublicShare { ctx in
             let entries = try listDirectory(context: ctx, path: TestContent.testdirPath)
             let hello = try #require(entries.first { $0.name == "hello.txt" })
