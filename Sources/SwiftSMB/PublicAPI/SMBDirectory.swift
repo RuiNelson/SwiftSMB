@@ -13,7 +13,7 @@ public extension SMB {
         public let path: String
 
         private let connection: Connection
-        private let protectedHandle = SMBProtected<SMB2DirectoryHandle?>(nil, label: "SwiftSMB.SMB.Directory.handle")
+        private let protectedHandle = Protected<SMB2DirectoryHandle?>(nil, label: "SwiftSMB.SMB.Directory.handle")
 
         /// The live bridge directory handle, if the directory is still open.
         private var handle: SMB2DirectoryHandle? {

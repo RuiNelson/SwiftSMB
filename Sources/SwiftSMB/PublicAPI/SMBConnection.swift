@@ -24,7 +24,7 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
-        private let protectedContext = SMBProtected<SMB2Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
+        private let protectedContext = Protected<SMB2Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
 
         /// The live bridge context, if the connection is still open.
         private var context: SMB2Context? {
