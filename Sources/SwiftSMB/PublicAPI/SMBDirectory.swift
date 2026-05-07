@@ -8,7 +8,7 @@
 
 public extension SMB {
     /// An open directory handle on an SMB share.
-    final class Directory: Sendable {
+    final class Directory: CustomDebugStringConvertible, Sendable {
         /// The path used to open the directory.
         public let path: String
 
@@ -104,6 +104,10 @@ public extension SMB {
         /// Takes ownership of the handle and marks the directory closed.
         private func takeHandle() -> SMB2DirectoryHandle? {
             protectedHandle.take(replacingWith: nil)
+        }
+
+        public var debugDescription: String {
+            "SMB.Directory(path: \(path), isOpen: \(isOpen))"
         }
     }
 }

@@ -12,7 +12,7 @@ import Foundation
 
 public extension SMB {
     /// An open file handle on an SMB share.
-    final class File: Sendable {
+    final class File: Sendable, CustomDebugStringConvertible {
         /// File access modes.
         public enum AccessMode: Equatable, Sendable {
             /// Open the file for reading.
@@ -38,7 +38,7 @@ public extension SMB {
         }
 
         /// Additional options used when opening a file.
-        public struct OpenOptions: OptionSet, Equatable, Sendable {
+        public struct OpenOptions: OptionSet, Equatable, CustomDebugStringConvertible, Sendable {
             /// The raw option bitfield.
             public let rawValue: Int32
 
@@ -60,6 +60,16 @@ public extension SMB {
             /// Creates an open options value from a raw bitfield.
             public init(rawValue: Int32) {
                 self.rawValue = rawValue
+            }
+
+            public var debugDescription: String {
+                describeFlags([
+                    (.synchronous, "synchronous"),
+                    (.create, "create"),
+                    (.exclusive, "exclusive"),
+                    (.truncate, "truncate"),
+                    (.append, "append"),
+                ], typeName: "SMB.File.OpenOptions")
             }
 
             /// The bridge representation for these options.
@@ -105,6 +115,10 @@ public extension SMB {
                 case .end:
                     SEEK_END
                 }
+            }
+
+            public var debugDescription: String {
+                String(reflecting: self)
             }
         }
 
@@ -322,6 +336,10 @@ public extension SMB {
         /// Takes ownership of the handle and marks the file closed.
         private func takeHandle() -> SMB2FileHandle? {
             protectedHandle.take(replacingWith: nil)
+        }
+
+        public var debugDescription: String {
+            "SMB.File(path: \(path), isOpen: \(isOpen))"
         }
     }
 }

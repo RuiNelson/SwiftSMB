@@ -8,13 +8,21 @@
 
 import Dispatch
 
-final class Protected<Value>: @unchecked Sendable {
+final class Protected<Value>: CustomDebugStringConvertible, @unchecked Sendable {
+    private let label: String
     private let queue: DispatchQueue
     private var value: Value
 
     init(_ value: Value, label: String) {
+        self.label = label
         queue = DispatchQueue(label: label)
         self.value = value
+    }
+
+    var debugDescription: String {
+        queue.sync {
+            "Protected<\(Value.self)>(\(label), \(value))"
+        }
     }
 
     var current: Value {

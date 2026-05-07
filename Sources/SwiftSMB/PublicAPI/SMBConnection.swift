@@ -14,7 +14,7 @@ public extension SMB {
     ///
     /// A connection owns the underlying `libsmb2` context and provides methods
     /// for file, directory, and metadata operations on a single connected share.
-    final class Connection: Sendable {
+    final class Connection: CustomDebugStringConvertible, Sendable {
         /// The server this connection is attached to.
         public let server: Server
 
@@ -282,6 +282,10 @@ public extension SMB {
         /// Takes ownership of the context and marks the connection closed.
         private func takeContext() -> SMB2Context? {
             protectedContext.take(replacingWith: nil)
+        }
+
+        public var debugDescription: String {
+            "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected))"
         }
     }
 }

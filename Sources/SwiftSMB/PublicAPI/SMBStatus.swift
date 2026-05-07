@@ -9,16 +9,29 @@
 import SMB2
 
 public extension SMB {
-    enum SMBStatusSeverity: UInt32, Equatable, Sendable {
+    enum SMBStatusSeverity: UInt32, Equatable, CaseIterable, CustomDebugStringConvertible, Sendable {
         case success = 0x0000_0000
         case info = 0x4000_0000
         case warning = 0x8000_0000
         case error = 0xC000_0000
 
         static let mask: UInt32 = 0xC000_0000
+        
+        public var debugDescription: String {
+            switch self {
+            case .success:
+                "Success"
+            case .info:
+                "Info"
+            case .warning:
+                "Warning"
+            case .error:
+                "Error"
+            }
+        }
     }
 
-    enum SMBStatus: UInt32, CaseIterable, CustomStringConvertible, Sendable {
+    enum SMBStatus: UInt32, CaseIterable, CustomStringConvertible, CustomDebugStringConvertible, Sendable {
         case success = 0x0000_0000
         case shutdown = 0xFFFF_FFFF
         case pending = 0x0000_0103
@@ -1557,13 +1570,24 @@ public extension SMB {
                 "SMB2_STATUS_STOPPED_ON_SYMLINK"
             }
         }
+        
+        public var description: String {
+            debugDescription
+        }
 
         public var severity: SMBStatusSeverity {
             SMBStatusSeverity(rawValue: rawValue & SMBStatusSeverity.mask)!
         }
 
-        public var description: String {
-            "\(name) (0x\(String(rawValue, radix: 16, uppercase: true)))"
+        public var debugDescription: String {
+            [
+                name,
+                "(\(hex(rawValue)))",
+                "\t",
+                "Severity:",
+                severity.debugDescription,
+            ]
+                .joined(separator: " ")
         }
     }
 }

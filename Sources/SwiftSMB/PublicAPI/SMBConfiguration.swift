@@ -10,7 +10,7 @@ import SMB2
 
 public extension SMB {
     /// Identifies an SMB server.
-    struct Server: Sendable {
+    struct Server: CustomDebugStringConvertible, Sendable {
         /// The server host name or IP address.
         public var host: String
 
@@ -43,10 +43,14 @@ public extension SMB {
             }
             return "\(host):\(port)"
         }
+
+        public var debugDescription: String {
+            "SMB.Server(host: \(host), port: \(String(describing: port)), domain: \(String(describing: domain)))"
+        }
     }
 
     /// Credentials used to authenticate with an SMB server.
-    struct Credentials: Sendable {
+    struct Credentials: CustomDebugStringConvertible, Sendable {
         /// The user name to authenticate as.
         public var user: String?
 
@@ -77,10 +81,14 @@ public extension SMB {
             self.domain = domain
             self.workstation = workstation
         }
+
+        public var debugDescription: String {
+            "SMB.Credentials(user: \(user ?? "nil"), password: <redacted>, domain: \(domain ?? "nil"), workstation: \(workstation ?? "nil"))"
+        }
     }
 
     /// Connection options that affect SMB negotiation and transfer behavior.
-    struct Configuration: Sendable {
+    struct Configuration: CustomDebugStringConvertible, Sendable {
         /// The command timeout, in seconds.
         public var timeout: Int?
 
@@ -132,6 +140,10 @@ public extension SMB {
             self.requiresSigning = requiresSigning
             self.authentication = authentication
             self.transferBlockSize = transferBlockSize
+        }
+
+        public var debugDescription: String {
+            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), requiresEncryption: \(String(describing: requiresEncryption)), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)))"
         }
     }
 
@@ -209,7 +221,7 @@ public extension SMB {
     }
 
     /// SMB signing negotiation flags.
-    struct SecurityMode: OptionSet, Equatable, Sendable {
+    struct SecurityMode: OptionSet, Equatable, CustomDebugStringConvertible, Sendable {
         /// The raw SMB security mode bitfield.
         public let rawValue: UInt16
 
@@ -222,6 +234,13 @@ public extension SMB {
         /// Creates a security mode from a raw SMB bitfield.
         public init(rawValue: UInt16) {
             self.rawValue = rawValue
+        }
+
+        public var debugDescription: String {
+            describeFlags([
+                (.signingEnabled, "signingEnabled"),
+                (.signingRequired, "signingRequired"),
+            ], typeName: "SMB.SecurityMode")
         }
 
         /// The bridge representation for this security mode.

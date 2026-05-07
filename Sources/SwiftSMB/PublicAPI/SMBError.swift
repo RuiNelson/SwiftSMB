@@ -10,7 +10,8 @@ import Foundation
 
 public extension SMB {
     /// Errors thrown by the public SMB API.
-    enum Error: Swift.Error, Equatable, CustomStringConvertible, LocalizedError, Sendable {
+    enum Error: Swift.Error, Equatable, CustomStringConvertible, CustomDebugStringConvertible, LocalizedError,
+    Sendable {
         /// A `libsmb2` context could not be created.
         case contextCreationFailed
 
@@ -67,7 +68,7 @@ public extension SMB {
                 }
                 return Self.describe(label, operation: operation, message: message)
             case let .unknownNTStatus(rawValue, posixCode, operation, message):
-                var label = "Unknown SMB status 0x\(String(rawValue, radix: 16, uppercase: true))"
+                var label = "Unknown SMB status \(hex(rawValue))"
                 if let posixCode {
                     label += " errno=\(posixCode)"
                 }
@@ -76,8 +77,14 @@ public extension SMB {
                 return Self.describe("Unknown SMB error", operation: operation, message: message)
             }
         }
+        
+        public var debugDescription: String {
+            description
+        }
 
         /// A localized description of the error.
+        ///
+        /// Apps should override this computed variable and provide localized error descriptions
         public var errorDescription: String? {
             description
         }

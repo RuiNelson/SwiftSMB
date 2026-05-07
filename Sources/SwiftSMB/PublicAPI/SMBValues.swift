@@ -10,9 +10,9 @@ import Foundation
 
 public extension SMB {
     /// A share advertised by an SMB server.
-    struct Share: Equatable, Hashable, Sendable {
+    struct Share: Equatable, Hashable, CustomDebugStringConvertible, Sendable {
         /// The resource kind behind a share.
-        public enum Kind: Equatable, Hashable, Sendable {
+        public enum Kind: Equatable, Hashable, CustomDebugStringConvertible, Sendable {
             /// A disk-backed file share.
             case diskTree
 
@@ -43,10 +43,20 @@ public extension SMB {
                     self = .unknown(rawValue)
                 }
             }
+
+            public var debugDescription: String {
+                switch self {
+                case .diskTree: "SMB.Share.Kind.diskTree"
+                case .printQueue: "SMB.Share.Kind.printQueue"
+                case .device: "SMB.Share.Kind.device"
+                case .ipc: "SMB.Share.Kind.ipc"
+                case let .unknown(rawValue): "SMB.Share.Kind.unknown(\(hex(rawValue)))"
+                }
+            }
         }
 
         /// Attributes attached to a share.
-        public struct Attributes: OptionSet, Equatable, Hashable, Sendable {
+        public struct Attributes: OptionSet, Equatable, Hashable, CustomDebugStringConvertible, Sendable {
             /// The raw share attributes bitfield.
             public let rawValue: UInt32
 
@@ -59,6 +69,13 @@ public extension SMB {
             /// Creates share attributes from a raw bitfield.
             public init(rawValue: UInt32) {
                 self.rawValue = rawValue
+            }
+
+            public var debugDescription: String {
+                describeFlags([
+                    (.temporary, "temporary"),
+                    (.hidden, "hidden"),
+                ], typeName: "SMB.Share.Attributes")
             }
         }
 
@@ -105,10 +122,14 @@ public extension SMB {
             attributes = Attributes(rawValue: bridgeValue.attributes.rawValue)
             remark = bridgeValue.remark
         }
+
+        public var debugDescription: String {
+            "SMB.Share(name: \(name), kind: \(String(describing: kind)), attributes: \(attributes.debugDescription), remark: \(String(describing: remark)))"
+        }
     }
 
     /// The kind of filesystem node represented by a path or directory entry.
-    enum NodeType: Equatable, Sendable {
+    enum NodeType: Equatable, CustomDebugStringConvertible, Sendable {
         /// A regular file.
         case file
 
@@ -134,10 +155,19 @@ public extension SMB {
                 self = .unknown(rawValue)
             }
         }
+
+        public var debugDescription: String {
+            switch self {
+            case .file: "SMB.NodeType.file"
+            case .directory: "SMB.NodeType.directory"
+            case .link: "SMB.NodeType.link"
+            case let .unknown(rawValue): "SMB.NodeType.unknown(\(hex(rawValue)))"
+            }
+        }
     }
 
     /// Metadata for a file, directory, or link.
-    struct Stat: Equatable, Sendable {
+    struct Stat: Equatable, CustomDebugStringConvertible, Sendable {
         /// The node type.
         public let type: NodeType
 
@@ -176,30 +206,22 @@ public extension SMB {
         
         /// The time the file was last accessed.
         public var accessTime: Date {
-            let secs = Double(accessTimeSeconds)
-            let nanos = Double(accessTimeNanoseconds) / 1_000_000_000.0
-            return Date(timeIntervalSince1970: secs + nanos)
+            Date(seconds: accessTimeSeconds, nanoseconds: accessTimeNanoseconds)
         }
 
         /// The time the file was last modified.
         public var modificationTime: Date {
-            let secs = Double(modificationTimeSeconds)
-            let nanos = Double(modificationTimeNanoseconds) / 1_000_000_000.0
-            return Date(timeIntervalSince1970: secs + nanos)
+            Date(seconds: modificationTimeSeconds, nanoseconds: modificationTimeNanoseconds)
         }
 
         /// The time the file's metadata was last changed.
         public var changeTime: Date {
-            let secs = Double(changeTimeSeconds)
-            let nanos = Double(changeTimeNanoseconds) / 1_000_000_000.0
-            return Date(timeIntervalSince1970: secs + nanos)
+            Date(seconds: changeTimeSeconds, nanoseconds: changeTimeNanoseconds)
         }
 
         /// The time the file was created.
         public var birthTime: Date {
-            let secs = Double(birthTimeSeconds)
-            let nanos = Double(birthTimeNanoseconds) / 1_000_000_000.0
-            return Date(timeIntervalSince1970: secs + nanos)
+            Date(seconds: birthTimeSeconds, nanoseconds: birthTimeNanoseconds)
         }
 
         /// Creates a public stat value from a bridge value.
@@ -217,10 +239,14 @@ public extension SMB {
             birthTimeSeconds = bridgeValue.birthTime
             birthTimeNanoseconds = bridgeValue.birthTimeNanoseconds
         }
+
+        public var debugDescription: String {
+            "SMB.Stat(type: \(type.debugDescription), size: \(size), inode: \(inode), linkCount: \(linkCount))"
+        }
     }
 
     /// Filesystem statistics for a share path.
-    struct FilesystemStat: Equatable, Sendable {
+    struct FilesystemStat: Equatable, CustomDebugStringConvertible, Sendable {
         /// The preferred block size for filesystem operations.
         public let blockSize: UInt32
 
@@ -268,10 +294,14 @@ public extension SMB {
             flags = bridgeValue.flags
             maximumNameLength = bridgeValue.maximumNameLength
         }
+
+        public var debugDescription: String {
+            "SMB.FilesystemStat(blockSize: \(blockSize), fragmentSize: \(fragmentSize), blocks: \(blocks), freeBlocks: \(freeBlocks), availableBlocks: \(availableBlocks), fileCount: \(fileCount), freeFileCount: \(freeFileCount), availableFileCount: \(availableFileCount), filesystemID: \(filesystemID), flags: \(flags), maximumNameLength: \(maximumNameLength))"
+        }
     }
 
     /// An entry returned while reading an SMB directory.
-    struct DirectoryEntry: Equatable, Sendable {
+    struct DirectoryEntry: Equatable, CustomDebugStringConvertible, Sendable {
         /// The entry name.
         public let name: String
 
@@ -283,10 +313,14 @@ public extension SMB {
             name = bridgeValue.name
             stat = Stat(bridgeValue.stat)
         }
+
+        public var debugDescription: String {
+            "SMB.DirectoryEntry(name: \(name), stat: \(stat.debugDescription))"
+        }
     }
 
     /// Components parsed from an SMB URL.
-    struct ParsedURL: Equatable, Sendable {
+    struct ParsedURL: Equatable, CustomDebugStringConvertible, Sendable {
         /// The domain component, if present.
         public let domain: String?
 
@@ -309,6 +343,10 @@ public extension SMB {
             server = bridgeValue.server
             share = bridgeValue.share
             path = bridgeValue.path
+        }
+
+        public var debugDescription: String {
+            "SMB.ParsedURL(domain: \(String(describing: domain)), user: \(String(describing: user)), server: \(server), share: \(share), path: \(String(describing: path)))"
         }
     }
 }

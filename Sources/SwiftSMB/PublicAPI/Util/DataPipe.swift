@@ -21,7 +21,7 @@ import Foundation
 ///
 /// The pipe is single-producer / single-consumer. Concurrent calls from more
 /// than one producer or more than one consumer are not supported.
-public final class DataPipe: @unchecked Sendable {
+public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
     /// Total bytes allocated across all slots.
     public let totalCapacity: Int
 
@@ -191,6 +191,10 @@ public final class DataPipe: @unchecked Sendable {
     /// pending slot has been drained.
     public func receive() -> Data? {
         receive { Data($0) }
+    }
+
+    public var debugDescription: String {
+        "DataPipe(totalCapacity: \(totalCapacity), slotCount: \(slotCount), slotCapacity: \(slotCapacity))"
     }
 
     private func slot(at index: Int) -> UnsafeMutableRawBufferPointer {
