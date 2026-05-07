@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import PathWorks
 
 public extension SMB.Connection {
     /// The default read block size accepted by the server.
@@ -116,7 +117,7 @@ public extension SMB.Connection {
 
         let entries = try listDirectory(at: path)
         for entry in entries where entry.name != "." && entry.name != ".." {
-            try removeItem(at: appending(entry.name, toDirectory: path))
+            try removeItem(at: path.appendingPathComponent(entry.name))
         }
         try removeDirectory(at: path)
     }
@@ -169,12 +170,5 @@ public extension SMB.Connection {
             )
         }
         return min(chunkSize, serverMaximum)
-    }
-
-    /// Appends a child name to a share-relative directory path.
-    private func appending(_ childName: String, toDirectory directoryPath: String) -> String {
-        guard !directoryPath.isEmpty else { return childName }
-        guard directoryPath.last != "/" else { return directoryPath + childName }
-        return directoryPath + "/" + childName
     }
 }

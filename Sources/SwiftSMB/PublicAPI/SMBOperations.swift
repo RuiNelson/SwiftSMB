@@ -65,6 +65,8 @@ extension SMB {
         share: String,
         configuration: Configuration = Configuration(),
     ) throws -> Connection {
+        try validateShareName(share, operation: "smb2_connect_share")
+
         let context = try run {
             try createContext()
         }
@@ -100,7 +102,12 @@ extension SMB {
         defer { destroyContext(context) }
 
         return try run {
-            try ParsedURL(SwiftSMB.parseURL(string, context: context))
+            let parsedURL = try ParsedURL(SwiftSMB.parseURL(string, context: context))
+            try validateShareName(parsedURL.share, operation: "smb2_parse_url")
+            if let path = parsedURL.path {
+                try validatePath(path, operation: "smb2_parse_url", allowRoot: true)
+            }
+            return parsedURL
         }
     }
 

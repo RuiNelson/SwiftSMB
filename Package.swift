@@ -24,6 +24,9 @@ let package = Package(
             targets: ["libsmb2"],
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/RuiNelson/PathWorks.git", from: "1.0.0"),
+    ],
     targets: [
         .target(
             name: "libsmb2",
@@ -54,7 +57,10 @@ let package = Package(
         ),
         .target(
             name: "SwiftSMB",
-            dependencies: ["libsmb2"],
+            dependencies: [
+                "libsmb2",
+                .product(name: "PathWorks", package: "PathWorks"),
+            ],
         ),
         .testTarget(
             name: "SwiftSMBTests",
