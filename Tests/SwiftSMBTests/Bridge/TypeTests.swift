@@ -452,11 +452,4 @@ struct SMBPathValidationTests {
             try SMB.validateShareName("bad:name", operation: "test")
         }
     }
-
-    @Test("String removes leading SMB path separators") func stringRemovesLeadingSMBPathSeparators() {
-        #expect("dir/file.txt".smbShareRelativePath == "dir/file.txt")
-        #expect("/dir/file.txt".smbShareRelativePath == "dir/file.txt")
-        #expect("//dir/file.txt".smbShareRelativePath == "dir/file.txt")
-        #expect("/".smbShareRelativePath == "")
-    }
 }

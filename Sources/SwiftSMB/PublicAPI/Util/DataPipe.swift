@@ -119,7 +119,6 @@ public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
         free.wait()
         let endedNow = state.sync { ended }
         guard !endedNow else {
-            free.signal()
             return
         }
         let idx = tail
@@ -168,6 +167,9 @@ public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
     public func receive<R>(
         _ reader: (UnsafeRawBufferPointer) throws -> R,
     ) rethrows -> R? {
+        if state.sync(execute: { ended && pendingCount == 0 }) {
+            return nil
+        }
         full.wait()
         let claim: (idx: Int, count: Int)? = state.sync {
             guard pendingCount > 0 else { return nil }
@@ -178,7 +180,6 @@ public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
             return (idx, count)
         }
         guard let claim else {
-            full.signal()
             return nil
         }
         defer { free.signal() }
