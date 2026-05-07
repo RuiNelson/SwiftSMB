@@ -8,37 +8,51 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 
 ```text
 .
-├── libsmb2
-├── Package.swift
+├── libsmb2                                   # Git submodule of libsmb2.
+├── Package.swift                             # Swift Package Manager manifest.
 ├── Sources
 │   └── SwiftSMB
-│       ├── Bridge                         # Internal libsmb2 bridge; no public API here.
+│       ├── Bridge                            # Internal libsmb2 bridge; no public API here.
 │       │   ├── Extensions
-│       │   ├── SMB2Bridge.swift           # High-level synchronous POSIX-like bridge calls.
-│       │   ├── SMB2Bridge-ListShares.swift # SRVSVC/DCERPC share enumeration.
-│       │   ├── SMB2Bridge-Notify.swift    # Notification bridge; do not expose publicly yet.
-│       │   ├── SMB2BridgeTypes.swift      # Internal Swift-shaped bridge structs/enums/options.
-│       │   └── SMB2Error.swift            # Bridge errors preserving raw NTSTATUS values.
-│       └── PublicAPI                      # User-facing API, all organized under SMB.
-│           ├── SMB.swift                  # public final class SMB; no public initializers.
-│           ├── SMBOperations.swift        # Static top-level operations: connect/listShares/parseURL.
-│           ├── SMBConfiguration.swift     # Server, credentials, and connection configuration.
-│           ├── SMBConnection.swift        # Connection handle, state, and primitive bridge operations.
-│           ├── SMBConnection-Conv.swift   # Connection convenience methods built from primitives.
-│           ├── SMBFile.swift              # OOP file handle.
-│           ├── SMBFile-Conv.swift         # File convenience methods built from primitives.
-│           ├── SMBDirectory.swift         # OOP directory handle.
-│           ├── SMBDirectory-Conv.swift    # Directory convenience methods built from primitives.
-│           ├── SMBValues.swift            # Public value types.
-│           ├── SMBError.swift             # Public error type.
-│           ├── SMBStatus.swift            # SMB.SMBStatus and SMB.SMBStatusSeverity.
+│       │   │   ├── Int.swift                 # Extensions to `Int`
+│       │   │   └── String?.swift             # Extensions to `String?`
+│       │   ├── SMB2Bridge.swift              # High-level synchronous POSIX-like bridge calls.
+│       │   ├── SMB2Bridge-ListShares.swift   # SRVSVC/DCERPC share enumeration.
+│       │   ├── SMB2Bridge-Notify.swift       # Notification bridge; do not expose publicly yet.
+│       │   ├── SMB2BridgeTypes.swift         # Internal Swift-shaped bridge structs/enums/options.
+│       │   └── SMB2Error.swift               # Bridge errors preserving raw NTSTATUS values.
+│       └── PublicAPI                         # User-facing API, all organized under SMB.
+│           ├── SMB.swift                     # public final class SMB; no public initializers.
+│           ├── SMBOperations.swift           # Static top-level operations: connect/listShares/parseURL.
+│           ├── SMBConfiguration.swift        # Server, credentials, and connection configuration.
+│           ├── SMBConnection.swift           # Connection handle, state, and primitive bridge operations.
+│           ├── SMBConnection-Conv.swift      # Connection convenience methods built from primitives.
+│           ├── SMBConnection-Conv-Pipe.swift # Named-pipe convenience methods.
+│           ├── SMBFile.swift                 # OOP file handle.
+│           ├── SMBFile-Conv.swift            # File convenience methods built from primitives.
+│           ├── SMBDirectory.swift            # OOP directory handle.
+│           ├── SMBDirectory-Conv.swift       # Directory convenience methods built from primitives.
+│           ├── SMBValues.swift               # Public value types.
+│           ├── SMBError.swift                # Public error type.
+│           ├── SMBStatus.swift               # SMB.SMBStatus and SMB.SMBStatusSeverity.
 │           └── Util
-│               └── SMBProtected.swift     # DispatchQueue-backed state wrapper for Sendable handles.
+│               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer
+│               └── SMBProtected.swift        # DispatchQueue-backed state wrapper for Sendable handles.
 ├── Tests
 │   └── SwiftSMBTests
-│       ├── Bridge                         # Bridge tests; most are Samba integration tests.
-│       └── PublicAPI                      # Public API unit tests.
-└── TestServer                             # Docker Samba server for integration tests.
+│       ├── Bridge                            # Bridge tests; most are Samba integration tests.
+│       │   ├── ConnectionTests.swift         # Context configuration and connection lifecycle tests.
+│       │   ├── DirectoryTests.swift          # Directory create, remove, and list tests.
+│       │   ├── FileTests.swift               # File open, read, write, seek, and stat tests.
+│       │   ├── IntegrationSupport.swift      # Shared helpers and server credentials for integration tests.
+│       │   ├── ShareTests.swift              # Share enumeration and info tests.
+│       │   └── TypeTests.swift               # Value types, errors, and enum raw-value unit tests (no server).
+│       ├── PublicAPI                         # Public API unit tests.
+│       │   ├── SMBConnectionPipeTests.swift  # Named-pipe public API tests.
+│       │   └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
+│       └── Utils
+│           └── DataPipeTests.swift           # DataPipe backpressure and ring-buffer unit tests.
+└── TestServer                                # Docker Samba server for integration tests.
 ```
 
 ## Bridge Layer
