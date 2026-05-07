@@ -166,6 +166,48 @@ public extension SMB {
         }
     }
 
+    /// The presence and kind of an item at a share-relative path.
+    enum ItemExistence: Equatable, CustomDebugStringConvertible, Sendable {
+        /// No item exists at the path.
+        case `false`
+
+        /// A regular file exists at the path.
+        case file
+
+        /// A directory exists at the path.
+        case directory
+
+        /// A symbolic link exists at the path.
+        case link
+
+        /// Another kind of item exists at the path.
+        case other
+
+        /// Creates an item existence value from a node type.
+        init(_ nodeType: NodeType) {
+            switch nodeType {
+            case .file:
+                self = .file
+            case .directory:
+                self = .directory
+            case .link:
+                self = .link
+            case .unknown:
+                self = .other
+            }
+        }
+
+        public var debugDescription: String {
+            switch self {
+            case .false: "SMB.ItemExistence.false"
+            case .file: "SMB.ItemExistence.file"
+            case .directory: "SMB.ItemExistence.directory"
+            case .link: "SMB.ItemExistence.link"
+            case .other: "SMB.ItemExistence.other"
+            }
+        }
+    }
+
     /// Metadata for a file, directory, or link.
     struct Stat: Equatable, CustomDebugStringConvertible, Sendable {
         /// The node type.
