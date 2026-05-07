@@ -7,7 +7,6 @@
 //
 
 @testable import SwiftSMB
-import Dispatch
 import Foundation
 import Testing
 
@@ -121,39 +120,39 @@ struct DataPipeTests {
     // MARK: - Backpressure
 
     @Test("send blocks when all slots are full")
-    func sendBlocksWhenFull() {
+    func sendBlocksWhenFull() async throws {
         let pipe = DataPipe(totalCapacity: 4, slotCount: 2)
         pipe.send(Data([0x01]))
         pipe.send(Data([0x02]))
 
-        let sent = DispatchSemaphore(value: 0)
-        Thread.detachNewThread {
+        let sent = Protected(false, label: "SwiftSMBTests.DataPipeTests.sendBlocksWhenFull")
+        Task.detached {
             pipe.send(Data([0x03]))
-            sent.signal()
+            sent.current = true
         }
 
-        #expect(sent.wait(timeout: .now() + .milliseconds(100)) == .timedOut)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(sent.current == false)
         #expect(pipe.receive() == Data([0x01]))
-        #expect(sent.wait(timeout: .now() + .seconds(2)) == .success)
+        #expect(try await eventually { sent.current })
         #expect(pipe.receive() == Data([0x02]))
         #expect(pipe.receive() == Data([0x03]))
     }
 
     @Test("receive blocks until producer sends")
-    func receiveBlocksUntilSend() {
+    func receiveBlocksUntilSend() async throws {
         let pipe = DataPipe(totalCapacity: 4, slotCount: 2)
-        let received = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var got: Data?
+        let got = Protected<Data?>(nil, label: "SwiftSMBTests.DataPipeTests.receiveBlocksUntilSend")
 
-        Thread.detachNewThread {
-            got = pipe.receive()
-            received.signal()
+        Task.detached {
+            got.current = pipe.receive()
         }
 
-        #expect(received.wait(timeout: .now() + .milliseconds(100)) == .timedOut)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(got.current == nil)
         pipe.send(Data([0xEE]))
-        #expect(received.wait(timeout: .now() + .seconds(2)) == .success)
-        #expect(got == Data([0xEE]))
+        #expect(try await eventually { got.current == Data([0xEE]) })
+        #expect(got.current == Data([0xEE]))
     }
 
     // MARK: - endOfProduction
@@ -182,20 +181,38 @@ struct DataPipeTests {
     }
 
     @Test("blocked receive wakes and returns nil on end")
-    func blockedReceiveWakesOnEnd() {
+    func blockedReceiveWakesOnEnd() async throws {
         let pipe = DataPipe(totalCapacity: 4, slotCount: 2)
-        let received = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var got: Data?? = nil
+        let got = Protected<Data??>(nil, label: "SwiftSMBTests.DataPipeTests.blockedReceiveWakesOnEnd")
 
-        Thread.detachNewThread {
-            got = pipe.receive()
-            received.signal()
+        Task.detached {
+            got.current = pipe.receive()
         }
 
-        #expect(received.wait(timeout: .now() + .milliseconds(100)) == .timedOut)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(got.current == nil)
         pipe.endOfProduction()
-        #expect(received.wait(timeout: .now() + .seconds(2)) == .success)
-        #expect(got == .some(nil))
+        #expect(try await eventually { got.current == .some(nil) })
+        #expect(got.current == .some(nil))
+    }
+
+    @Test("blocked send wakes on end")
+    func blockedSendWakesOnEnd() async throws {
+        let pipe = DataPipe(totalCapacity: 2, slotCount: 1)
+        pipe.send(Data([0x01]))
+
+        let sent = Protected(false, label: "SwiftSMBTests.DataPipeTests.blockedSendWakesOnEnd")
+        Task.detached {
+            pipe.send(Data([0x02]))
+            sent.current = true
+        }
+
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(sent.current == false)
+        pipe.endOfProduction()
+        #expect(try await eventually { sent.current })
+        #expect(pipe.receive() == Data([0x01]))
+        #expect(pipe.receive() == nil)
     }
 
     @Test("end with pending slots — consumer drains then nil")
@@ -260,32 +277,50 @@ struct DataPipeTests {
     // MARK: - Producer/consumer integration
 
     @Test("concurrent producer and consumer transfer all data in order")
-    func concurrentProducerConsumerOrdered() {
+    func concurrentProducerConsumerOrdered() async throws {
         let pipe = DataPipe(totalCapacity: 16, slotCount: 4)
-        let sentinel = DispatchSemaphore(value: 0)
+        let completed = Protected(
+            false,
+            label: "SwiftSMBTests.DataPipeTests.concurrentProducerConsumerOrdered.completed",
+        )
         let producerCount = 64
-        nonisolated(unsafe) var received: [UInt8] = []
-        received.reserveCapacity(producerCount)
+        let received = Protected<[UInt8]>([], label: "SwiftSMBTests.DataPipeTests.concurrentProducerConsumerOrdered")
 
-        Thread.detachNewThread {
+        Task.detached {
             while let chunk = pipe.receive() {
-                received.append(contentsOf: chunk)
+                var bytes = received.current
+                bytes.append(contentsOf: chunk)
+                received.current = bytes
             }
-            sentinel.signal()
+            completed.current = true
         }
 
-        Thread.detachNewThread {
+        Task.detached {
             for i in 0 ..< producerCount {
                 pipe.send(Data([UInt8(i)]))
             }
             pipe.endOfProduction()
         }
 
-        #expect(sentinel.wait(timeout: .now() + .seconds(5)) == .success)
-        #expect(received == (0 ..< producerCount).map { UInt8($0) })
+        #expect(try await eventually(timeout: .seconds(5)) { completed.current })
+        #expect(received.current == (0 ..< producerCount).map { UInt8($0) })
     }
 }
 
 private enum TestError: Error {
     case testFailure
+}
+
+private func eventually(
+    timeout: Duration = .seconds(2),
+    _ condition: () -> Bool,
+) async throws -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if condition() {
+            return true
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    return condition()
 }

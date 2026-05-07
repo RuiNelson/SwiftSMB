@@ -87,6 +87,7 @@ public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
             return was
         }
         guard !alreadyEnded else { return }
+        free.signal()
         full.signal()
     }
 
@@ -117,7 +118,10 @@ public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
         precondition(!endedBeforeWait, "Cannot send after endOfProduction")
         free.wait()
         let endedNow = state.sync { ended }
-        precondition(!endedNow, "Cannot send after endOfProduction")
+        guard !endedNow else {
+            free.signal()
+            return
+        }
         let idx = tail
         do {
             try writer(slot(at: idx))

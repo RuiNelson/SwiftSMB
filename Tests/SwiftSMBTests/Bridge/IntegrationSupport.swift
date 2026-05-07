@@ -170,6 +170,12 @@ func writeAllBytesChunked(context: SMB2Context, file: SMB2FileHandle, data: [UIn
     while offset < data.count {
         let chunk = Array(data[offset ..< min(offset + chunkSize, data.count)])
         let n = try writeAllBytesAt(context: context, file: file, data: chunk, offset: UInt64(offset))
+        guard n > 0 else {
+            throw SMB.Error.unknown(
+                operation: "smb2_write",
+                message: "Write made no progress before all test data was written",
+            )
+        }
         offset += n
     }
     return offset

@@ -247,7 +247,7 @@ public extension SMB.Connection {
         let producerError = Protected<Swift.Error?>(nil, label: "SwiftSMB.downloadFile.error")
 
         producer.enter()
-        Thread.detachNewThread {
+        Task.detached {
             defer {
                 pipe.endOfProduction()
                 producer.leave()
@@ -390,7 +390,7 @@ public extension SMB.Connection {
         }
 
         producer.enter()
-        Thread.detachNewThread {
+        Task.detached {
             defer {
                 pipe.endOfProduction()
                 producer.leave()
