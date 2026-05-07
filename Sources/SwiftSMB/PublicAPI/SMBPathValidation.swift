@@ -26,7 +26,17 @@ extension SMB {
         operation: String,
         allowRoot: Bool = false,
     ) throws -> String {
-        let path = path.smbShareRelativePath
+        var pcs = path.pathComponents
+        
+        while let first = pcs.first, first == "." {
+            pcs.removeFirst()
+        }
+        
+        while let last = pcs.last, last == "." {
+            pcs.removeLast()
+        }
+        
+        let path = pcs.path
 
         if allowRoot, path.isEmpty {
             return path
