@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.serialized, .tags(.integration))
 struct SMBConnectionPipeTests {
     @Test("write from pipe stores remote file")
     func writeFromPipeStoresRemoteFile() throws {
