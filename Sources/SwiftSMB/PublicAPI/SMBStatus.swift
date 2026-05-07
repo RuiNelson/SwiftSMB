@@ -1571,6 +1571,15 @@ public extension SMB {
             }
         }
         
+        public var friendlyName: String {
+            let lc = name
+                .replacingOccurrences(of: "SMB2_STATUS_", with: "")
+                .replacingOccurrences(of: "_", with: " ")
+                .lowercased()
+            
+            return lc.prefix(1).uppercased() + lc.dropFirst()
+        }
+        
         public var description: String {
             debugDescription
         }
