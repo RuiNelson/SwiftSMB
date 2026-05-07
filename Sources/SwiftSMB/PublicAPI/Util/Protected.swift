@@ -8,7 +8,7 @@
 
 import Dispatch
 
-final class SMBProtected<Value>: @unchecked Sendable {
+final class Protected<Value>: @unchecked Sendable {
     private let queue: DispatchQueue
     private var value: Value
 

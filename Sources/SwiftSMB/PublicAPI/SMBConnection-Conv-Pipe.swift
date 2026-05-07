@@ -241,9 +241,9 @@ public extension SMB.Connection {
             }
         }
         var cancelled = false
-        let protectedCancelled = SMBProtected(false, label: "SwiftSMB.downloadFile.cancelled")
+        let protectedCancelled = Protected(false, label: "SwiftSMB.downloadFile.cancelled")
         let producer = DispatchGroup()
-        let producerError = SMBProtected<Swift.Error?>(nil, label: "SwiftSMB.downloadFile.error")
+        let producerError = Protected<Swift.Error?>(nil, label: "SwiftSMB.downloadFile.error")
 
         producer.enter()
         Thread.detachNewThread {
@@ -373,9 +373,9 @@ public extension SMB.Connection {
         let target = atomic ? temporaryRemotePath(near: remote) : remote
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
         let pipe = DataPipe(totalCapacity: blockSize * 3, slotCount: 3)
-        let protectedCancelled = SMBProtected(false, label: "SwiftSMB.uploadFile.cancelled")
+        let protectedCancelled = Protected(false, label: "SwiftSMB.uploadFile.cancelled")
         let producer = DispatchGroup()
-        let producerError = SMBProtected<Swift.Error?>(nil, label: "SwiftSMB.uploadFile.error")
+        let producerError = Protected<Swift.Error?>(nil, label: "SwiftSMB.uploadFile.error")
         var cancelled = false
         var shouldRemoveRemoteTemp = atomic
         defer {

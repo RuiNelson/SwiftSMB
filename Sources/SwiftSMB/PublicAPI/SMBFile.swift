@@ -112,7 +112,7 @@ public extension SMB {
         public let path: String
 
         let connection: Connection
-        private let protectedHandle = SMBProtected<SMB2FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
+        private let protectedHandle = Protected<SMB2FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
 
         /// The live bridge file handle, if the file is still open.
         private var handle: SMB2FileHandle? {
