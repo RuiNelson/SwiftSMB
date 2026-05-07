@@ -11,7 +11,7 @@ import SMB2
 /// Creates a new libsmb2 context.
 func createContext() throws -> SMB2Context {
     guard let raw = smb2_init_context() else {
-        throw SMB2Error.contextCreationFailed
+        throw SMB.Error.contextCreationFailed
     }
 
     return SMB2Context(raw: raw)
@@ -142,7 +142,7 @@ func parseURL(_ url: String, context: SMB2Context) throws -> SMB2URL {
     let rawURL = url.withCString { smb2_parse_url(context.raw, $0) }
 
     guard let rawURL else {
-        throw SMB2Error.from(context, operation: "smb2_parse_url")
+        throw SMB.Error.fromBridge(context, operation: "smb2_parse_url")
     }
 
     defer { smb2_destroy_url(rawURL) }
@@ -158,7 +158,7 @@ func open(
     let rawHandle = path.withCString { smb2_open(context.raw, $0, flags.rawValue) }
 
     guard let rawHandle else {
-        throw SMB2Error.from(context, operation: "smb2_open")
+        throw SMB.Error.fromBridge(context, operation: "smb2_open")
     }
 
     return SMB2FileHandle(raw: rawHandle)
@@ -262,7 +262,7 @@ func seek(
     var currentOffset: UInt64 = 0
     let status = smb2_lseek(context.raw, file.raw, offset, whence, &currentOffset)
     guard status >= 0 else {
-        throw SMB2Error.from(context, operation: "smb2_lseek", status: Int32(clamping: status))
+        throw SMB.Error.fromBridge(context, operation: "smb2_lseek", status: Int32(clamping: status))
     }
 
     return currentOffset
@@ -344,7 +344,7 @@ func readLink(
     bufferSize: Int = 4096,
 ) throws -> String {
     guard bufferSize > 0 else {
-        throw SMB2Error.invalidArgument(
+        throw SMB.Error.invalidArgument(
             operation: "smb2_readlink",
             message: "Buffer size must be greater than zero",
         )
@@ -369,7 +369,7 @@ func openDir(context: SMB2Context, path: String) throws -> SMB2DirectoryHandle {
     let rawDirectory = path.withCString { smb2_opendir(context.raw, $0) }
 
     guard let rawDirectory else {
-        throw SMB2Error.from(context, operation: "smb2_opendir")
+        throw SMB.Error.fromBridge(context, operation: "smb2_opendir")
     }
 
     return SMB2DirectoryHandle(raw: rawDirectory)

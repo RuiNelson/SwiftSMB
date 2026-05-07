@@ -37,7 +37,7 @@ struct StatTests {
 
     @Test("stat non existent path throws") func statNonExistentPathThrows() throws {
         try withPublicShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try fileStatistics(context: ctx, path: "nonexistent_\(uniquePath())")
             }
         }
@@ -174,7 +174,7 @@ struct FileReadTests {
 
     @Test("open non existent file throws") func openNonExistentFileThrows() throws {
         try withPublicShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try open(context: ctx, path: "nonexistent_\(uniquePath()).txt")
             }
         }
@@ -302,7 +302,7 @@ struct FileWriteTests {
 
             try rename(context: ctx, oldPath: oldPath, newPath: newPath)
 
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try fileStatistics(context: ctx, path: oldPath)
             }
 
@@ -340,7 +340,7 @@ struct FileWriteTests {
 
             try unlink(context: ctx, path: path)
 
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try fileStatistics(context: ctx, path: path)
             }
         }
@@ -348,7 +348,7 @@ struct FileWriteTests {
 
     @Test("unlink non existent file throws") func unlinkNonExistentFileThrows() throws {
         try withPublicShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try unlink(context: ctx, path: "nonexistent_\(uniquePath()).txt")
             }
         }
@@ -356,7 +356,7 @@ struct FileWriteTests {
 
     @Test("write to readonly share throws") func writeToReadonlyShareThrows() throws {
         try withReadonlyShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try open(
                     context: ctx,
                     path: uniquePath("file") + ".txt",
@@ -387,7 +387,7 @@ struct SymlinkTests {
 
     @Test("read link on regular file throws") func readLinkOnRegularFileThrows() throws {
         try withPublicShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try readLink(context: ctx, path: TestContent.helloPath)
             }
         }

@@ -32,6 +32,19 @@ public extension SMB {
         /// An error occurred without a more specific classification.
         case unknown(operation: String, message: String)
 
+        var posixErrorLocalizedDescription: String? {
+            switch self {
+            case let .posix(code, operation: _, message: _):
+                guard let posixErrorCode = POSIXErrorCode(rawValue: code) else {
+                    return nil
+                }
+
+                return POSIXError(posixErrorCode).localizedDescription
+            default:
+                return nil
+            }
+        }
+
         /// A human-readable description of the error.
         public var description: String {
             switch self {
@@ -40,7 +53,11 @@ public extension SMB {
             case let .invalidArgument(operation, message):
                 return Self.describe("Invalid argument", operation: operation, message: message)
             case let .posix(code, operation, message):
-                return Self.describe("POSIX error errno=\(code)", operation: operation, message: message)
+                var label = "POSIX error errno=\(code)"
+                if let posixErrorLocalizedDescription {
+                    label += " (\(posixErrorLocalizedDescription))"
+                }
+                return Self.describe(label, operation: operation, message: message)
             case let .unknownPOSIX(code, operation, message):
                 return Self.describe("Unknown POSIX error errno=\(code)", operation: operation, message: message)
             case let .ntStatus(status, posixCode, operation, message):
@@ -65,33 +82,33 @@ public extension SMB {
             description
         }
 
-        /// Creates a public error from a bridge error.
-        init(_ bridgeError: SMB2Error) {
-            switch bridgeError {
+        /// The bridge operation that produced this error, if available.
+        public var operation: String? {
+            switch self {
             case .contextCreationFailed:
-                self = .contextCreationFailed
-            case let .invalidArgument(context):
-                self = .invalidArgument(operation: context.operation, message: context.message)
-            case let .posix(error, context):
-                self = .posix(code: error.code.rawValue, operation: context.operation, message: context.message)
-            case let .unknownPOSIX(code, context):
-                self = .unknownPOSIX(code: code, operation: context.operation, message: context.message)
-            case let .ntStatus(status, posixCode, context):
-                self = .ntStatus(
-                    status,
-                    posixCode: posixCode,
-                    operation: context.operation,
-                    message: context.message,
-                )
-            case let .unknownNTStatus(rawValue, posixCode, context):
-                self = .unknownNTStatus(
-                    rawValue: rawValue,
-                    posixCode: posixCode,
-                    operation: context.operation,
-                    message: context.message,
-                )
-            case let .unknown(context):
-                self = .unknown(operation: context.operation, message: context.message)
+                nil
+            case let .invalidArgument(operation, _),
+                 let .posix(_, operation, _),
+                 let .unknownPOSIX(_, operation, _),
+                 let .ntStatus(_, _, operation, _),
+                 let .unknownNTStatus(_, _, operation, _),
+                 let .unknown(operation, _):
+                operation
+            }
+        }
+
+        /// The human-readable detail message from the bridge, if available.
+        public var message: String? {
+            switch self {
+            case .contextCreationFailed:
+                nil
+            case let .invalidArgument(_, message),
+                 let .posix(_, _, message),
+                 let .unknownPOSIX(_, _, message),
+                 let .ntStatus(_, _, _, message),
+                 let .unknownNTStatus(_, _, _, message),
+                 let .unknown(_, message):
+                message
             }
         }
 

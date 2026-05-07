@@ -113,7 +113,7 @@ struct DirectoryTests {
 
             try removeDir(context: ctx, path: path)
 
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try fileStatistics(context: ctx, path: path)
             }
         }
@@ -121,7 +121,7 @@ struct DirectoryTests {
 
     @Test("removing non existent directory throws") func removingNonExistentDirectoryThrows() throws {
         try withPublicShare { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try removeDir(context: ctx, path: "nonexistent_\(uniquePath())")
             }
         }

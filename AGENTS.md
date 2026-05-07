@@ -20,7 +20,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │       │   ├── SMB2Bridge-ListShares.swift   # SRVSVC/DCERPC share enumeration.
 │       │   ├── SMB2Bridge-Notify.swift       # Notification bridge; do not expose publicly yet.
 │       │   ├── SMB2BridgeTypes.swift         # Internal Swift-shaped bridge structs/enums/options.
-│       │   └── SMB2Error.swift               # Bridge errors preserving raw NTSTATUS values.
+│       │   └── SMBError+Bridge.swift         # SMB.Error bridge factory and check() helper.
 │       └── PublicAPI                         # User-facing API, all organized under SMB.
 │           ├── SMB.swift                     # public final class SMB; no public initializers.
 │           ├── SMBOperations.swift           # Static top-level operations: connect/listShares/parseURL.
@@ -37,7 +37,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │           ├── SMBStatus.swift               # SMB.SMBStatus and SMB.SMBStatusSeverity.
 │           └── Util
 │               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer
-│               └── SMBProtected.swift        # DispatchQueue-backed state wrapper for Sendable handles.
+│               └── Protected.swift           # DispatchQueue-backed state wrapper for Sendable handles.
 ├── Tests
 │   └── SwiftSMBTests
 │       ├── Bridge                            # Bridge tests; most are Samba integration tests.

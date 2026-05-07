@@ -87,7 +87,7 @@ struct URLParsingTests {
 
     @Test("invalid URL throws") func invalidURLThrows() throws {
         try withFreshContext { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try parseURL("not-an-smb-url", context: ctx)
             }
         }
@@ -157,7 +157,7 @@ struct ConnectionTests {
         try withFreshContext { ctx in
             setUser(TestCredentials.user, on: ctx)
             setPassword("wrong_password", on: ctx)
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try connectShare(context: ctx, server: testServerHost, share: TestShare.private)
             }
         }
@@ -165,7 +165,7 @@ struct ConnectionTests {
 
     @Test("non existent share throws") func nonExistentShareThrows() throws {
         try withFreshContext { ctx in
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try connectShare(context: ctx, server: testServerHost, share: "doesnotexist")
             }
         }
@@ -249,7 +249,7 @@ struct ConnectionTests {
     @Test("set seal true requires encryption") func setSealTrueRequiresEncryption() throws {
         try withFreshContext { ctx in
             setSeal(true, on: ctx)
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
             }
         }
@@ -266,7 +266,7 @@ struct ConnectionTests {
     @Test("set sign true requires signing") func setSignTrueRequiresSigning() throws {
         try withFreshContext { ctx in
             setSign(true, on: ctx)
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try connectShare(context: ctx, server: testServerHost, share: TestShare.public)
             }
         }
