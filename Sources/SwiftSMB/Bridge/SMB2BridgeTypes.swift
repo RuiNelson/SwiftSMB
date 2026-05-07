@@ -341,7 +341,7 @@ struct SMB2NotifyChange: Equatable {
     }
 }
 
-typealias SMB2NotifyChangeHandler = (Result<[SMB2NotifyChange], SMB2Error>) -> Void
+typealias SMB2NotifyChangeHandler = (Result<[SMB2NotifyChange], SMB.Error>) -> Void
 
 struct SMB2URL: Equatable {
     let domain: String?

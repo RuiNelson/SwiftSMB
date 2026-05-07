@@ -256,7 +256,7 @@ struct IntExtensionTests {
     }
 
     @Test("negative throws") func negativeThrows() {
-        #expect(throws: SMB2Error.self) {
+        #expect(throws: SMB.Error.self) {
             try (-1).asUInt32(operation: "test")
         }
     }
@@ -264,7 +264,7 @@ struct IntExtensionTests {
     @Test("int max throws on 64 bit") func intMaxThrowsOn64Bit() {
         // Int.max (9223372036854775807) exceeds UInt32.max on 64-bit platforms
         if Int.max > Int(UInt32.max) {
-            #expect(throws: SMB2Error.self) {
+            #expect(throws: SMB.Error.self) {
                 try Int.max.asUInt32(operation: "test")
             }
         }
@@ -275,8 +275,8 @@ struct IntExtensionTests {
             _ = try (-5).asUInt32(operation: "my_operation")
             Issue.record("Expected error to be thrown")
         }
-        catch let error as SMB2Error {
-            #expect(error.context?.operation == "my_operation")
+        catch let error as SMB.Error {
+            #expect(error.operation == "my_operation")
         }
     }
 }
@@ -377,44 +377,42 @@ struct SMB2ShareEnumerationLevelTests {
     }
 }
 
-// MARK: - SMB2Error
+// MARK: - SMB.Error
 
-struct SMB2ErrorTests {
-    @Test("contextCreationFailed has no context") func contextcreationfailedHasNoContext() {
-        let error = SMB2Error.contextCreationFailed
-        #expect(error.context == nil)
-        #expect(error.description == "Failed to create SMB2 context")
+struct SMBErrorTests {
+    @Test("contextCreationFailed has no operation") func contextcreationfailedHasNoOperation() {
+        let error = SMB.Error.contextCreationFailed
+        #expect(error.operation == nil)
+        #expect(error.description == "Failed to create SMB context")
     }
 
-    @Test("invalidArgument has context") func invalidargumentHasContext() {
-        let ctx = SMB2ErrorContext(operation: "test_op", message: "bad input")
-        let error = SMB2Error.invalidArgument(ctx)
-        #expect(error.context?.operation == "test_op")
-        #expect(error.context?.message == "bad input")
+    @Test("invalidArgument has operation and message") func invalidargumentHasOperationAndMessage() {
+        let error = SMB.Error.invalidArgument(operation: "test_op", message: "bad input")
+        #expect(error.operation == "test_op")
+        #expect(error.message == "bad input")
         #expect(error.description.contains("Invalid argument"))
         #expect(error.description.contains("test_op"))
         #expect(error.description.contains("bad input"))
     }
 
-    @Test("posix error has context") func posixErrorHasContext() {
-        let ctx = SMB2ErrorContext(operation: "smb2_open", message: "detail")
-        let error = SMB2Error.posix(POSIXError(.EPERM), context: ctx)
-        #expect(error.context?.operation == "smb2_open")
+    @Test("posix error has operation") func posixErrorHasOperation() {
+        let error = SMB.Error.posix(code: POSIXErrorCode.EPERM.rawValue, operation: "smb2_open", message: "detail")
+        #expect(error.operation == "smb2_open")
+        #expect(error.posixErrorLocalizedDescription == POSIXError(.EPERM).localizedDescription)
         #expect(error.description.contains("POSIX error"))
+        #expect(error.description.contains(POSIXError(.EPERM).localizedDescription))
         #expect(error.description.contains("smb2_open"))
     }
 
-    @Test("unknown error has context") func unknownErrorHasContext() {
-        let ctx = SMB2ErrorContext(operation: "smb2_connect", message: "")
-        let error = SMB2Error.unknown(ctx)
-        #expect(error.context?.operation == "smb2_connect")
-        #expect(error.description.contains("Unknown SMB2 error"))
+    @Test("unknown error has operation") func unknownErrorHasOperation() {
+        let error = SMB.Error.unknown(operation: "smb2_connect", message: "")
+        #expect(error.operation == "smb2_connect")
+        #expect(error.description.contains("Unknown SMB error"))
     }
 
-    @Test("ntStatus error has context") func ntstatusErrorHasContext() {
-        let ctx = SMB2ErrorContext(operation: "smb2_stat", message: "")
-        let error = SMB2Error.ntStatus(.noSuchFile, posixCode: nil, context: ctx)
-        #expect(error.context?.operation == "smb2_stat")
+    @Test("ntStatus error has operation") func ntstatusErrorHasOperation() {
+        let error = SMB.Error.ntStatus(.noSuchFile, posixCode: nil, operation: "smb2_stat", message: "")
+        #expect(error.operation == "smb2_stat")
         #expect(error.description.contains("SMB2_STATUS_NO_SUCH_FILE"))
     }
 }

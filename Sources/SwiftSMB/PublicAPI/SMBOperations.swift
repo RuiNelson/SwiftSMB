@@ -153,16 +153,8 @@ extension SMB {
         }
     }
 
-    /// Converts bridge errors into public API errors.
+    /// Runs a throwing bridge operation.
     static func run<T>(_ body: () throws -> T) throws -> T {
-        do {
-            return try body()
-        }
-        catch let error as SMB2Error {
-            throw Error(error)
-        }
-        catch {
-            throw error
-        }
+        try body()
     }
 }

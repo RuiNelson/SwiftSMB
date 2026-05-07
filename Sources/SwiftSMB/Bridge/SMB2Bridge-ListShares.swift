@@ -37,7 +37,7 @@ func listSharesOnConnectedIPCShare(
     level: SMB2ShareEnumerationLevel = .detailed,
 ) throws -> [SMB2Share] {
     guard let response = smb2_share_enum_sync(context.raw, level.rawValue) else {
-        throw SMB2Error.from(context, operation: "smb2_share_enum_sync")
+        throw SMB.Error.fromBridge(context, operation: "smb2_share_enum_sync")
     }
 
     defer { smb2_free_data(context.raw, response) }
@@ -48,7 +48,7 @@ func listSharesOnConnectedIPCShare(
     case UInt32(SHARE_INFO_1.rawValue):
         return shares(from: response.pointee.ses.ShareInfo.Level1)
     default:
-        throw SMB2Error.invalidArgument(
+        throw SMB.Error.invalidArgument(
             operation: "smb2_share_enum_sync",
             message: "Unsupported share enumeration level \(response.pointee.ses.Level)",
         )

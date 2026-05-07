@@ -95,7 +95,7 @@ func notifyChange(
     handler: @escaping SMB2NotifyChangeHandler,
 ) throws -> SMB2PendingRequest {
     guard let fileID = smb2_get_file_id(directory.raw) else {
-        throw SMB2Error.invalidArgument(
+        throw SMB.Error.invalidArgument(
             operation: "smb2_get_file_id",
             message: "Directory file handle does not have a file id",
         )
@@ -120,7 +120,7 @@ func notifyChange(
         callbackData,
     ) else {
         Unmanaged<SMB2PendingRequestState>.fromOpaque(callbackData).release()
-        throw SMB2Error.from(context, operation: "smb2_cmd_change_notify_async")
+        throw SMB.Error.fromBridge(context, operation: "smb2_cmd_change_notify_async")
     }
 
     state.didCreateRequest(raw: rawPDU, callbackData: callbackData)
@@ -216,10 +216,10 @@ private let notifyChangeCallback: smb2_command_cb = { rawContext, status, comman
     }
 
     guard let rawContext else {
-        handler(.failure(.unknown(SMB2ErrorContext(
+        handler(.failure(.unknown(
             operation: state.operation,
             message: "Missing SMB2 context in callback",
-        ))))
+        )))
         return
     }
 
@@ -241,7 +241,7 @@ private let notifyChangeCallback: smb2_command_cb = { rawContext, status, comman
 private func decodeNotifyChanges(
     context: SMB2Context,
     commandData: UnsafeMutableRawPointer,
-) -> Result<[SMB2NotifyChange], SMB2Error> {
+) -> Result<[SMB2NotifyChange], SMB.Error> {
     let reply = commandData.assumingMemoryBound(to: smb2_change_notify_reply.self).pointee
 
     guard reply.output_buffer_length > 0, let output = reply.output else {
@@ -249,10 +249,10 @@ private func decodeNotifyChanges(
     }
 
     guard let allocatedChange = calloc(1, MemoryLayout<smb2_file_notify_change_information>.stride) else {
-        return .failure(.invalidArgument(SMB2ErrorContext(
+        return .failure(.invalidArgument(
             operation: "smb2_decode_filenotifychangeinformation",
             message: "Failed to allocate file notify change information",
-        )))
+        ))
     }
 
     let firstChange = allocatedChange.assumingMemoryBound(to: smb2_file_notify_change_information.self)
@@ -264,7 +264,7 @@ private func decodeNotifyChanges(
     let status = smb2_decode_filenotifychangeinformation(context.raw, firstChange, &vector, 0)
     guard status == 0 else {
         free_smb2_file_notify_change_information(context.raw, firstChange)
-        return .failure(SMB2Error.from(
+        return .failure(SMB.Error.fromBridge(
             context,
             operation: "smb2_decode_filenotifychangeinformation",
             status: Int32(status),
@@ -279,16 +279,13 @@ private func notifyChangeError(
     context: SMB2Context,
     status: Int32,
     operation: String,
-) -> SMB2Error {
+) -> SMB.Error {
     let rawStatus = UInt32(bitPattern: status)
-    let errorContext = SMB2ErrorContext(
-        operation: operation,
-        message: smb2_get_error(context.raw).map(String.init(cString:)) ?? "",
-    )
+    let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""
 
     if let knownStatus = SMB.SMBStatus(rawValue: rawStatus) {
-        return .ntStatus(knownStatus, posixCode: nil, context: errorContext)
+        return .ntStatus(knownStatus, posixCode: nil, operation: operation, message: message)
     }
 
-    return .unknownNTStatus(rawValue: rawStatus, posixCode: nil, context: errorContext)
+    return .unknownNTStatus(rawValue: rawStatus, posixCode: nil, operation: operation, message: message)
 }
