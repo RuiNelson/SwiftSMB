@@ -54,6 +54,7 @@ public extension SMB.Connection {
     /// - Returns: The file contents.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
     func readFile(at path: String, chunkSize: Int? = nil) throws -> Data {
+        let path = try SMB.validatePath(path, operation: "SMB.Connection.readFile")
         let file = try openFile(at: path)
         defer { try? file.close() }
         return try file.readToEnd(chunkSize: chunkSize)
@@ -77,6 +78,7 @@ public extension SMB.Connection {
         options: SMB.File.OpenOptions = [.create, .truncate],
         chunkSize: Int? = nil,
     ) throws {
+        let path = try SMB.validatePath(path, operation: "SMB.Connection.writeFile")
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
         defer { try? file.close() }
         _ = try file.writeAll(data, chunkSize: chunkSize)
@@ -88,6 +90,7 @@ public extension SMB.Connection {
     /// - Returns: The directory entries returned by the server.
     /// - Throws: ``SMB/Error`` if the directory cannot be opened or read.
     func listDirectory(at path: String = "") throws -> [SMB.DirectoryEntry] {
+        let path = try SMB.validatePath(path, operation: "SMB.Connection.listDirectory", allowRoot: true)
         let directory = try openDirectory(at: path)
         defer { directory.close() }
         return try directory.readAll()
@@ -102,12 +105,7 @@ public extension SMB.Connection {
     /// - Parameter path: The path to remove, relative to the share root.
     /// - Throws: ``SMB/Error`` if the path cannot be inspected or removed.
     func removeItem(at path: String) throws {
-        guard !path.isEmpty, path != ".", path != "/" else {
-            throw SMB.Error.invalidArgument(
-                operation: "SMB.Connection.removeItem",
-                message: "Refusing to remove the share root",
-            )
-        }
+        let path = try SMB.validatePath(path, operation: "SMB.Connection.removeItem", allowRoot: false)
 
         let entryStat = try stat(at: path)
         guard entryStat.type == .directory else {
