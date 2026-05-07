@@ -416,3 +416,47 @@ struct SMBErrorTests {
         #expect(error.description.contains("SMB2_STATUS_NO_SUCH_FILE"))
     }
 }
+
+// MARK: - Path validation
+
+struct SMBPathValidationTests {
+    @Test("validates share relative paths using PathWorks") func validatesShareRelativePathsUsingPathworks() throws {
+        #expect(try SMB.validatePath("dir/file.txt", operation: "test") == "dir/file.txt")
+        #expect(try SMB.validatePath("/dir/file.txt", operation: "test") == "dir/file.txt")
+        #expect(try SMB.validatePath("//dir/file.txt", operation: "test") == "dir/file.txt")
+        #expect(try SMB.validatePath("", operation: "test", allowRoot: true) == "")
+        #expect(try SMB.validatePath("/", operation: "test", allowRoot: true) == "")
+
+        #expect(throws: SMB.Error.self) {
+            try SMB.validatePath("dir/bad:name.txt", operation: "test")
+        }
+        #expect(throws: SMB.Error.self) {
+            try SMB.validatePath("dir/CON.txt", operation: "test")
+        }
+        #expect(throws: SMB.Error.self) {
+            try SMB.validatePath("", operation: "test")
+        }
+    }
+
+    @Test("validates share names using PathWorks") func validatesShareNamesUsingPathworks() throws {
+        try SMB.validateShareName("public", operation: "test")
+        try SMB.validateShareName("IPC$", operation: "test")
+
+        #expect(throws: SMB.Error.self) {
+            try SMB.validateShareName("", operation: "test")
+        }
+        #expect(throws: SMB.Error.self) {
+            try SMB.validateShareName("public/private", operation: "test")
+        }
+        #expect(throws: SMB.Error.self) {
+            try SMB.validateShareName("bad:name", operation: "test")
+        }
+    }
+
+    @Test("String removes leading SMB path separators") func stringRemovesLeadingSMBPathSeparators() {
+        #expect("dir/file.txt".smbShareRelativePath == "dir/file.txt")
+        #expect("/dir/file.txt".smbShareRelativePath == "dir/file.txt")
+        #expect("//dir/file.txt".smbShareRelativePath == "dir/file.txt")
+        #expect("/".smbShareRelativePath == "")
+    }
+}

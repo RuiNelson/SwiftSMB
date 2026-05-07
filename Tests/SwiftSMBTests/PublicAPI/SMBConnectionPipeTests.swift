@@ -35,6 +35,20 @@ struct SMBConnectionPipeTests {
         #expect(progress.last == 4)
     }
 
+    @Test("leading slash in remote path is ignored")
+    func leadingSlashInRemotePathIsIgnored() throws {
+        let connection = try publicConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("leading-slash") + ".txt"
+        defer { try? connection.removeFile(at: path) }
+
+        try connection.writeFile(Data("ok".utf8), to: "/" + path)
+
+        #expect(try connection.readFile(at: path) == Data("ok".utf8))
+        #expect(try connection.readFile(at: "/" + path) == Data("ok".utf8))
+    }
+
     @Test("read to pipe transfers remote file")
     func readToPipeTransfersRemoteFile() throws {
         let connection = try publicConnection()

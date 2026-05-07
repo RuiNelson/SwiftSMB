@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import PathWorks
 
 public extension SMB.Connection {
     /// The starting position for a file transfer.
@@ -576,8 +577,8 @@ private extension SMB.Connection {
     /// Builds a temporary remote path beside the final destination.
     func temporaryRemotePath(near remote: String) -> String {
         let name = UUID().uuidString + ".tmp"
-        guard let slash = remote.lastIndex(of: "/") else { return name }
-        return String(remote[..<remote.index(after: slash)]) + name
+        let directory = remote.removingLastPathComponent
+        return directory.isEmpty ? name : directory.appendingPathComponent(name)
     }
 
     /// Copies a remote prefix when preparing an atomic resumed upload.
