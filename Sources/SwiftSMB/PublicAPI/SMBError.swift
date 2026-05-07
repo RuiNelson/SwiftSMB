@@ -47,7 +47,7 @@ public extension SMB {
         }
 
         /// A human-readable description of the error.
-        public var description: String {
+        public var debugDescription: String {
             switch self {
             case .contextCreationFailed:
                 return "Failed to create SMB context"
@@ -78,8 +78,8 @@ public extension SMB {
             }
         }
         
-        public var debugDescription: String {
-            description
+        public var description: String {
+            debugDescription
         }
 
         /// A localized description of the error.
