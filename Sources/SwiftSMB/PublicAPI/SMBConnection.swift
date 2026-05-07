@@ -8,6 +8,7 @@
 
 import Dispatch
 import Foundation
+import PathWorks
 
 public extension SMB {
     /// An open connection to an SMB share.
@@ -178,10 +179,38 @@ public extension SMB {
 
         /// Creates a directory.
         ///
-        /// - Parameter path: The directory path, relative to the share root.
+        /// - Parameters:
+        ///   - path: The directory path, relative to the share root.
+        ///   - makePath: A Boolean value indicating whether to create missing
+        ///     ancestor directories before creating `path`.
         /// - Throws: ``SMB/Error`` if the directory cannot be created.
-        public func makeDirectory(at path: String) throws {
+        public func makeDirectory(at path: String, makePath: Bool = false) throws {
             let path = try SMB.validatePath(path, operation: "smb2_mkdir")
+            
+            if makePath {
+                // check if directory is in the root of the share
+                guard path.pathComponents.count > 1 else {
+                    try makeDirectory(at: path, makePath: false)
+                    return
+                }
+                
+                // create previous directory if it doesn't exist
+                let previous = path.removingLastPathComponent
+                
+                switch try itemExists(at: previous) {
+                case .false:
+                    try makeDirectory(at: previous, makePath: true)
+                case .directory:
+                    break
+                case .file, .link, .other:
+                    throw SMB.Error.posix(
+                        code: POSIXErrorCode.EEXIST.rawValue,
+                        operation: "SMB.Connection.makeDirectory",
+                        message: "Path component already exists and is not a directory",
+                    )
+                }
+            }
+            
             let context = try requireContext(operation: "smb2_mkdir")
             try SMB.run {
                 try SwiftSMB.makeDir(context: context, path: path)
@@ -297,6 +326,51 @@ public extension SMB {
 
         public var debugDescription: String {
             "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected))"
+        }
+
+        /// Returns whether an item exists at a path, and what kind of item it is.
+        ///
+        /// This method returns ``SMB/ItemExistence/false`` when the server reports
+        /// that `path` does not exist. When an item exists, the result describes
+        /// the node kind reported by the server.
+        ///
+        /// A leading `/` in `path` is ignored, so `"/folder"` is treated as
+        /// `"folder"` relative to the connected share root.
+        ///
+        /// - Parameter path: The item path to inspect, relative to the share root.
+        /// - Returns: The existence and kind of the item at `path`.
+        /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be
+        ///   read, or `path` is invalid.
+        public func itemExists(at path: String) throws -> SMB.ItemExistence {
+            do {
+                let stat = try stat(at: path)
+                return SMB.ItemExistence(stat.type)
+            }
+            catch let error as SMB.Error {
+                if error.isPathNotFound {
+                    return .false
+                }
+                else {
+                    throw error
+                }
+            }
+            catch {
+                throw error
+            }
+        }
+    }
+}
+
+private extension SMB.Error {
+    /// A Boolean value indicating whether the error represents a missing path.
+    var isPathNotFound: Bool {
+        switch self {
+        case let .ntStatus(status, _, _, _):
+            status == .noSuchFile || status == .objectNameNotFound
+        case let .posix(code, _, _):
+            code == POSIXErrorCode.ENOENT.rawValue
+        default:
+            false
         }
     }
 }
