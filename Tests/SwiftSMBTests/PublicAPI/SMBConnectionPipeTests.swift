@@ -53,6 +53,22 @@ struct SMBConnectionPipeTests {
         }
     }
 
+    @Test("write from pipe requires start package")
+    func writeFromPipeRequiresStartPackage() throws {
+        let connection = try publicConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("pipe-missing-start") + ".bin"
+
+        let pipe = DataPipe(maxPackages: 2, label: "SwiftSMBTests.SMBConnectionPipeTests.missingStart")
+        pipe.send(.data(Data([0x01])))
+        pipe.send(.finish)
+
+        #expect(throws: (any Error).self) {
+            try connection.write(fromPipe: pipe, toFile: path) { _, _, _ in true }
+        }
+    }
+
     @Test("leading slash in remote path is ignored")
     func leadingSlashInRemotePathIsIgnored() throws {
         let connection = try publicConnection()
@@ -169,6 +185,27 @@ struct SMBConnectionPipeTests {
         #expect(try connection.readFile(at: remote) == expected)
         #expect(progress.last == UInt64(expected.count))
         #expect(latestSpeeds.last == 0)
+    }
+
+    @Test("atomic upload replaces existing remote file")
+    func atomicUploadReplacesExistingRemoteFile() throws {
+        let connection = try publicConnection()
+        defer { try? connection.disconnect() }
+
+        let remote = uniquePath("upload-replace") + ".bin"
+        defer { try? connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        try connection.writeFile(Data([0xAA, 0xBB, 0xCC]), to: remote)
+
+        let expected = Data((0 ..< 11).map { UInt8(80 + $0) })
+        try expected.write(to: local)
+
+        try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { _, _, _, _ in true }
+
+        #expect(try connection.readFile(at: remote) == expected)
     }
 
     @Test("download file writes local file")

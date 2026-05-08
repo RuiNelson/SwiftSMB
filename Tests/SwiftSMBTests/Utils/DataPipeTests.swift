@@ -76,6 +76,16 @@ struct DataPipeTests {
         #expect(pipe.receive(timeOut: nil) == .broken)
     }
 
+    @Test("pipe can deinitialize with undrained packages")
+    func deinitializeWithUndrainedPackages() {
+        do {
+            let pipe = DataPipe(maxPackages: 2, label: "SwiftSMBTests.DataPipeTests.undrained")
+
+            pipe.send(.data(Data([0x01])))
+            pipe.send(.finish)
+        }
+    }
+
     @Test("concurrent producer and consumer transfer all data in order")
     func concurrentProducerConsumerOrdered() async throws {
         let pipe = DataPipe(maxPackages: 4, label: "SwiftSMBTests.DataPipeTests.concurrent")

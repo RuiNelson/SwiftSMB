@@ -56,6 +56,22 @@ public final class DataPipe: @unchecked Sendable {
         isFull = .init(value: maxPackages)
     }
 
+    deinit {
+        // Balance semaphores when a consumer stops early and packages remain
+        // queued. libdispatch traps if a semaphore is deallocated below its
+        // original value, even though the queue itself is going away.
+        let pendingPackages = queueSync.sync {
+            let count = queue.count
+            queue.removeAll(keepingCapacity: false)
+            return count
+        }
+
+        for _ in 0 ..< pendingPackages {
+            _ = packagesSemaphore.wait(timeout: .now())
+            isFull.signal()
+        }
+    }
+
     private func push(_ package: Package) {
         queueSync.sync {
             queue.append(package)
