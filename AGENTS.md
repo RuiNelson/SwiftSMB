@@ -18,7 +18,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │       │   │   └── String?.swift             # Extensions to `String?`
 │       │   ├── SMB2Bridge.swift              # High-level synchronous POSIX-like bridge calls.
 │       │   ├── SMB2Bridge-ListShares.swift   # SRVSVC/DCERPC share enumeration.
-│       │   ├── SMB2Bridge-Notify.swift       # Notification bridge; do not expose publicly yet.
+│       │   ├── SMB2Bridge-Notify.swift       # One-shot cancellable SMB change-notify bridge.
 │       │   ├── SMB2BridgeTypes.swift         # Internal Swift-shaped bridge structs/enums/options.
 │       │   └── SMBError+Bridge.swift         # SMB.Error bridge factory and check() helper.
 │       └── PublicAPI                         # User-facing API, all organized under SMB.
@@ -32,11 +32,16 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │           ├── SMBFile-Conv.swift            # File convenience methods built from primitives.
 │           ├── SMBDirectory.swift            # OOP directory handle.
 │           ├── SMBDirectory-Conv.swift       # Directory convenience methods built from primitives.
+│           ├── SMBNotify.swift               # Delegate-based public SMB directory notifications.
 │           ├── SMBValues.swift               # Public value types.
 │           ├── SMBError.swift                # Public error type.
+│           ├── SMBError-InvalidArgument.swift # Typed invalid-argument operations and causes.
+│           ├── SMBPathValidation.swift       # Share-name and share-relative path validation.
 │           ├── SMBStatus.swift               # SMB.SMBStatus and SMB.SMBStatusSeverity.
 │           └── Util
 │               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer
+│               ├── Date+.swift               # Date helpers for SMB timestamp values.
+│               ├── OptionSet+DebugDescription.swift # Shared debug formatting helpers.
 │               └── Protected.swift           # DispatchQueue-backed state wrapper for Sendable handles.
 ├── Tests
 │   └── SwiftSMBTests
@@ -48,7 +53,9 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │       │   ├── ShareTests.swift              # Share enumeration and info tests.
 │       │   └── TypeTests.swift               # Value types, errors, and enum raw-value unit tests (no server).
 │       ├── PublicAPI                         # Public API unit tests.
+│       │   ├── SMBConnectionDirectoryTests.swift # Directory convenience public API tests.
 │       │   ├── SMBConnectionPipeTests.swift  # Named-pipe public API tests.
+│       │   ├── SMBNotifyTests.swift          # Notification public API and integration tests.
 │       │   └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 │       └── Utils
 │           └── DataPipeTests.swift           # DataPipe backpressure and ring-buffer unit tests.
@@ -63,26 +70,38 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 - Functions that correspond directly to C `get` functions should keep `get` in the Swift bridge name, even though this is not typical Swift style.
 - Do not expose raw C flags as plain integers. Use Swift `enum` or `OptionSet` types instead. Examples: `SMB2OpenFlags`, `SMB2SecurityMode`, `SMB2AuthenticationMethod`.
 - C return values that signal errors through negative `errno` values or `NULL` should become `throw`.
-- Keep SMB/NT status handling granular. Public status values live under `SMB.SMBStatus` and `SMB.SMBStatusSeverity`; unknown NTSTATUS values should still preserve their raw value in `SMB2Error`.
+- Keep SMB/NT status handling granular. Public status values live under `SMB.SMBStatus` and `SMB.SMBStatusSeverity`; unknown NTSTATUS values should still preserve their raw value in `SMB.Error.unknownNTStatus`.
 - Passing `SMB2Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
 - Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
+- `libsmb2` contexts are not safe to service concurrently. Public API calls should go through `SMB.run { ... }` so bridge work is serialized behind the recursive bridge lock. Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) must also go through this path.
+- `SMB2Bridge-Notify.swift` intentionally exposes a one-shot raw-PDU notification primitive. The public layer owns the directory handle, re-arms requests for continuous watching, cancels pending requests before close/context teardown, and services the context while the watcher is active.
+- Keep notify response decoding defensive. Do not call the recursive C `smb2_decode_filenotifychangeinformation` helper from public watcher paths unless it has been audited for malformed server data; the Swift decoder currently validates entry bounds, monotonic offsets, and an entry-count cap.
+- Retry `poll` on `EINTR` in Swift-owned service loops.
 
 ## Public API
 
 - `SMB` is a `public final class` with no public initializers. Use static methods for top-level operations such as `connect`, `listShares`, and `parseURL`.
-- Keep `SMB.Connection`, `SMB.File`, and `SMB.Directory` as OOP handles nested under `SMB`.
-- Use Swift strict concurrency checking. Public handle types should conform to `Sendable`; protect mutable/internal state with `DispatchQueue`-backed wrappers such as `SMBProtected` under `Sources/SwiftSMB/PublicAPI/Util`.
+- Keep `SMB.Connection`, `SMB.File`, `SMB.Directory`, and `SMB.NotifyWatcher` as OOP handles nested under `SMB`.
+- Use Swift strict concurrency checking. Public handle types should conform to `Sendable`; protect mutable/internal state with `DispatchQueue`-backed wrappers such as `Protected` under `Sources/SwiftSMB/PublicAPI/Util`.
 - Prefer friendly API behavior when it is unambiguous. For example, clamp requested transfer block sizes to the server maximum and return the accepted value from accepted block-size helpers.
 - Keep credentials out of `SMB.Configuration`; pass them to connection/listing entry points.
 - Do not expose password-file APIs publicly.
 - Add DocC comments to public API at Apple documentation quality. Private and internal members may use concise one-line comments where useful. `SMB.SMBStatus` does not need exhaustive DocC.
+- Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
+- File convenience methods are named `loadFile(at:)` and `dumpToFile(_:to:)`; avoid reintroducing the older `readFile`/`writeFile` names.
+- Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
+- File transfer convenience APIs use `DataPipe`, support cancellation/progress, and may create temporary remote paths for atomic uploads. Preserve the `.start` / `.data` / `.finish` / `.broken` package protocol.
+- Public notifications are delegate-based: `SMB.Connection.watchDirectory(...)` returns `SMB.NotifyWatcher`, which calls `SMB.NotifyWatcherDelegate`. Keep the delegate weak, deliver callbacks on the requested queue, and keep watcher cancellation idempotent.
+- `SMB.NotifyWatcherDelegate.notifyWatcherDidStart(_:)` is used by tests and clients to know the first notify request has been armed; do not replace it with sleeps or timing assumptions.
+- Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+DebugDescription.swift` for consistent debug output.
 
 ## Testing
 
 - Unit tests (no server needed): `TypeTests.swift` covers value types, error cases, and enum raw values.
-- Integration tests (need server): most tests under `Tests/SwiftSMBTests/Bridge/`. Tagged with `.integration`.
+- Integration tests (need server): most tests under `Tests/SwiftSMBTests/Bridge/`, plus public API integration suites such as directory, pipe, and notify tests under `Tests/SwiftSMBTests/PublicAPI/`. Tagged with `.integration`.
 - Run all tests: `swift test`
 - Run a subset: `swift test --filter 'ConnectionTests'`
+- Notification-focused tests: `swift test --filter 'SMBNotify'`
 - The test server is a Docker-based Samba container.
   - Check whether it is already running: `docker ps --filter ancestor=swiftsmb-testserver`
   - Start: `source TestServer/up.sh`
@@ -97,3 +116,4 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
   ```bash
   swiftformat .
   ```
+- SwiftFormat may rewrite nearby numeric literals or trailing commas. That is expected; keep formatter output unless it causes a functional problem.
