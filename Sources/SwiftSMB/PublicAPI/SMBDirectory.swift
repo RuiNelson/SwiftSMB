@@ -33,7 +33,7 @@ public extension SMB {
         }
 
         deinit {
-            if let handle = takeHandle(), let context = try? connection.requireContext(operation: .smb2Closedir) {
+            if let handle = takeHandle(), let context = try? connection.requireContext() {
                 SwiftSMB.closeDir(context: context, directory: handle)
             }
         }
@@ -48,7 +48,7 @@ public extension SMB {
         /// Calling this method more than once is allowed.
         public func close() {
             guard let handle = takeHandle(),
-                  let context = try? connection.requireContext(operation: .smb2Closedir) else {
+                  let context = try? connection.requireContext() else {
                 return
             }
             SwiftSMB.closeDir(context: context, directory: handle)
@@ -59,7 +59,7 @@ public extension SMB {
         /// - Returns: The next entry, or `nil` when the directory stream is exhausted.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func readNext() throws -> DirectoryEntry? {
-            let context = try connection.requireContext(operation: .smb2Readdir)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Readdir)
             return SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
         }
@@ -68,7 +68,7 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func rewind() throws {
-            let context = try connection.requireContext(operation: .smb2Rewinddir)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Rewinddir)
             SwiftSMB.rewindDir(context: context, directory: handle)
         }
@@ -78,7 +78,7 @@ public extension SMB {
         /// - Returns: A stream position that can be passed to ``seek(to:)``.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func tell() throws -> Int {
-            let context = try connection.requireContext(operation: .smb2Telldir)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Telldir)
             return SwiftSMB.tellDir(context: context, directory: handle)
         }
@@ -88,7 +88,7 @@ public extension SMB {
         /// - Parameter location: A position returned by ``tell()``.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func seek(to location: Int) throws {
-            let context = try connection.requireContext(operation: .smb2Seekdir)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Seekdir)
             SwiftSMB.seekDir(context: context, directory: handle, location: location)
         }
