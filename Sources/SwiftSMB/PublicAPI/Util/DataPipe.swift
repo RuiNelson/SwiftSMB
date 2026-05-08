@@ -34,7 +34,7 @@ public final class DataPipe: @unchecked Sendable {
         /// A package carrying the data payload.
         ///
         /// - Parameter d: The data transmitted in this package.
-        case data(_ d: Data)
+        case data(Data)
     }
 
     private var queue: [Package]
