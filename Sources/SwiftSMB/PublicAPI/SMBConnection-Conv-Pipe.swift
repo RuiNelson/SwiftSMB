@@ -73,6 +73,9 @@ public extension SMB.Connection {
     ///   - options: Options used when opening the destination file.
     ///   - maxBlockSize: The preferred maximum transfer block size. Values
     ///     larger than the server's maximum write size are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing
+    ///     ancestor directories before writing the file. When `false`, the
+    ///     method throws if the parent directory does not exist.
     ///   - continuation: A progress closure called after each SMB write block
     ///     and once after the pipe is finished.
     /// - Throws: ``SMB/Error`` if the connection is closed, the file cannot be
@@ -84,14 +87,16 @@ public extension SMB.Connection {
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [.create, .truncate],
         maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        makePath: Bool = true,
         continuation: @escaping PipeProgress,
     ) throws {
         let path = try SMB.validatePath(path, operation: "SMB.Connection.write(fromPipe:toFile:)")
         let offset = from.offsetValue
 
-        try validateRemoteParentExists(
+        try validateOrCreateRemoteParent(
             on: self,
             for: path,
+            makePath: makePath,
             operation: "SMB.Connection.write(fromPipe:toFile:)",
         )
 
@@ -600,6 +605,9 @@ public extension SMB.Connection {
     ///     upload.
     ///   - maxBlockSize: The preferred maximum transfer block size. Values
     ///     larger than the server's maximum write size are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing
+    ///     ancestor directories before writing the file. When `false`, the
+    ///     method throws if the parent directory does not exist.
     ///   - atomic: A Boolean value indicating whether to upload through a
     ///     temporary remote file before renaming it into place.
     ///   - continuation: A progress closure called after each SMB write block
@@ -612,11 +620,17 @@ public extension SMB.Connection {
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [],
         maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        makePath: Bool = true,
         atomic: Bool = true,
         continuation: @escaping FileProgress,
     ) throws {
         let remote = try SMB.validatePath(remote, operation: "SMB.Connection.uploadFile")
-        try validateRemoteParentExists(on: self, for: remote, operation: "SMB.Connection.uploadFile")
+        try validateOrCreateRemoteParent(
+            on: self,
+            for: remote,
+            makePath: makePath,
+            operation: "SMB.Connection.uploadFile",
+        )
 
         let offset = from.offsetValue
         let fileSize = try localFileSize(for: local, operation: "SMB.Connection.uploadFile")
@@ -916,14 +930,30 @@ private func validateRemoteFile(
     return stat
 }
 
-/// Validates the parent directory for a remote destination path.
-private func validateRemoteParentExists(on connection: SMB.Connection, for path: String, operation: String) throws {
+/// Validates or creates the parent directory for a remote destination path.
+private func validateOrCreateRemoteParent(
+    on connection: SMB.Connection,
+    for path: String,
+    makePath: Bool,
+    operation: String,
+) throws {
     let parent = path.removingLastPathComponent
     guard !parent.isEmpty else { return }
 
     let existence = try connection.itemExists(at: parent)
-    guard existence == .directory else {
-        throw SMB.Error.invalidArgument(operation: operation, message: "Remote parent directory does not exist")
+    switch existence {
+    case .directory:
+        return
+    case .false:
+        guard makePath else {
+            throw SMB.Error.invalidArgument(operation: operation, message: "Remote parent directory does not exist")
+        }
+        try connection.makeDirectory(at: parent, makePath: true)
+    case .file, .link, .other:
+        throw SMB.Error.invalidArgument(
+            operation: operation,
+            message: "Remote parent path exists and is not a directory",
+        )
     }
 }
 
