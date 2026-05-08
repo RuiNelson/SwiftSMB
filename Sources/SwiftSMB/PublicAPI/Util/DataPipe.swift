@@ -133,14 +133,6 @@ public final class DataPipe: @unchecked Sendable {
         waitForPackage(deadline: timeout.map(Self.deadline(after:)))
     }
 
-    /// Receives the next package from the pipe, blocking until an absolute deadline.
-    ///
-    /// Prefer ``receive(timeout:)`` for new code.
-    @available(*, deprecated, message: "Use receive(timeout:) with a seconds value, or pass nil to wait indefinitely.")
-    public func receive(timeOut: DispatchTime?) -> Package? {
-        waitForPackage(deadline: timeOut)
-    }
-
     private func waitForPackage(deadline: DispatchTime?) -> Package? {
         if let deadline {
             // Wait until a package is available or the timeout expires.
