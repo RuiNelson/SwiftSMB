@@ -6,6 +6,7 @@
 // Copyright its respective authors
 //
 
+import Collections
 import Foundation
 
 /// A bounded pipe that synchronises a single producer with a single consumer.
@@ -37,7 +38,7 @@ public final class DataPipe: @unchecked Sendable {
         case data(Data)
     }
 
-    private var queue: [Package]
+    private var queue: Deque<Package>
     private let queueSync: DispatchQueue
     private let packagesSemaphore: DispatchSemaphore
     private let isFull: DispatchSemaphore
@@ -50,7 +51,7 @@ public final class DataPipe: @unchecked Sendable {
     ///   - label: A label used to name the internal serial dispatch queue.
     public init(maxPackages: Int = 3, label: String) {
         precondition(maxPackages > 0, "maxPackages must be positive")
-        queue = .init()
+        queue = Deque()
         queueSync = .init(label: label + ".queueAccess")
         packagesSemaphore = .init(value: 0)
         isFull = .init(value: maxPackages)
@@ -67,7 +68,9 @@ public final class DataPipe: @unchecked Sendable {
         }
 
         for _ in 0 ..< pendingPackages {
-            _ = packagesSemaphore.wait(timeout: .now())
+            guard packagesSemaphore.wait(timeout: .now()) == .success else {
+                break
+            }
             isFull.signal()
         }
     }
@@ -80,10 +83,7 @@ public final class DataPipe: @unchecked Sendable {
 
     private func pop() -> Package? {
         queueSync.sync {
-            guard queue.isEmpty == false else {
-                return nil
-            }
-            return queue.removeFirst()
+            queue.popFirst()
         }
     }
 
