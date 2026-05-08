@@ -16,7 +16,7 @@ public extension SMB {
         case contextCreationFailed
 
         /// An invalid argument was supplied to the API.
-        case invalidArgument(operation: String, message: String)
+        case invalidArgument(cause: InvalidArgumentException, onOperation: InvalidArgumentOperation)
 
         /// A known POSIX error occurred.
         case posix(code: Int32, operation: String, message: String)
@@ -51,8 +51,8 @@ public extension SMB {
             switch self {
             case .contextCreationFailed:
                 return "Failed to create SMB context"
-            case let .invalidArgument(operation, message):
-                return Self.describe("Invalid argument", operation: operation, message: message)
+            case let .invalidArgument(cause, operation):
+                return Self.describe("Invalid argument", operation: operation.description, message: cause.description)
             case let .posix(code, operation, message):
                 var label = "POSIX error errno=\(code)"
                 if let posixErrorLocalizedDescription {
@@ -77,7 +77,7 @@ public extension SMB {
                 return Self.describe("Unknown SMB error", operation: operation, message: message)
             }
         }
-        
+
         public var description: String {
             debugDescription
         }
@@ -94,8 +94,9 @@ public extension SMB {
             switch self {
             case .contextCreationFailed:
                 nil
-            case let .invalidArgument(operation, _),
-                 let .posix(_, operation, _),
+            case let .invalidArgument(_, operation):
+                operation.description
+            case let .posix(_, operation, _),
                  let .unknownPOSIX(_, operation, _),
                  let .ntStatus(_, _, operation, _),
                  let .unknownNTStatus(_, _, operation, _),
@@ -109,8 +110,9 @@ public extension SMB {
             switch self {
             case .contextCreationFailed:
                 nil
-            case let .invalidArgument(_, message),
-                 let .posix(_, _, message),
+            case let .invalidArgument(cause, _):
+                cause.description
+            case let .posix(_, _, message),
                  let .unknownPOSIX(_, _, message),
                  let .ntStatus(_, _, _, message),
                  let .unknownNTStatus(_, _, _, message),

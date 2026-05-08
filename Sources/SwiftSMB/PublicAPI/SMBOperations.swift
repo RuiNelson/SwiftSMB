@@ -65,7 +65,7 @@ extension SMB {
         share: String,
         configuration: Configuration = Configuration(),
     ) throws -> Connection {
-        try validateShareName(share, operation: "smb2_connect_share")
+        try validateShareName(share, operation: .smb2ConnectShare)
 
         let context = try run {
             try createContext()
@@ -103,9 +103,9 @@ extension SMB {
 
         return try run {
             let parsedURL = try ParsedURL(SwiftSMB.parseURL(string, context: context))
-            try validateShareName(parsedURL.share, operation: "smb2_parse_url")
+            try validateShareName(parsedURL.share, operation: .smb2ParseURL)
             if let path = parsedURL.path {
-                try validatePath(path, operation: "smb2_parse_url", allowRoot: true)
+                try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
             }
             return parsedURL
         }
@@ -116,8 +116,8 @@ extension SMB {
         if let timeout = configuration.timeout {
             guard timeout >= 0, timeout <= Int(Int32.max) else {
                 throw Error.invalidArgument(
-                    operation: "smb2_set_timeout",
-                    message: "Timeout must fit in Int32 seconds",
+                    cause: .timeoutMustFitInInt32Seconds,
+                    onOperation: .smb2SetTimeout,
                 )
             }
             setTimeout(Int32(timeout), on: context)

@@ -49,8 +49,8 @@ func listSharesOnConnectedIPCShare(
         return shares(from: response.pointee.ses.ShareInfo.Level1)
     default:
         throw SMB.Error.invalidArgument(
-            operation: "smb2_share_enum_sync",
-            message: "Unsupported share enumeration level \(response.pointee.ses.Level)",
+            cause: .unsupportedShareEnumerationLevel(response.pointee.ses.Level),
+            onOperation: .smb2ShareEnumSync,
         )
     }
 }
