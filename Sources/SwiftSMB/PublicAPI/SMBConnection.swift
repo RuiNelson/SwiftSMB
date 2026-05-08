@@ -297,6 +297,83 @@ public extension SMB {
                 try Stat(SwiftSMB.fileStatistics(context: context, path: path))
             }
         }
+        
+        /// Changes the timestamps of a file or directory.
+        ///
+        /// Only the timestamps that are provided are updated; omitted timestamps
+        /// are left unchanged on the server.
+        ///
+        /// - Parameters:
+        ///   - path: The path to the file or directory, relative to the share root.
+        ///   - creation: The new creation time, or `nil` to leave it unchanged.
+        ///   - change: The new metadata-change time, or `nil` to leave it unchanged.
+        ///   - write: The new last-write time, or `nil` to leave it unchanged.
+        ///   - access: The new last-access time, or `nil` to leave it unchanged.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
+        ///   or the server rejects the update.
+        public func changeDate(
+            at path: String,
+            creation: Date? = nil,
+            change: Date? = nil,
+            write: Date? = nil,
+            access: Date? = nil
+        ) throws {
+            let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
+            let context = try requireContext()
+            try SMB.run {
+                try SwiftSMB.setStats(
+                    context: context,
+                    path: path,
+                    creationTime: creation,
+                    lastAccessTime: access,
+                    lastWriteTime: write,
+                    changeTime: change
+                )
+            }
+        }
+
+        /// Returns the file attributes for a path.
+        ///
+        /// - Parameter path: The path to the file or directory, relative to the share root.
+        /// - Returns: The current file attributes.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
+        ///   or the server rejects the query.
+        public func attributes(at path: String) throws -> FileAttributes {
+            let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
+            let context = try requireContext()
+            let raw = try SMB.run {
+                try SwiftSMB.getFileAttributes(context: context, path: path)
+            }
+            return FileAttributes(rawValue: raw)
+        }
+
+        /// Changes the attributes of a file or directory.
+        ///
+        /// The closure receives the current attributes and returns the new ones,
+        /// making it easy to mutate individual flags while leaving others intact.
+        ///
+        /// - Parameters:
+        ///   - path: The path to the file or directory, relative to the share root.
+        ///   - change: A closure that receives the current attributes and returns
+        ///     the updated attributes.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
+        ///   or the server rejects the update.
+        public func changeAttributes(
+            at path: String,
+            _ change: (FileAttributes) -> FileAttributes
+        ) throws {
+            let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
+            let context = try requireContext()
+            let current = try attributes(at: path)
+            let new = change(current)
+            try SMB.run {
+                try SwiftSMB.setStats(
+                    context: context,
+                    path: path,
+                    fileAttributes: new.rawValue
+                )
+            }
+        }
 
         /// Returns filesystem statistics for a path.
         ///

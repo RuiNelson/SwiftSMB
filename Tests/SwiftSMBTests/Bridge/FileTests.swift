@@ -8,6 +8,7 @@
 
 @testable import SwiftSMB
 import Darwin
+import Foundation
 import Testing
 
 // MARK: - Stat tests
@@ -568,6 +569,139 @@ struct LargeFileTests {
             defer { try? close(context: ctx, file: rh) }
             let readBack = try readAllBytes(context: ctx, file: rh)
             #expect(readBack == content)
+        }
+    }
+}
+
+// MARK: - Set basic info tests
+
+@Suite(.tags(.integration))
+struct SetBasicInfoTests {
+    @Test("set modification time") func setModificationTime() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("settime") + ".txt"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try close(context: ctx, file: wh)
+
+            let newTime = Date(timeIntervalSince1970: 1_700_000_000)
+            try setStats(context: ctx, path: path, lastWriteTime: newTime)
+
+            let stat = try fileStatistics(context: ctx, path: path)
+            #expect(stat.modificationTime == UInt64(newTime.timeIntervalSince1970))
+        }
+    }
+
+    @Test("set access time") func setAccessTime() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("settime") + ".txt"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try close(context: ctx, file: wh)
+
+            let newTime = Date(timeIntervalSince1970: 1_600_000_000)
+            try setStats(context: ctx, path: path, lastAccessTime: newTime)
+
+            let stat = try fileStatistics(context: ctx, path: path)
+            #expect(stat.accessTime == UInt64(newTime.timeIntervalSince1970))
+        }
+    }
+
+    @Test("set creation time") func setCreationTime() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("settime") + ".txt"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try close(context: ctx, file: wh)
+
+            let newTime = Date(timeIntervalSince1970: 1_800_000_000)
+            try setStats(context: ctx, path: path, creationTime: newTime)
+
+            let stat = try fileStatistics(context: ctx, path: path)
+            #expect(stat.birthTime == UInt64(newTime.timeIntervalSince1970))
+        }
+    }
+
+    @Test("set multiple timestamps") func setMultipleTimestamps() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("settime") + ".txt"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try close(context: ctx, file: wh)
+
+            let access = Date(timeIntervalSince1970: 1_550_000_000)
+            let write = Date(timeIntervalSince1970: 1_650_000_000)
+            let change = Date(timeIntervalSince1970: 1_750_000_000)
+            let creation = Date(timeIntervalSince1970: 1_850_000_000)
+
+            try setStats(
+                context: ctx,
+                path: path,
+                creationTime: creation,
+                lastAccessTime: access,
+                lastWriteTime: write,
+                changeTime: change
+            )
+
+            let stat = try fileStatistics(context: ctx, path: path)
+            #expect(stat.accessTime == UInt64(access.timeIntervalSince1970))
+            #expect(stat.modificationTime == UInt64(write.timeIntervalSince1970))
+            #expect(stat.changeTime == UInt64(change.timeIntervalSince1970))
+            #expect(stat.birthTime == UInt64(creation.timeIntervalSince1970))
+        }
+    }
+
+    @Test("get and set file attributes") func getAndSetFileAttributes() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("setattr") + ".txt"
+            defer { try? unlink(context: ctx, path: path) }
+
+            let wh = try open(
+                context: ctx,
+                path: path,
+                flags: SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try close(context: ctx, file: wh)
+
+            let initial = try getFileAttributes(context: ctx, path: path)
+            #expect(initial == 0x00000080) // SMB2_FILE_ATTRIBUTE_NORMAL
+
+            try setStats(context: ctx, path: path, fileAttributes: 0x00000002)
+
+            let updated = try getFileAttributes(context: ctx, path: path)
+            #expect(updated == 0x00000002) // SMB2_FILE_ATTRIBUTE_HIDDEN
+        }
+    }
+
+    @Test("set basic info on nonexistent file throws") func setBasicInfoOnNonexistentFileThrows() throws {
+        try withPublicShare { ctx in
+            #expect(throws: SMB.Error.self) {
+                try setStats(
+                    context: ctx,
+                    path: "nonexistent_\(uniquePath()).txt",
+                    lastWriteTime: Date()
+                )
+            }
         }
     }
 }

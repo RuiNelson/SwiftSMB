@@ -36,6 +36,7 @@ public extension SMB.Error {
         case smb2Seekdir
         case smb2Stat
         case smb2Statvfs
+        case smb2SetBasicInfo
         case smb2GetMaxReadSize
         case smb2GetMaxWriteSize
         case smb2DecodeFileNotifyChangeInformation
@@ -78,6 +79,7 @@ public extension SMB.Error {
             case .smb2Seekdir: "smb2_seekdir"
             case .smb2Stat: "smb2_stat"
             case .smb2Statvfs: "smb2_statvfs"
+            case .smb2SetBasicInfo: "smb2_set_basic_info"
             case .smb2GetMaxReadSize: "smb2_get_max_read_size"
             case .smb2GetMaxWriteSize: "smb2_get_max_write_size"
             case .smb2DecodeFileNotifyChangeInformation: "smb2_decode_filenotifychangeinformation"
