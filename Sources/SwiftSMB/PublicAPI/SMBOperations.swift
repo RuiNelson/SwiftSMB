@@ -6,7 +6,11 @@
 // Copyright its respective authors
 //
 
+import Foundation
+
 extension SMB {
+    private static let bridgeLock = NSRecursiveLock()
+
     /// Lists disk shares advertised by a server.
     ///
     /// The method connects to the server's `IPC$` share, enumerates shares
@@ -162,6 +166,8 @@ extension SMB {
 
     /// Runs a throwing bridge operation.
     static func run<T>(_ body: () throws -> T) throws -> T {
-        try body()
+        bridgeLock.lock()
+        defer { bridgeLock.unlock() }
+        return try body()
     }
 }

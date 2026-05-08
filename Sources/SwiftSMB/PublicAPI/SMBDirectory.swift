@@ -34,7 +34,9 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                SwiftSMB.closeDir(context: context, directory: handle)
+                try? SMB.run {
+                    SwiftSMB.closeDir(context: context, directory: handle)
+                }
             }
         }
 
@@ -51,7 +53,9 @@ public extension SMB {
                   let context = try? connection.requireContext() else {
                 return
             }
-            SwiftSMB.closeDir(context: context, directory: handle)
+            try? SMB.run {
+                SwiftSMB.closeDir(context: context, directory: handle)
+            }
         }
 
         /// Reads the next directory entry.
@@ -61,7 +65,9 @@ public extension SMB {
         public func readNext() throws -> DirectoryEntry? {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Readdir)
-            return SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+            return try SMB.run {
+                SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+            }
         }
 
         /// Rewinds the directory stream to the beginning.
@@ -70,7 +76,9 @@ public extension SMB {
         public func rewind() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Rewinddir)
-            SwiftSMB.rewindDir(context: context, directory: handle)
+            try SMB.run {
+                SwiftSMB.rewindDir(context: context, directory: handle)
+            }
         }
 
         /// Returns the current directory stream location.
@@ -80,7 +88,9 @@ public extension SMB {
         public func tell() throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Telldir)
-            return SwiftSMB.tellDir(context: context, directory: handle)
+            return try SMB.run {
+                SwiftSMB.tellDir(context: context, directory: handle)
+            }
         }
 
         /// Moves the directory stream to a previous location.
@@ -90,7 +100,9 @@ public extension SMB {
         public func seek(to location: Int) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Seekdir)
-            SwiftSMB.seekDir(context: context, directory: handle, location: location)
+            try SMB.run {
+                SwiftSMB.seekDir(context: context, directory: handle, location: location)
+            }
         }
 
         /// Returns the live bridge handle or throws if the directory is closed.

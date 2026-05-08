@@ -26,6 +26,11 @@ public extension SMB {
         public let configuration: Configuration
 
         private let protectedContext = Protected<SMB2Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
+        /// Active notification watchers that must be cancelled before context teardown.
+        let protectedNotifyWatchers = Protected<[UUID: SMBNotifyWatcherState]>(
+            [:],
+            label: "SwiftSMB.SMB.Connection.notifyWatchers",
+        )
 
         /// The live bridge context, if the connection is still open.
         private var context: SMB2Context? {
@@ -46,9 +51,12 @@ public extension SMB {
         }
 
         deinit {
+            cancelNotifyWatchers()
             if let context = takeContext() {
-                try? disconnectShare(context: context)
-                destroyContext(context)
+                try? SMB.run {
+                    try? disconnectShare(context: context)
+                    destroyContext(context)
+                }
             }
         }
 
@@ -63,7 +71,9 @@ public extension SMB {
         public var negotiatedDialect: UInt16 {
             get throws {
                 let context = try requireContext()
-                return SwiftSMB.getDialect(on: context)
+                return try SMB.run {
+                    SwiftSMB.getDialect(on: context)
+                }
             }
         }
 
@@ -86,7 +96,9 @@ public extension SMB {
         public var maxReadSize: UInt32 {
             get throws {
                 let context = try requireContext()
-                return SwiftSMB.getMaxReadSize(context: context)
+                return try SMB.run {
+                    SwiftSMB.getMaxReadSize(context: context)
+                }
             }
         }
 
@@ -96,7 +108,9 @@ public extension SMB {
         public var maxWriteSize: UInt32 {
             get throws {
                 let context = try requireContext()
-                return SwiftSMB.getMaxWriteSize(context: context)
+                return try SMB.run {
+                    SwiftSMB.getMaxWriteSize(context: context)
+                }
             }
         }
 
@@ -108,16 +122,19 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
         public func disconnect() throws {
+            cancelNotifyWatchers()
             guard let context = takeContext() else { return }
 
             do {
                 try SMB.run {
                     try SwiftSMB.disconnectShare(context: context)
+                    destroyContext(context)
                 }
-                destroyContext(context)
             }
             catch {
-                destroyContext(context)
+                try? SMB.run {
+                    destroyContext(context)
+                }
                 throw error
             }
         }
@@ -316,7 +333,7 @@ public extension SMB {
             creation: Date? = nil,
             change: Date? = nil,
             write: Date? = nil,
-            access: Date? = nil
+            access: Date? = nil,
         ) throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
@@ -327,7 +344,7 @@ public extension SMB {
                     creationTime: creation,
                     lastAccessTime: access,
                     lastWriteTime: write,
-                    changeTime: change
+                    changeTime: change,
                 )
             }
         }
@@ -360,7 +377,7 @@ public extension SMB {
         ///   or the server rejects the update.
         public func changeAttributes(
             at path: String,
-            _ change: (FileAttributes) -> FileAttributes
+            _ change: (FileAttributes) -> FileAttributes,
         ) throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
@@ -370,7 +387,7 @@ public extension SMB {
                 try SwiftSMB.setStats(
                     context: context,
                     path: path,
-                    fileAttributes: new.rawValue
+                    fileAttributes: new.rawValue,
                 )
             }
         }

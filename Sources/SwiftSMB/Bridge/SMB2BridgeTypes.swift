@@ -66,6 +66,7 @@ struct SMB2OpenOptions: OptionSet, Equatable {
     static let exclusive = SMB2OpenOptions(rawValue: O_EXCL)
     static let truncate = SMB2OpenOptions(rawValue: O_TRUNC)
     static let append = SMB2OpenOptions(rawValue: O_APPEND)
+    static let directory = SMB2OpenOptions(rawValue: O_DIRECTORY)
 }
 
 struct SMB2OpenFlags: Equatable {
@@ -322,6 +323,11 @@ struct SMB2NotifyChange: Equatable {
     let action: SMB2NotifyChangeAction
     let name: String
 
+    init(action: SMB2NotifyChangeAction, name: String) {
+        self.action = action
+        self.name = name
+    }
+
     init(_ change: smb2_file_notify_change_information) {
         action = SMB2NotifyChangeAction(rawValue: change.action)
         name = change.name.map(String.init(cString:)) ?? ""
@@ -341,7 +347,7 @@ struct SMB2NotifyChange: Equatable {
     }
 }
 
-typealias SMB2NotifyChangeHandler = (Result<[SMB2NotifyChange], SMB.Error>) -> Void
+typealias SMB2NotifyChangeHandler = @Sendable (Result<[SMB2NotifyChange], SMB.Error>) -> Void
 
 struct SMB2URL: Equatable {
     let domain: String?

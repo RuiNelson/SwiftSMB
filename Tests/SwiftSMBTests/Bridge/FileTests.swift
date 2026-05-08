@@ -660,7 +660,7 @@ struct SetBasicInfoTests {
                 creationTime: creation,
                 lastAccessTime: access,
                 lastWriteTime: write,
-                changeTime: change
+                changeTime: change,
             )
 
             let stat = try fileStatistics(context: ctx, path: path)
@@ -684,12 +684,12 @@ struct SetBasicInfoTests {
             try close(context: ctx, file: wh)
 
             let initial = try getFileAttributes(context: ctx, path: path)
-            #expect(initial == 0x00000080) // SMB2_FILE_ATTRIBUTE_NORMAL
+            #expect(initial == 0x0000_0080) // SMB2_FILE_ATTRIBUTE_NORMAL
 
-            try setStats(context: ctx, path: path, fileAttributes: 0x00000002)
+            try setStats(context: ctx, path: path, fileAttributes: 0x0000_0002)
 
             let updated = try getFileAttributes(context: ctx, path: path)
-            #expect(updated == 0x00000002) // SMB2_FILE_ATTRIBUTE_HIDDEN
+            #expect(updated == 0x0000_0002) // SMB2_FILE_ATTRIBUTE_HIDDEN
         }
     }
 
@@ -699,7 +699,7 @@ struct SetBasicInfoTests {
                 try setStats(
                     context: ctx,
                     path: "nonexistent_\(uniquePath()).txt",
-                    lastWriteTime: Date()
+                    lastWriteTime: Date(),
                 )
             }
         }
