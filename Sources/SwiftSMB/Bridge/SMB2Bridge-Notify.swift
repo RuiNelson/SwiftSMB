@@ -12,6 +12,9 @@ import SMB2
 import SMB2.Raw
 
 private let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF
+private let defaultNotifyServiceTimeoutMilliseconds: Int32 = 50
+private let notifyChangeEntryHeaderLength = 12
+private let maximumNotifyChangeEntryCount = 4096
 
 // Notes for the next layer:
 //
@@ -139,11 +142,39 @@ func cancel(context: SMB2Context, request: SMB2PendingRequest) {
     Unmanaged<SMB2PendingRequestState>.fromOpaque(cancellation.callbackData).release()
 }
 
+/// Services pending SMB2 events for a notification watcher.
+func serviceNotifyEvents(
+    context: SMB2Context,
+    timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
+) throws {
+    var pfd = pollfd()
+    pfd.fd = smb2_get_fd(context.raw)
+    pfd.events = Int16(smb2_which_events(context.raw))
+
+    var rc: Int32 = 0
+    repeat {
+        rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, timeoutMilliseconds) }
+    }
+    while rc < 0 && errno == EINTR
+
+    if rc < 0 {
+        throw SMB.Error.posix(
+            code: errno,
+            operation: "poll",
+            message: "poll failed while waiting for SMB2 notification",
+        )
+    }
+
+    if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+        throw SMB.Error.fromBridge(context, operation: "smb2_service")
+    }
+}
+
 struct SMB2PendingRequest {
     fileprivate let state: SMB2PendingRequestState
 }
 
-private final class SMB2PendingRequestState {
+private final class SMB2PendingRequestState: @unchecked Sendable {
     let operation: String
     let handler: SMB2NotifyChangeHandler
 
@@ -248,31 +279,83 @@ private func decodeNotifyChanges(
         return .success([])
     }
 
-    guard let allocatedChange = calloc(1, MemoryLayout<smb2_file_notify_change_information>.stride) else {
-        return .failure(.invalidArgument(
-            cause: .failedToAllocateFileNotifyChangeInformation,
-            onOperation: .smb2DecodeFileNotifyChangeInformation,
+    let buffer = UnsafeRawBufferPointer(
+        start: output,
+        count: Int(reply.output_buffer_length),
+    )
+    return decodeNotifyChanges(buffer)
+}
+
+private func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[SMB2NotifyChange], SMB.Error> {
+    var changes: [SMB2NotifyChange] = []
+    var offset = 0
+
+    for _ in 0 ..< maximumNotifyChangeEntryCount {
+        guard offset + notifyChangeEntryHeaderLength <= buffer.count else {
+            return .failure(malformedNotifyChangeResponse("Entry header exceeds output buffer length"))
+        }
+
+        let nextEntryOffset = readLittleEndianUInt32(from: buffer, at: offset)
+        let action = readLittleEndianUInt32(from: buffer, at: offset + 4)
+        let nameLength = Int(readLittleEndianUInt32(from: buffer, at: offset + 8))
+        let nameOffset = offset + notifyChangeEntryHeaderLength
+
+        guard nameLength % 2 == 0,
+              nameLength <= buffer.count - nameOffset else {
+            return .failure(malformedNotifyChangeResponse("Entry name exceeds output buffer length"))
+        }
+
+        changes.append(SMB2NotifyChange(
+            action: SMB2NotifyChangeAction(rawValue: action),
+            name: decodeNotifyChangeName(from: buffer, offset: nameOffset, byteCount: nameLength),
         ))
+
+        guard nextEntryOffset != 0 else {
+            return .success(changes)
+        }
+
+        let nextOffsetDelta = Int(nextEntryOffset)
+        guard nextOffsetDelta >= notifyChangeEntryHeaderLength,
+              nextOffsetDelta <= buffer.count - offset else {
+            return .failure(malformedNotifyChangeResponse("Entry offset is not monotonic within output buffer"))
+        }
+
+        offset += nextOffsetDelta
     }
 
-    let firstChange = allocatedChange.assumingMemoryBound(to: smb2_file_notify_change_information.self)
-    var vector = smb2_iovec()
-    vector.buf = output
-    vector.len = Int(reply.output_buffer_length)
-    vector.free = nil
+    return .failure(malformedNotifyChangeResponse("Entry count exceeded defensive limit"))
+}
 
-    let status = smb2_decode_filenotifychangeinformation(context.raw, firstChange, &vector, 0)
-    guard status == 0 else {
-        free_smb2_file_notify_change_information(context.raw, firstChange)
-        return .failure(SMB.Error.fromBridge(
-            context,
-            operation: "smb2_decode_filenotifychangeinformation",
-            status: Int32(status),
-        ))
+private func readLittleEndianUInt32(from buffer: UnsafeRawBufferPointer, at offset: Int) -> UInt32 {
+    UInt32(buffer[offset])
+        | (UInt32(buffer[offset + 1]) << 8)
+        | (UInt32(buffer[offset + 2]) << 16)
+        | (UInt32(buffer[offset + 3]) << 24)
+}
+
+private func decodeNotifyChangeName(
+    from buffer: UnsafeRawBufferPointer,
+    offset: Int,
+    byteCount: Int,
+) -> String {
+    var codeUnits: [UInt16] = []
+    codeUnits.reserveCapacity(byteCount / 2)
+
+    var index = offset
+    let end = offset + byteCount
+    while index < end {
+        codeUnits.append(UInt16(buffer[index]) | (UInt16(buffer[index + 1]) << 8))
+        index += 2
     }
 
-    defer { free_smb2_file_notify_change_information(context.raw, firstChange) }
-    return .success(SMB2NotifyChange.changes(from: firstChange))
+    return String(decoding: codeUnits, as: UTF16.self)
+}
+
+private func malformedNotifyChangeResponse(_ message: String) -> SMB.Error {
+    .unknown(
+        operation: "smb2_decode_filenotifychangeinformation",
+        message: message,
+    )
 }
 
 private func notifyChangeError(

@@ -147,7 +147,9 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? SwiftSMB.close(context: context, file: handle)
+                try? SMB.run {
+                    try SwiftSMB.close(context: context, file: handle)
+                }
             }
         }
 

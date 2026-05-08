@@ -446,9 +446,17 @@ private func serviceUntilFinished(context: SMB2Context, state: some PendingOpera
 
     while !state.isFinished {
         pfd.events = Int16(smb2_which_events(context.raw))
-        let rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 1000) }
+        var rc: Int32 = 0
+        repeat {
+            rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 1000) }
+        }
+        while rc < 0 && errno == EINTR
         if rc < 0 {
-            throw SMB.Error.posix(code: errno, operation: "poll", message: "poll failed while waiting for SMB2 operation")
+            throw SMB.Error.posix(
+                code: errno,
+                operation: "poll",
+                message: "poll failed while waiting for SMB2 operation",
+            )
         }
         if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
             throw SMB.Error.fromBridge(context, operation: "smb2_service")
@@ -464,9 +472,9 @@ func setStats(
     lastAccessTime: Date? = nil,
     lastWriteTime: Date? = nil,
     changeTime: Date? = nil,
-    fileAttributes: UInt32? = nil
+    fileAttributes: UInt32? = nil,
 ) throws {
-    let dontChangeTime = smb2_timeval(tv_sec: 0xFFFFFFFF, tv_usec: 0xFFFFFFFF)
+    let dontChangeTime = smb2_timeval(tv_sec: 0xFFFF_FFFF, tv_usec: 0xFFFF_FFFF)
 
     func smb2Timeval(from date: Date?) -> smb2_timeval {
         guard let date else {
@@ -483,13 +491,30 @@ func setStats(
         last_access_time: smb2Timeval(from: lastAccessTime),
         last_write_time: smb2Timeval(from: lastWriteTime),
         change_time: smb2Timeval(from: changeTime),
-        file_attributes: fileAttributes ?? 0xFFFFFFFF
+        file_attributes: fileAttributes ?? 0xFFFF_FFFF,
     )
 
     let state = SetStatsState()
     let callbackData = Unmanaged.passRetained(state).toOpaque()
 
-    let fileIDAllOnes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+    let fileIDAllOnes: (
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+    ) =
         (0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
 
     try path.withCString { pathPointer in
@@ -499,9 +524,9 @@ func setStats(
                 requested_oplock_level: 0,
                 impersonation_level: 2,
                 smb_create_flags: 0,
-                desired_access: 0x40000000,
+                desired_access: 0x4000_0000,
                 file_attributes: 0,
-                share_access: 0x00000001 | 0x00000002,
+                share_access: 0x0000_0001 | 0x0000_0002,
                 create_disposition: 1,
                 create_options: 0,
                 name_offset: 0,
@@ -509,7 +534,7 @@ func setStats(
                 name: pathPointer,
                 create_context_offset: 0,
                 create_context_length: 0,
-                create_context: nil
+                create_context: nil,
             )
 
             guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, setStatsCreateCallback, callbackData) else {
@@ -523,7 +548,7 @@ func setStats(
                 buffer_offset: 0,
                 additional_information: 0,
                 file_id: fileIDAllOnes,
-                input_data: infoPointer
+                input_data: infoPointer,
             )
 
             guard let next_pdu = smb2_cmd_set_info_async(context.raw, &si_req, setStatsSetCallback, callbackData) else {
@@ -534,7 +559,7 @@ func setStats(
 
             var cl_req = smb2_close_request(
                 flags: 1,
-                file_id: fileIDAllOnes
+                file_id: fileIDAllOnes,
             )
 
             guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, setStatsCloseCallback, callbackData) else {
@@ -563,7 +588,24 @@ func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
 
     defer { Unmanaged<QueryAttributesState>.fromOpaque(callbackData).release() }
 
-    let fileIDAllOnes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+    let fileIDAllOnes: (
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+        UInt8,
+    ) =
         (0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
 
     return try path.withCString { pathPointer in
@@ -572,9 +614,9 @@ func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
             requested_oplock_level: 0,
             impersonation_level: 2,
             smb_create_flags: 0,
-            desired_access: 0x00000080,
+            desired_access: 0x0000_0080,
             file_attributes: 0,
-            share_access: 0x00000001 | 0x00000002,
+            share_access: 0x0000_0001 | 0x0000_0002,
             create_disposition: 1,
             create_options: 0,
             name_offset: 0,
@@ -582,7 +624,7 @@ func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
             name: pathPointer,
             create_context_offset: 0,
             create_context_length: 0,
-            create_context: nil
+            create_context: nil,
         )
 
         guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, queryAttributesCreateCallback, callbackData) else {
@@ -599,10 +641,15 @@ func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
             additional_information: 0,
             flags: 0,
             file_id: fileIDAllOnes,
-            input: nil
+            input: nil,
         )
 
-        guard let next_pdu = smb2_cmd_query_info_async(context.raw, &qi_req, queryAttributesQueryCallback, callbackData) else {
+        guard let next_pdu = smb2_cmd_query_info_async(
+            context.raw,
+            &qi_req,
+            queryAttributesQueryCallback,
+            callbackData,
+        ) else {
             smb2_free_pdu(context.raw, pdu)
             throw SMB.Error.fromBridge(context, operation: "smb2_cmd_query_info_async")
         }
@@ -610,7 +657,7 @@ func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
 
         var cl_req = smb2_close_request(
             flags: 0,
-            file_id: fileIDAllOnes
+            file_id: fileIDAllOnes,
         )
 
         guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, queryAttributesCloseCallback, callbackData) else {
