@@ -20,10 +20,11 @@ struct SMBConnectionPipeTests {
         let path = uniquePath("pipe-write") + ".bin"
         defer { try? connection.removeFile(at: path) }
 
-        let pipe = DataPipe(totalCapacity: 6, slotCount: 3)
-        pipe.send(Data([0x01, 0x02]))
-        pipe.send(Data([0x03, 0x04]))
-        pipe.endOfProduction()
+        let pipe = DataPipe(maxPackages: 4, label: "SwiftSMBTests.SMBConnectionPipeTests.write")
+        pipe.send(.start)
+        pipe.send(.data(Data([0x01, 0x02])))
+        pipe.send(.data(Data([0x03, 0x04])))
+        pipe.send(.finish)
 
         var progress: [UInt64] = []
         try connection.write(fromPipe: pipe, toFile: path) { transferred, _, _ in
@@ -33,6 +34,23 @@ struct SMBConnectionPipeTests {
 
         #expect(try connection.readFile(at: path) == Data([0x01, 0x02, 0x03, 0x04]))
         #expect(progress.last == 4)
+    }
+
+    @Test("write from broken pipe throws")
+    func writeFromBrokenPipeThrows() throws {
+        let connection = try publicConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("pipe-broken") + ".bin"
+        defer { try? connection.removeFile(at: path) }
+
+        let pipe = DataPipe(maxPackages: 2, label: "SwiftSMBTests.SMBConnectionPipeTests.broken")
+        pipe.send(.start)
+        pipe.send(.broken)
+
+        #expect(throws: (any Error).self) {
+            try connection.write(fromPipe: pipe, toFile: path) { _, _, _ in true }
+        }
     }
 
     @Test("leading slash in remote path is ignored")
@@ -60,7 +78,7 @@ struct SMBConnectionPipeTests {
         let expected = Data([0xAA, 0xBB, 0xCC, 0xDD])
         try connection.writeFile(expected, to: path)
 
-        let pipe = DataPipe(totalCapacity: 6, slotCount: 3)
+        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.read")
         var progress: [UInt64] = []
         try connection.read(fromFile: path, toPipe: pipe) { transferred, _, _ in
             progress.append(transferred)
@@ -68,12 +86,61 @@ struct SMBConnectionPipeTests {
         }
 
         var received = Data()
-        while let chunk = pipe.receive() {
-            received.append(chunk)
+        var isComplete = false
+        while !isComplete, let package = pipe.receive(timeOut: nil) {
+            switch package {
+            case .start:
+                continue
+            case let .data(chunk):
+                received.append(chunk)
+            case .finish:
+                isComplete = true
+            case .broken:
+                Issue.record("Pipe broke before the file was fully read")
+                isComplete = true
+            }
         }
 
         #expect(received == expected)
         #expect(progress.last == UInt64(expected.count))
+    }
+
+    @Test("read to pipe honors max block size")
+    func readToPipeHonorsMaxBlockSize() throws {
+        let connection = try publicConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("pipe-read-block-size") + ".bin"
+        defer { try? connection.removeFile(at: path) }
+
+        let expected = Data([0x10, 0x11, 0x12, 0x13])
+        try connection.writeFile(expected, to: path)
+
+        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.readBlockSize")
+        var progress: [UInt64] = []
+        try connection.read(fromFile: path, toPipe: pipe, maxBlockSize: 2) { transferred, _, _ in
+            progress.append(transferred)
+            return true
+        }
+
+        var received = Data()
+        var isComplete = false
+        while !isComplete, let package = pipe.receive(timeOut: nil) {
+            switch package {
+            case .start:
+                continue
+            case let .data(chunk):
+                received.append(chunk)
+            case .finish:
+                isComplete = true
+            case .broken:
+                Issue.record("Pipe broke before the file was fully read")
+                isComplete = true
+            }
+        }
+
+        #expect(received == expected)
+        #expect(progress == [2, 4, 4])
     }
 
     @Test("upload file writes remote file")
