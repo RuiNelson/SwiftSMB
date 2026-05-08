@@ -146,7 +146,7 @@ public extension SMB {
         }
 
         deinit {
-            if let handle = takeHandle(), let context = try? connection.requireContext(operation: .smb2Close) {
+            if let handle = takeHandle(), let context = try? connection.requireContext() {
                 try? SwiftSMB.close(context: context, file: handle)
             }
         }
@@ -163,7 +163,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the server reports a close error.
         public func close() throws {
             guard let handle = takeHandle() else { return }
-            let context = try connection.requireContext(operation: .smb2Close)
+            let context = try connection.requireContext()
             try SMB.run {
                 try SwiftSMB.close(context: context, file: handle)
             }
@@ -202,7 +202,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
         public func write(_ data: Data) throws -> Int {
-            let context = try connection.requireContext(operation: .smb2Write)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Write)
             return try SMB.run {
                 try data.withUnsafeBytes { rawBuffer in
@@ -220,7 +220,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
         public func write(_ data: Data, atOffset offset: UInt64) throws -> Int {
-            let context = try connection.requireContext(operation: .smb2Pwrite)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Pwrite)
             return try SMB.run {
                 try data.withUnsafeBytes { rawBuffer in
@@ -243,7 +243,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if seeking fails.
         @discardableResult
         public func seek(offset: Int64, from origin: SeekOrigin) throws -> UInt64 {
-            let context = try connection.requireContext(operation: .smb2Lseek)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Lseek)
             return try SMB.run {
                 try SwiftSMB.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
@@ -254,7 +254,7 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the sync operation fails.
         public func sync() throws {
-            let context = try connection.requireContext(operation: .smb2Fsync)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fsync)
             try SMB.run {
                 try SwiftSMB.sync(context: context, file: handle)
@@ -266,7 +266,7 @@ public extension SMB {
         /// - Parameter length: The target file length.
         /// - Throws: ``SMB/Error`` if truncation fails.
         public func truncate(toLength length: UInt64) throws {
-            let context = try connection.requireContext(operation: .smb2Ftruncate)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Ftruncate)
             try SMB.run {
                 try SwiftSMB.truncate(context: context, file: handle, length: length)
@@ -278,7 +278,7 @@ public extension SMB {
         /// - Returns: File metadata reported by the server.
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
         public func stat() throws -> Stat {
-            let context = try connection.requireContext(operation: .smb2Fstat)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fstat)
             return try SMB.run {
                 try Stat(SwiftSMB.fileStatistics(context: context, file: handle))
@@ -298,7 +298,7 @@ public extension SMB {
                 return Data()
             }
             let acceptedByteCount = try connection.acceptedReadBlockSize(byteCount)
-            let context = try connection.requireContext(operation: operation)
+            let context = try connection.requireContext()
             let handle = try requireHandle(operation: operation)
             var data = Data(repeating: 0, count: acceptedByteCount)
             let readCount = try SMB.run {

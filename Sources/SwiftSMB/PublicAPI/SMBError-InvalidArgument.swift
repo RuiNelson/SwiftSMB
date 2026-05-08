@@ -22,8 +22,6 @@ public extension SMB.Error {
         case smb2Fsync
         case smb2Ftruncate
         case smb2Fstat
-        case smb2Close
-        case smb2Closedir
         case smb2Open
         case smb2Opendir
         case smb2Mkdir
@@ -38,12 +36,8 @@ public extension SMB.Error {
         case smb2Seekdir
         case smb2Stat
         case smb2Statvfs
-        case smb2GetDialect
-        case smb2GetSessionID
         case smb2GetMaxReadSize
         case smb2GetMaxWriteSize
-        case smb2Echo
-        case smb2CmdChangeNotifyAsync
         case smb2DecodeFileNotifyChangeInformation
         case smb2GetFileID
         case smb2ShareEnumSync
@@ -56,7 +50,6 @@ public extension SMB.Error {
         case smbConnectionListDirectory
         case smbConnectionReadFile
         case smbConnectionWriteFile
-        case smbConnectionMakeDirectory
 
         var description: String {
             switch self {
@@ -71,8 +64,6 @@ public extension SMB.Error {
             case .smb2Fsync: "smb2_fsync"
             case .smb2Ftruncate: "smb2_ftruncate"
             case .smb2Fstat: "smb2_fstat"
-            case .smb2Close: "smb2_close"
-            case .smb2Closedir: "smb2_closedir"
             case .smb2Open: "smb2_open"
             case .smb2Opendir: "smb2_opendir"
             case .smb2Mkdir: "smb2_mkdir"
@@ -87,12 +78,8 @@ public extension SMB.Error {
             case .smb2Seekdir: "smb2_seekdir"
             case .smb2Stat: "smb2_stat"
             case .smb2Statvfs: "smb2_statvfs"
-            case .smb2GetDialect: "smb2_get_dialect"
-            case .smb2GetSessionID: "smb2_get_session_id"
             case .smb2GetMaxReadSize: "smb2_get_max_read_size"
             case .smb2GetMaxWriteSize: "smb2_get_max_write_size"
-            case .smb2Echo: "smb2_echo"
-            case .smb2CmdChangeNotifyAsync: "smb2_cmd_change_notify_async"
             case .smb2DecodeFileNotifyChangeInformation: "smb2_decode_filenotifychangeinformation"
             case .smb2GetFileID: "smb2_get_file_id"
             case .smb2ShareEnumSync: "smb2_share_enum_sync"
@@ -105,7 +92,6 @@ public extension SMB.Error {
             case .smbConnectionListDirectory: "SMB.Connection.listDirectory"
             case .smbConnectionReadFile: "SMB.Connection.readFile"
             case .smbConnectionWriteFile: "SMB.Connection.writeFile"
-            case .smbConnectionMakeDirectory: "SMB.Connection.makeDirectory"
             }
         }
     }
@@ -120,7 +106,6 @@ public extension SMB.Error {
         case timeoutMustFitInInt32Seconds
         case byteCountMustBeNonNegative
         case fileAlreadyClosed
-        case connectionAlreadyClosed
         case directoryAlreadyClosed
         case bufferSizeMustBeGreaterThanZero
         case blockSizeMustBeGreaterThanZero
@@ -150,7 +135,6 @@ public extension SMB.Error {
             case .timeoutMustFitInInt32Seconds: "Timeout must fit in Int32 seconds"
             case .byteCountMustBeNonNegative: "Byte count must be greater than or equal to zero"
             case .fileAlreadyClosed: "File is already closed"
-            case .connectionAlreadyClosed: "Connection is already closed"
             case .directoryAlreadyClosed: "Directory is already closed"
             case .bufferSizeMustBeGreaterThanZero: "Buffer size must be greater than zero"
             case .blockSizeMustBeGreaterThanZero: "Block size must be greater than zero"

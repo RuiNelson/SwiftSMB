@@ -14,6 +14,8 @@ public extension SMB {
     Sendable {
         /// A `libsmb2` context could not be created.
         case contextCreationFailed
+        
+        case operationRequestedAfterConnectionClosed
 
         /// An invalid argument was supplied to the API.
         case invalidArgument(cause: InvalidArgumentException, onOperation: InvalidArgumentOperation)
@@ -51,6 +53,8 @@ public extension SMB {
             switch self {
             case .contextCreationFailed:
                 return "Failed to create SMB context"
+            case .operationRequestedAfterConnectionClosed:
+                return "Operation requested after connection was closed"
             case let .invalidArgument(cause, operation):
                 return Self.describe("Invalid argument", operation: operation.description, message: cause.description)
             case let .posix(code, operation, message):
@@ -94,6 +98,8 @@ public extension SMB {
             switch self {
             case .contextCreationFailed:
                 nil
+            case .operationRequestedAfterConnectionClosed:
+                nil
             case let .invalidArgument(_, operation):
                 operation.description
             case let .posix(_, operation, _),
@@ -109,6 +115,8 @@ public extension SMB {
         public var message: String? {
             switch self {
             case .contextCreationFailed:
+                nil
+            case .operationRequestedAfterConnectionClosed:
                 nil
             case let .invalidArgument(cause, _):
                 cause.description
