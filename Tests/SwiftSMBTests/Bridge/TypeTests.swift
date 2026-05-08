@@ -241,23 +241,23 @@ struct SMB2SecurityModeTests {
 
 struct IntExtensionTests {
     @Test func `zero converts`() throws {
-        let result = try 0.asUInt32(operation: "test")
+        let result = try 0.asUInt32(operation: .smb2Open)
         #expect(result == 0)
     }
 
     @Test func `uint 32 max converts`() throws {
-        let result = try Int(UInt32.max).asUInt32(operation: "test")
+        let result = try Int(UInt32.max).asUInt32(operation: .smb2Open)
         #expect(result == UInt32.max)
     }
 
     @Test func `positive value converts`() throws {
-        let result = try 1024.asUInt32(operation: "test")
+        let result = try 1024.asUInt32(operation: .smb2Open)
         #expect(result == 1024)
     }
 
     @Test("negative throws") func negativeThrows() {
         #expect(throws: SMB.Error.self) {
-            try (-1).asUInt32(operation: "test")
+            try (-1).asUInt32(operation: .smb2Open)
         }
     }
 
@@ -265,18 +265,18 @@ struct IntExtensionTests {
         // Int.max (9223372036854775807) exceeds UInt32.max on 64-bit platforms
         if Int.max > Int(UInt32.max) {
             #expect(throws: SMB.Error.self) {
-                try Int.max.asUInt32(operation: "test")
+                try Int.max.asUInt32(operation: .smb2Open)
             }
         }
     }
 
     @Test func `error message contains operation`() throws {
         do {
-            _ = try (-5).asUInt32(operation: "my_operation")
+            _ = try (-5).asUInt32(operation: .smb2Open)
             Issue.record("Expected error to be thrown")
         }
         catch let error as SMB.Error {
-            #expect(error.operation == "my_operation")
+            #expect(error.operation == "smb2_open")
         }
     }
 }
@@ -387,12 +387,15 @@ struct SMBErrorTests {
     }
 
     @Test("invalidArgument has operation and message") func invalidargumentHasOperationAndMessage() {
-        let error = SMB.Error.invalidArgument(operation: "test_op", message: "bad input")
-        #expect(error.operation == "test_op")
-        #expect(error.message == "bad input")
+        let error = SMB.Error.invalidArgument(
+            cause: .invalidShareName("bad input"),
+            onOperation: .smb2ConnectShare,
+        )
+        #expect(error.operation == "smb2_connect_share")
+        #expect(error.message == "Invalid share name 'bad input'")
         #expect(error.description.contains("Invalid argument"))
-        #expect(error.description.contains("test_op"))
-        #expect(error.description.contains("bad input"))
+        #expect(error.description.contains("smb2_connect_share"))
+        #expect(error.description.contains("Invalid share name 'bad input'"))
     }
 
     @Test("posix error has operation") func posixErrorHasOperation() {
@@ -421,35 +424,35 @@ struct SMBErrorTests {
 
 struct SMBPathValidationTests {
     @Test("validates share relative paths using PathWorks") func validatesShareRelativePathsUsingPathworks() throws {
-        #expect(try SMB.validatePath("dir/file.txt", operation: "test") == "dir/file.txt")
-        #expect(try SMB.validatePath("/dir/file.txt", operation: "test") == "dir/file.txt")
-        #expect(try SMB.validatePath("//dir/file.txt", operation: "test") == "dir/file.txt")
-        #expect(try SMB.validatePath("", operation: "test", allowRoot: true) == "")
-        #expect(try SMB.validatePath("/", operation: "test", allowRoot: true) == "")
+        #expect(try SMB.validatePath("dir/file.txt", operation: .smb2Open) == "dir/file.txt")
+        #expect(try SMB.validatePath("/dir/file.txt", operation: .smb2Open) == "dir/file.txt")
+        #expect(try SMB.validatePath("//dir/file.txt", operation: .smb2Open) == "dir/file.txt")
+        #expect(try SMB.validatePath("", operation: .smb2Open, allowRoot: true) == "")
+        #expect(try SMB.validatePath("/", operation: .smb2Open, allowRoot: true) == "")
 
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("dir/bad:name.txt", operation: "test")
+            try SMB.validatePath("dir/bad:name.txt", operation: .smb2Open)
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("dir/CON.txt", operation: "test")
+            try SMB.validatePath("dir/CON.txt", operation: .smb2Open)
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("", operation: "test")
+            try SMB.validatePath("", operation: .smb2Open)
         }
     }
 
     @Test("validates share names using PathWorks") func validatesShareNamesUsingPathworks() throws {
-        try SMB.validateShareName("public", operation: "test")
-        try SMB.validateShareName("IPC$", operation: "test")
+        try SMB.validateShareName("public", operation: .smb2Open)
+        try SMB.validateShareName("IPC$", operation: .smb2Open)
 
         #expect(throws: SMB.Error.self) {
-            try SMB.validateShareName("", operation: "test")
+            try SMB.validateShareName("", operation: .smb2Open)
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validateShareName("public/private", operation: "test")
+            try SMB.validateShareName("public/private", operation: .smb2Open)
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validateShareName("bad:name", operation: "test")
+            try SMB.validateShareName("bad:name", operation: .smb2Open)
         }
     }
 }

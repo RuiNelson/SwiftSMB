@@ -146,7 +146,7 @@ public extension SMB {
         }
 
         deinit {
-            if let handle = takeHandle(), let context = try? connection.requireContext(operation: "smb2_close") {
+            if let handle = takeHandle(), let context = try? connection.requireContext(operation: .smb2Close) {
                 try? SwiftSMB.close(context: context, file: handle)
             }
         }
@@ -163,7 +163,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the server reports a close error.
         public func close() throws {
             guard let handle = takeHandle() else { return }
-            let context = try connection.requireContext(operation: "smb2_close")
+            let context = try connection.requireContext(operation: .smb2Close)
             try SMB.run {
                 try SwiftSMB.close(context: context, file: handle)
             }
@@ -202,8 +202,8 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
         public func write(_ data: Data) throws -> Int {
-            let context = try connection.requireContext(operation: "smb2_write")
-            let handle = try requireHandle(operation: "smb2_write")
+            let context = try connection.requireContext(operation: .smb2Write)
+            let handle = try requireHandle(operation: .smb2Write)
             return try SMB.run {
                 try data.withUnsafeBytes { rawBuffer in
                     try SwiftSMB.write(context: context, file: handle, bytes: RawSpan(_unsafeBytes: rawBuffer))
@@ -220,8 +220,8 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
         public func write(_ data: Data, atOffset offset: UInt64) throws -> Int {
-            let context = try connection.requireContext(operation: "smb2_pwrite")
-            let handle = try requireHandle(operation: "smb2_pwrite")
+            let context = try connection.requireContext(operation: .smb2Pwrite)
+            let handle = try requireHandle(operation: .smb2Pwrite)
             return try SMB.run {
                 try data.withUnsafeBytes { rawBuffer in
                     try SwiftSMB.write(
@@ -243,8 +243,8 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if seeking fails.
         @discardableResult
         public func seek(offset: Int64, from origin: SeekOrigin) throws -> UInt64 {
-            let context = try connection.requireContext(operation: "smb2_lseek")
-            let handle = try requireHandle(operation: "smb2_lseek")
+            let context = try connection.requireContext(operation: .smb2Lseek)
+            let handle = try requireHandle(operation: .smb2Lseek)
             return try SMB.run {
                 try SwiftSMB.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
             }
@@ -254,8 +254,8 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the sync operation fails.
         public func sync() throws {
-            let context = try connection.requireContext(operation: "smb2_fsync")
-            let handle = try requireHandle(operation: "smb2_fsync")
+            let context = try connection.requireContext(operation: .smb2Fsync)
+            let handle = try requireHandle(operation: .smb2Fsync)
             try SMB.run {
                 try SwiftSMB.sync(context: context, file: handle)
             }
@@ -266,8 +266,8 @@ public extension SMB {
         /// - Parameter length: The target file length.
         /// - Throws: ``SMB/Error`` if truncation fails.
         public func truncate(toLength length: UInt64) throws {
-            let context = try connection.requireContext(operation: "smb2_ftruncate")
-            let handle = try requireHandle(operation: "smb2_ftruncate")
+            let context = try connection.requireContext(operation: .smb2Ftruncate)
+            let handle = try requireHandle(operation: .smb2Ftruncate)
             try SMB.run {
                 try SwiftSMB.truncate(context: context, file: handle, length: length)
             }
@@ -278,8 +278,8 @@ public extension SMB {
         /// - Returns: File metadata reported by the server.
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
         public func stat() throws -> Stat {
-            let context = try connection.requireContext(operation: "smb2_fstat")
-            let handle = try requireHandle(operation: "smb2_fstat")
+            let context = try connection.requireContext(operation: .smb2Fstat)
+            let handle = try requireHandle(operation: .smb2Fstat)
             return try SMB.run {
                 try Stat(SwiftSMB.fileStatistics(context: context, file: handle))
             }
@@ -287,17 +287,16 @@ public extension SMB {
 
         /// Shared implementation for positioned and unpositioned reads.
         private func readBytes(upToByteCount byteCount: Int, atOffset offset: UInt64?) throws -> Data {
+            let operation: SMB.Error.InvalidArgumentOperation = offset == nil ? .smb2Read : .smb2Pread
             guard byteCount >= 0 else {
                 throw SMB.Error.invalidArgument(
-                    operation: offset == nil ? "smb2_read" : "smb2_pread",
-                    message: "Byte count must be greater than or equal to zero",
+                    cause: .byteCountMustBeNonNegative,
+                    onOperation: operation,
                 )
             }
             guard byteCount > 0 else {
                 return Data()
             }
-
-            let operation = offset == nil ? "smb2_read" : "smb2_pread"
             let acceptedByteCount = try connection.acceptedReadBlockSize(byteCount)
             let context = try connection.requireContext(operation: operation)
             let handle = try requireHandle(operation: operation)
@@ -326,9 +325,9 @@ public extension SMB {
         }
 
         /// Returns the live bridge handle or throws if the file is closed.
-        private func requireHandle(operation: String) throws -> SMB2FileHandle {
+        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> SMB2FileHandle {
             guard let handle else {
-                throw SMB.Error.invalidArgument(operation: operation, message: "File is already closed")
+                throw SMB.Error.invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
             }
             return handle
         }

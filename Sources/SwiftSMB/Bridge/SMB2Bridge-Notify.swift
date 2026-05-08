@@ -96,8 +96,8 @@ func notifyChange(
 ) throws -> SMB2PendingRequest {
     guard let fileID = smb2_get_file_id(directory.raw) else {
         throw SMB.Error.invalidArgument(
-            operation: "smb2_get_file_id",
-            message: "Directory file handle does not have a file id",
+            cause: .directoryFileHandleMissingFileID,
+            onOperation: .smb2GetFileID,
         )
     }
 
@@ -250,8 +250,8 @@ private func decodeNotifyChanges(
 
     guard let allocatedChange = calloc(1, MemoryLayout<smb2_file_notify_change_information>.stride) else {
         return .failure(.invalidArgument(
-            operation: "smb2_decode_filenotifychangeinformation",
-            message: "Failed to allocate file notify change information",
+            cause: .failedToAllocateFileNotifyChangeInformation,
+            onOperation: .smb2DecodeFileNotifyChangeInformation,
         ))
     }
 

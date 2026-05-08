@@ -90,14 +90,14 @@ public extension SMB.Connection {
         makePath: Bool = true,
         continuation: @escaping PipeProgress,
     ) throws {
-        let path = try SMB.validatePath(path, operation: "SMB.Connection.write(fromPipe:toFile:)")
+        let path = try SMB.validatePath(path, operation: .smbConnectionWriteFromPipeToFile)
         let offset = from.offsetValue
 
         try validateOrCreateRemoteParent(
             on: self,
             for: path,
             makePath: makePath,
-            operation: "SMB.Connection.write(fromPipe:toFile:)",
+            operation: .smbConnectionWriteFromPipeToFile,
         )
 
         if offset > 0 {
@@ -105,7 +105,7 @@ public extension SMB.Connection {
                 on: self,
                 at: path,
                 minimumSize: offset,
-                operation: "SMB.Connection.write(fromPipe:toFile:)",
+                operation: .smbConnectionWriteFromPipeToFile,
             )
         }
         else {
@@ -114,7 +114,7 @@ public extension SMB.Connection {
                 guard options.contains(.create) else {
                     throw SMB.Error.posix(
                         code: POSIXErrorCode.ENOENT.rawValue,
-                        operation: "SMB.Connection.write(fromPipe:toFile:)",
+                        operation: SMB.Error.InvalidArgumentOperation.smbConnectionWriteFromPipeToFile.description,
                         message: "Remote file does not exist",
                     )
                 }
@@ -122,14 +122,14 @@ public extension SMB.Connection {
                 guard !options.contains(.exclusive) else {
                     throw SMB.Error.posix(
                         code: POSIXErrorCode.EEXIST.rawValue,
-                        operation: "SMB.Connection.write(fromPipe:toFile:)",
+                        operation: SMB.Error.InvalidArgumentOperation.smbConnectionWriteFromPipeToFile.description,
                         message: "Remote file already exists",
                     )
                 }
             case .directory, .other:
                 throw SMB.Error.invalidArgument(
-                    operation: "SMB.Connection.write(fromPipe:toFile:)",
-                    message: "Remote destination is not a file",
+                    cause: .remoteDestinationIsNotAFile,
+                    onOperation: .smbConnectionWriteFromPipeToFile,
                 )
             }
         }
@@ -137,18 +137,18 @@ public extension SMB.Connection {
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
 
         while true {
-            let package = try receivePackage(from: pipe, operation: "SMB.Connection.write(fromPipe:toFile:)")
+            let package = try receivePackage(from: pipe, operation: .smbConnectionWriteFromPipeToFile)
             switch package {
             case .start:
                 break
             case .broken:
-                throw brokenPipeError(operation: "SMB.Connection.write(fromPipe:toFile:)")
+                throw brokenPipeError(operation: .smbConnectionWriteFromPipeToFile)
             case .data, .finish:
                 // Treat malformed producer order as a caller bug. Silently skipping
                 // data here would make uploads appear successful while losing bytes.
                 throw SMB.Error.invalidArgument(
-                    operation: "SMB.Connection.write(fromPipe:toFile:)",
-                    message: "Pipe data must begin with a start package",
+                    cause: .pipeDataMustBeginWithStartPackage,
+                    onOperation: .smbConnectionWriteFromPipeToFile,
                 )
             }
             break
@@ -162,7 +162,7 @@ public extension SMB.Connection {
         let operationStart = DispatchTime.now()
 
         while true {
-            let package = try receivePackage(from: pipe, operation: "SMB.Connection.write(fromPipe:toFile:)")
+            let package = try receivePackage(from: pipe, operation: .smbConnectionWriteFromPipeToFile)
             switch package {
             case .start:
                 continue
@@ -170,7 +170,7 @@ public extension SMB.Connection {
                 _ = continuation(transferred, 0, speed(bytes: transferred, from: operationStart, to: .now()))
                 return
             case .broken:
-                throw brokenPipeError(operation: "SMB.Connection.write(fromPipe:toFile:)")
+                throw brokenPipeError(operation: .smbConnectionWriteFromPipeToFile)
             case let .data(data):
                 // A pipe package may be larger than the negotiated SMB write size.
                 // Split it here so callers can use convenient local buffer sizes.
@@ -231,13 +231,13 @@ public extension SMB.Connection {
         maxBlockSize: UInt64 = (10 * 1024 * 1024),
         continuation: @escaping PipeProgress,
     ) throws {
-        let path = try SMB.validatePath(path, operation: "SMB.Connection.read(fromFile:toPipe:)")
+        let path = try SMB.validatePath(path, operation: .smbConnectionReadFromFileToPipe)
         let offset = from.offsetValue
         try validateRemoteFile(
             on: self,
             at: path,
             minimumSize: offset,
-            operation: "SMB.Connection.read(fromFile:toPipe:)",
+            operation: .smbConnectionReadFromFileToPipe,
         )
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
@@ -257,7 +257,7 @@ public extension SMB.Connection {
             do {
                 // Signal .start before opening the remote file so consumers can begin
                 // waiting immediately; startup errors are still reported through ready.
-                try sendPackage(.start, to: pipe, operation: "SMB.Connection.read(fromFile:toPipe:)")
+                try sendPackage(.start, to: pipe, operation: .smbConnectionReadFromFileToPipe)
 
                 let file = try self.openFile(at: path, accessMode: .readOnly, options: options)
                 signalReady(nil)
@@ -278,11 +278,11 @@ public extension SMB.Connection {
                             speed(bytes: transferred, from: operationStart, to: .now()),
                         )
                         try? file.close()
-                        try sendPackage(.finish, to: pipe, operation: "SMB.Connection.read(fromFile:toPipe:)")
+                        try sendPackage(.finish, to: pipe, operation: .smbConnectionReadFromFileToPipe)
                         return
                     }
 
-                    try sendPackage(.data(data), to: pipe, operation: "SMB.Connection.read(fromFile:toPipe:)")
+                    try sendPackage(.data(data), to: pipe, operation: .smbConnectionReadFromFileToPipe)
                     remoteOffset += UInt64(data.count)
                     transferred += UInt64(data.count)
 
@@ -293,14 +293,14 @@ public extension SMB.Connection {
                         // Caller cancellation is a clean stop: sent data remains readable
                         // and the terminal package is .finish, not .broken.
                         try? file.close()
-                        try sendPackage(.finish, to: pipe, operation: "SMB.Connection.read(fromFile:toPipe:)")
+                        try sendPackage(.finish, to: pipe, operation: .smbConnectionReadFromFileToPipe)
                         return
                     }
                 }
             }
             catch {
                 signalReady(error)
-                try? sendPackage(.broken, to: pipe, operation: "SMB.Connection.read(fromFile:toPipe:)")
+                try? sendPackage(.broken, to: pipe, operation: .smbConnectionReadFromFileToPipe)
             }
         }
 
@@ -368,13 +368,13 @@ public extension SMB.Connection {
         maxBlockSize: UInt64 = (10 * 1024 * 1024),
         continuation: @escaping FileProgress,
     ) throws {
-        let remote = try SMB.validatePath(remote, operation: "SMB.Connection.downloadFile")
+        let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
         let offset = from.offsetValue
         let remoteStat = try validateRemoteFile(
             on: self,
             at: remote,
             minimumSize: offset,
-            operation: "SMB.Connection.downloadFile",
+            operation: .smbConnectionDownloadFile,
         )
         let totalBytes = remoteStat.size - offset
         _ = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
@@ -384,14 +384,14 @@ public extension SMB.Connection {
         guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &parentIsDirectory) else {
             throw SMB.Error.posix(
                 code: POSIXErrorCode.ENOENT.rawValue,
-                operation: "SMB.Connection.downloadFile",
+                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
                 message: "Local parent directory does not exist",
             )
         }
         guard parentIsDirectory.boolValue else {
             throw SMB.Error.posix(
                 code: POSIXErrorCode.ENOTDIR.rawValue,
-                operation: "SMB.Connection.downloadFile",
+                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
                 message: "Local parent path is not a directory",
             )
         }
@@ -401,7 +401,7 @@ public extension SMB.Connection {
            destinationIsDirectory.boolValue {
             throw SMB.Error.posix(
                 code: POSIXErrorCode.EISDIR.rawValue,
-                operation: "SMB.Connection.downloadFile",
+                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
                 message: "Local destination is a directory",
             )
         }
@@ -429,11 +429,11 @@ public extension SMB.Connection {
         }
 
         if offset > 0 {
-            let existingSize = try localFileSize(for: local, operation: "SMB.Connection.downloadFile")
+            let existingSize = try localFileSize(for: local, operation: .smbConnectionDownloadFile)
             guard existingSize >= offset else {
                 throw SMB.Error.invalidArgument(
-                    operation: "SMB.Connection.downloadFile",
-                    message: "Local file is shorter than the requested resume offset",
+                    cause: .localFileShorterThanResumeOffset,
+                    onOperation: .smbConnectionDownloadFile,
                 )
             }
 
@@ -448,8 +448,8 @@ public extension SMB.Connection {
                 let data = input.readData(ofLength: chunkSize)
                 guard !data.isEmpty else {
                     throw SMB.Error.invalidArgument(
-                        operation: "SMB.Connection.downloadFile",
-                        message: "Local file is shorter than the requested resume offset",
+                        cause: .localFileShorterThanResumeOffset,
+                        onOperation: .smbConnectionDownloadFile,
                     )
                 }
                 output.write(data)
@@ -477,13 +477,13 @@ public extension SMB.Connection {
                 // Ignore any noise before .start so a future producer wrapper can
                 // still send setup metadata without making the download fail.
                 while true {
-                    let package = try receivePackage(from: pipe, operation: "SMB.Connection.downloadFile")
+                    let package = try receivePackage(from: pipe, operation: .smbConnectionDownloadFile)
                     switch package {
                     case .start:
                         break
                     case .broken:
                         shouldDrain = false
-                        throw brokenPipeError(operation: "SMB.Connection.downloadFile")
+                        throw brokenPipeError(operation: .smbConnectionDownloadFile)
                     case .data, .finish:
                         continue
                     }
@@ -492,7 +492,7 @@ public extension SMB.Connection {
 
                 var isFinished = false
                 while !isFinished {
-                    let package = try receivePackage(from: pipe, operation: "SMB.Connection.downloadFile")
+                    let package = try receivePackage(from: pipe, operation: .smbConnectionDownloadFile)
                     switch package {
                     case .start:
                         continue
@@ -501,7 +501,7 @@ public extension SMB.Connection {
                         isFinished = true
                     case .broken:
                         shouldDrain = false
-                        throw brokenPipeError(operation: "SMB.Connection.downloadFile")
+                        throw brokenPipeError(operation: .smbConnectionDownloadFile)
                     case let .data(data):
                         // FileHandle.write can throw Objective-C exceptions on
                         // some platforms; once an error is observed, stop writing
@@ -624,20 +624,20 @@ public extension SMB.Connection {
         atomic: Bool = true,
         continuation: @escaping FileProgress,
     ) throws {
-        let remote = try SMB.validatePath(remote, operation: "SMB.Connection.uploadFile")
+        let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
         try validateOrCreateRemoteParent(
             on: self,
             for: remote,
             makePath: makePath,
-            operation: "SMB.Connection.uploadFile",
+            operation: .smbConnectionUploadFile,
         )
 
         let offset = from.offsetValue
-        let fileSize = try localFileSize(for: local, operation: "SMB.Connection.uploadFile")
+        let fileSize = try localFileSize(for: local, operation: .smbConnectionUploadFile)
         guard offset <= fileSize else {
             throw SMB.Error.invalidArgument(
-                operation: "SMB.Connection.uploadFile",
-                message: "Offset is beyond the end of the local file",
+                cause: .offsetBeyondEndOfLocalFile,
+                onOperation: .smbConnectionUploadFile,
             )
         }
 
@@ -668,7 +668,7 @@ public extension SMB.Connection {
                 on: self,
                 at: remote,
                 minimumSize: offset,
-                operation: "SMB.Connection.uploadFile",
+                operation: .smbConnectionUploadFile,
             )
         }
         if atomic, offset > 0 {
@@ -685,8 +685,8 @@ public extension SMB.Connection {
                 let data = try input.read(upToByteCount: requested, atOffset: copied)
                 guard !data.isEmpty else {
                     throw SMB.Error.invalidArgument(
-                        operation: "SMB.Connection.uploadFile",
-                        message: "Remote file is shorter than the requested resume offset",
+                        cause: .remoteFileShorterThanResumeOffset,
+                        onOperation: .smbConnectionUploadFile,
                     )
                 }
 
@@ -712,8 +712,8 @@ public extension SMB.Connection {
                 break
             case .directory, .other:
                 throw SMB.Error.invalidArgument(
-                    operation: "SMB.Connection.uploadFile",
-                    message: "Remote destination is not a file",
+                    cause: .remoteDestinationIsNotAFile,
+                    onOperation: .smbConnectionUploadFile,
                 )
             }
         }
@@ -726,7 +726,7 @@ public extension SMB.Connection {
                 // represented as .finish. Real local I/O failures send .broken.
                 if !didBreak {
                     do {
-                        try sendPackage(.finish, to: pipe, operation: "SMB.Connection.uploadFile")
+                        try sendPackage(.finish, to: pipe, operation: .smbConnectionUploadFile)
                     }
                     catch {
                         producerError.current = producerError.current ?? error
@@ -742,17 +742,17 @@ public extension SMB.Connection {
 
                 // The pipe protocol requires .start first; write(fromPipe:) now
                 // rejects data before start instead of silently discarding it.
-                try sendPackage(.start, to: pipe, operation: "SMB.Connection.uploadFile")
+                try sendPackage(.start, to: pipe, operation: .smbConnectionUploadFile)
                 while !cancelled.current {
                     let data = handle.readData(ofLength: blockSize)
                     guard !data.isEmpty else { return }
-                    try sendPackage(.data(data), to: pipe, operation: "SMB.Connection.uploadFile")
+                    try sendPackage(.data(data), to: pipe, operation: .smbConnectionUploadFile)
                 }
             }
             catch {
                 producerError.current = error
                 didBreak = true
-                try? sendPackage(.broken, to: pipe, operation: "SMB.Connection.uploadFile")
+                try? sendPackage(.broken, to: pipe, operation: .smbConnectionUploadFile)
             }
         }
 
@@ -815,8 +815,8 @@ public extension SMB.Connection {
                     backup = backupPath
                 case .directory, .other:
                     throw SMB.Error.invalidArgument(
-                        operation: "SMB.Connection.uploadFile",
-                        message: "Remote destination is not a file",
+                        cause: .remoteDestinationIsNotAFile,
+                        onOperation: .smbConnectionUploadFile,
                     )
                 }
 
@@ -863,29 +863,34 @@ private func speed(bytes: UInt64, from start: DispatchTime, to end: DispatchTime
 
 private let pipePackageTimeout: TimeInterval = 30
 
-private func brokenPipeError(operation: String) -> SMB.Error {
+private func brokenPipeError(operation: SMB.Error.InvalidArgumentOperation) -> SMB.Error {
     SMB.Error.posix(
         code: POSIXErrorCode.EPIPE.rawValue,
-        operation: operation,
+        operation: operation.description,
         message: "Pipe was broken before the transfer completed",
     )
 }
 
-private func pipeTimeoutError(operation: String) -> SMB.Error {
+private func pipeTimeoutError(operation: SMB.Error.InvalidArgumentOperation) -> SMB.Error {
     SMB.Error.posix(
         code: POSIXErrorCode.ETIMEDOUT.rawValue,
-        operation: operation,
+        operation: operation.description,
         message: "Timed out waiting for pipe activity",
     )
 }
 
-private func sendPackage(_ package: DataPipe.Package, to pipe: DataPipe, operation: String) throws {
+private func sendPackage(
+    _ package: DataPipe.Package,
+    to pipe: DataPipe,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
     guard pipe.send(package, timeout: pipePackageTimeout) else {
         throw pipeTimeoutError(operation: operation)
     }
 }
 
-private func receivePackage(from pipe: DataPipe, operation: String) throws -> DataPipe.Package {
+private func receivePackage(from pipe: DataPipe, operation: SMB.Error.InvalidArgumentOperation) throws -> DataPipe
+.Package {
     guard let package = pipe.receive(timeout: pipePackageTimeout) else {
         throw pipeTimeoutError(operation: operation)
     }
@@ -896,8 +901,8 @@ private func receivePackage(from pipe: DataPipe, operation: String) throws -> Da
 private func pipeBlockSize(_ preferred: UInt64, acceptedBlockSize: Int) throws -> Int {
     guard preferred > 0, preferred <= UInt64(Int.max) else {
         throw SMB.Error.invalidArgument(
-            operation: "SMB.Connection.pipeBlockSize",
-            message: "Block size must be greater than zero and fit in Int",
+            cause: .blockSizeMustBePositiveAndFitInInt,
+            onOperation: .smbConnectionPipeBlockSize,
         )
     }
     return min(Int(preferred), acceptedBlockSize)
@@ -915,16 +920,16 @@ private func validateRemoteFile(
     on connection: SMB.Connection,
     at path: String,
     minimumSize: UInt64,
-    operation: String,
+    operation: SMB.Error.InvalidArgumentOperation,
 ) throws -> SMB.Stat {
     let stat = try connection.stat(at: path)
     guard stat.type == .file else {
-        throw SMB.Error.invalidArgument(operation: operation, message: "Remote path is not a file")
+        throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: operation)
     }
     guard stat.size >= minimumSize else {
         throw SMB.Error.invalidArgument(
-            operation: operation,
-            message: "Remote file is shorter than the requested resume offset",
+            cause: .remoteFileShorterThanResumeOffset,
+            onOperation: operation,
         )
     }
     return stat
@@ -935,7 +940,7 @@ private func validateOrCreateRemoteParent(
     on connection: SMB.Connection,
     for path: String,
     makePath: Bool,
-    operation: String,
+    operation: SMB.Error.InvalidArgumentOperation,
 ) throws {
     let parent = path.removingLastPathComponent
     guard !parent.isEmpty else { return }
@@ -946,31 +951,35 @@ private func validateOrCreateRemoteParent(
         return
     case .false:
         guard makePath else {
-            throw SMB.Error.invalidArgument(operation: operation, message: "Remote parent directory does not exist")
+            throw SMB.Error.invalidArgument(
+                cause: .remoteParentDirectoryDoesNotExist,
+                onOperation: operation,
+            )
         }
         try connection.makeDirectory(at: parent, makePath: true)
     case .file, .link, .other:
         throw SMB.Error.invalidArgument(
-            operation: operation,
-            message: "Remote parent path exists and is not a directory",
+            cause: .remoteParentPathIsNotADirectory,
+            onOperation: operation,
         )
     }
 }
 
 /// Returns the size of a local regular file.
-private func localFileSize(for url: URL, operation: String) throws -> UInt64 {
+private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOperation) throws -> UInt64 {
+    let operationString = operation.description
     var isDirectory = ObjCBool(false)
     guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
         throw SMB.Error.posix(
             code: POSIXErrorCode.ENOENT.rawValue,
-            operation: operation,
+            operation: operationString,
             message: "Local file does not exist",
         )
     }
     guard !isDirectory.boolValue else {
         throw SMB.Error.posix(
             code: POSIXErrorCode.EISDIR.rawValue,
-            operation: operation,
+            operation: operationString,
             message: "Local path is a directory",
         )
     }
@@ -986,7 +995,7 @@ private func localFileSize(for url: URL, operation: String) throws -> UInt64 {
         return UInt64(size)
     }
 
-    throw SMB.Error.invalidArgument(operation: operation, message: "Unable to determine local file size")
+    throw SMB.Error.invalidArgument(cause: .unableToDetermineLocalFileSize, onOperation: operation)
 }
 
 /// Builds a temporary remote path that does not currently exist.

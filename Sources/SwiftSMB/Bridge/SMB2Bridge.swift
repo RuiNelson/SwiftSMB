@@ -192,7 +192,7 @@ func read(
     offset: UInt64,
 ) throws -> Int {
     var buffer = buffer
-    let count = try buffer.byteCount.asUInt32(operation: "smb2_pread")
+    let count = try buffer.byteCount.asUInt32(operation: .smb2Pread)
     let status = buffer.withUnsafeMutableBytes { bytes in
         bytes.bindMemory(to: UInt8.self).baseAddress.map {
             smb2_pread(context.raw, file.raw, $0, count, offset)
@@ -209,7 +209,7 @@ func write(
     bytes: RawSpan,
     offset: UInt64,
 ) throws -> Int {
-    let count = try bytes.byteCount.asUInt32(operation: "smb2_pwrite")
+    let count = try bytes.byteCount.asUInt32(operation: .smb2Pwrite)
     let status = bytes.withUnsafeBytes { bytes in
         bytes.bindMemory(to: UInt8.self).baseAddress.map {
             smb2_pwrite(context.raw, file.raw, $0, count, offset)
@@ -226,7 +226,7 @@ func read(
     into buffer: consuming MutableRawSpan,
 ) throws -> Int {
     var buffer = buffer
-    let count = try buffer.byteCount.asUInt32(operation: "smb2_read")
+    let count = try buffer.byteCount.asUInt32(operation: .smb2Read)
     let status = buffer.withUnsafeMutableBytes { bytes in
         bytes.bindMemory(to: UInt8.self).baseAddress.map {
             smb2_read(context.raw, file.raw, $0, count)
@@ -242,7 +242,7 @@ func write(
     file: SMB2FileHandle,
     bytes: RawSpan,
 ) throws -> Int {
-    let count = try bytes.byteCount.asUInt32(operation: "smb2_write")
+    let count = try bytes.byteCount.asUInt32(operation: .smb2Write)
     let status = bytes.withUnsafeBytes { bytes in
         bytes.bindMemory(to: UInt8.self).baseAddress.map {
             smb2_write(context.raw, file.raw, $0, count)
@@ -345,12 +345,12 @@ func readLink(
 ) throws -> String {
     guard bufferSize > 0 else {
         throw SMB.Error.invalidArgument(
-            operation: "smb2_readlink",
-            message: "Buffer size must be greater than zero",
+            cause: .bufferSizeMustBeGreaterThanZero,
+            onOperation: .smb2Readlink,
         )
     }
 
-    let count = try bufferSize.asUInt32(operation: "smb2_readlink")
+    let count = try bufferSize.asUInt32(operation: .smb2Readlink)
     var buffer = [CChar](repeating: 0, count: bufferSize)
     let status = path.withCString { smb2_readlink(context.raw, $0, &buffer, count) }
     try check(status, context: context, operation: "smb2_readlink")

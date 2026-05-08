@@ -62,7 +62,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var negotiatedDialect: UInt16 {
             get throws {
-                let context = try requireContext(operation: "smb2_get_dialect")
+                let context = try requireContext(operation: .smb2GetDialect)
                 return SwiftSMB.getDialect(on: context)
             }
         }
@@ -73,7 +73,7 @@ public extension SMB {
         ///   cannot be retrieved.
         public var sessionID: UInt64 {
             get throws {
-                let context = try requireContext(operation: "smb2_get_session_id")
+                let context = try requireContext(operation: .smb2GetSessionID)
                 return try SMB.run {
                     try SwiftSMB.getSessionID(context: context)
                 }
@@ -85,7 +85,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxReadSize: UInt32 {
             get throws {
-                let context = try requireContext(operation: "smb2_get_max_read_size")
+                let context = try requireContext(operation: .smb2GetMaxReadSize)
                 return SwiftSMB.getMaxReadSize(context: context)
             }
         }
@@ -95,7 +95,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxWriteSize: UInt32 {
             get throws {
-                let context = try requireContext(operation: "smb2_get_max_write_size")
+                let context = try requireContext(operation: .smb2GetMaxWriteSize)
                 return SwiftSMB.getMaxWriteSize(context: context)
             }
         }
@@ -128,7 +128,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is closed or the echo
         ///   request fails.
         @discardableResult public func echo() throws -> Double {
-            let context = try requireContext(operation: "smb2_echo")
+            let context = try requireContext(operation: .smb2Echo)
             let start = DispatchTime.now()
             try SMB.run {
                 try SwiftSMB.echo(context: context)
@@ -151,8 +151,8 @@ public extension SMB {
             accessMode: File.AccessMode = .readOnly,
             options: File.OpenOptions = [],
         ) throws -> File {
-            let path = try SMB.validatePath(path, operation: "smb2_open")
-            let context = try requireContext(operation: "smb2_open")
+            let path = try SMB.validatePath(path, operation: .smb2Open)
+            let context = try requireContext(operation: .smb2Open)
             let handle = try SMB.run {
                 try SwiftSMB.open(
                     context: context,
@@ -169,8 +169,8 @@ public extension SMB {
         /// - Returns: An open directory handle.
         /// - Throws: ``SMB/Error`` if the directory cannot be opened.
         public func openDirectory(at path: String = "") throws -> Directory {
-            let path = try SMB.validatePath(path, operation: "smb2_opendir", allowRoot: true)
-            let context = try requireContext(operation: "smb2_opendir")
+            let path = try SMB.validatePath(path, operation: .smb2Opendir, allowRoot: true)
+            let context = try requireContext(operation: .smb2Opendir)
             let handle = try SMB.run {
                 try SwiftSMB.openDir(context: context, path: path)
             }
@@ -185,7 +185,7 @@ public extension SMB {
         ///     ancestor directories before creating `path`.
         /// - Throws: ``SMB/Error`` if the directory cannot be created.
         public func makeDirectory(at path: String, makePath: Bool = false) throws {
-            let path = try SMB.validatePath(path, operation: "smb2_mkdir")
+            let path = try SMB.validatePath(path, operation: .smb2Mkdir)
             
             if makePath {
                 // check if directory is in the root of the share
@@ -211,7 +211,7 @@ public extension SMB {
                 }
             }
             
-            let context = try requireContext(operation: "smb2_mkdir")
+            let context = try requireContext(operation: .smb2Mkdir)
             try SMB.run {
                 try SwiftSMB.makeDir(context: context, path: path)
             }
@@ -222,8 +222,8 @@ public extension SMB {
         /// - Parameter path: The directory path, relative to the share root.
         /// - Throws: ``SMB/Error`` if the directory cannot be removed.
         public func removeDirectory(at path: String) throws {
-            let path = try SMB.validatePath(path, operation: "smb2_rmdir")
-            let context = try requireContext(operation: "smb2_rmdir")
+            let path = try SMB.validatePath(path, operation: .smb2Rmdir)
+            let context = try requireContext(operation: .smb2Rmdir)
             try SMB.run {
                 try SwiftSMB.removeDir(context: context, path: path)
             }
@@ -234,8 +234,8 @@ public extension SMB {
         /// - Parameter path: The path to remove, relative to the share root.
         /// - Throws: ``SMB/Error`` if the path cannot be removed.
         public func removeFile(at path: String) throws {
-            let path = try SMB.validatePath(path, operation: "smb2_unlink")
-            let context = try requireContext(operation: "smb2_unlink")
+            let path = try SMB.validatePath(path, operation: .smb2Unlink)
+            let context = try requireContext(operation: .smb2Unlink)
             try SMB.run {
                 try SwiftSMB.unlink(context: context, path: path)
             }
@@ -248,9 +248,9 @@ public extension SMB {
         ///   - newPath: The destination path, relative to the share root.
         /// - Throws: ``SMB/Error`` if the rename fails.
         public func rename(from oldPath: String, to newPath: String) throws {
-            let oldPath = try SMB.validatePath(oldPath, operation: "smb2_rename")
-            let newPath = try SMB.validatePath(newPath, operation: "smb2_rename")
-            let context = try requireContext(operation: "smb2_rename")
+            let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
+            let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
+            let context = try requireContext(operation: .smb2Rename)
             try SMB.run {
                 try SwiftSMB.rename(context: context, oldPath: oldPath, newPath: newPath)
             }
@@ -263,8 +263,8 @@ public extension SMB {
         ///   - length: The target file length, in bytes.
         /// - Throws: ``SMB/Error`` if the file cannot be truncated.
         public func truncateFile(at path: String, toLength length: UInt64) throws {
-            let path = try SMB.validatePath(path, operation: "smb2_truncate")
-            let context = try requireContext(operation: "smb2_truncate")
+            let path = try SMB.validatePath(path, operation: .smb2Truncate)
+            let context = try requireContext(operation: .smb2Truncate)
             try SMB.run {
                 try SwiftSMB.truncate(context: context, path: path, length: length)
             }
@@ -278,8 +278,8 @@ public extension SMB {
         /// - Returns: The link target path.
         /// - Throws: ``SMB/Error`` if the link cannot be read.
         public func readLink(at path: String, bufferSize: Int = 4096) throws -> String {
-            let path = try SMB.validatePath(path, operation: "smb2_readlink")
-            let context = try requireContext(operation: "smb2_readlink")
+            let path = try SMB.validatePath(path, operation: .smb2Readlink)
+            let context = try requireContext(operation: .smb2Readlink)
             return try SMB.run {
                 try SwiftSMB.readLink(context: context, path: path, bufferSize: bufferSize)
             }
@@ -291,8 +291,8 @@ public extension SMB {
         /// - Returns: File metadata.
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
         public func stat(at path: String) throws -> Stat {
-            let path = try SMB.validatePath(path, operation: "smb2_stat", allowRoot: true)
-            let context = try requireContext(operation: "smb2_stat")
+            let path = try SMB.validatePath(path, operation: .smb2Stat, allowRoot: true)
+            let context = try requireContext(operation: .smb2Stat)
             return try SMB.run {
                 try Stat(SwiftSMB.fileStatistics(context: context, path: path))
             }
@@ -304,17 +304,17 @@ public extension SMB {
         /// - Returns: Filesystem statistics reported by the server.
         /// - Throws: ``SMB/Error`` if statistics cannot be read.
         public func statFilesystem(at path: String = "") throws -> FilesystemStat {
-            let path = try SMB.validatePath(path, operation: "smb2_statvfs", allowRoot: true)
-            let context = try requireContext(operation: "smb2_statvfs")
+            let path = try SMB.validatePath(path, operation: .smb2Statvfs, allowRoot: true)
+            let context = try requireContext(operation: .smb2Statvfs)
             return try SMB.run {
                 try FilesystemStat(SwiftSMB.statVFS(context: context, path: path))
             }
         }
 
         /// Returns the live bridge context or throws if the connection is closed.
-        func requireContext(operation: String) throws -> SMB2Context {
+        func requireContext(operation: SMB.Error.InvalidArgumentOperation) throws -> SMB2Context {
             guard let context else {
-                throw SMB.Error.invalidArgument(operation: operation, message: "Connection is already closed")
+                throw SMB.Error.invalidArgument(cause: .connectionAlreadyClosed, onOperation: operation)
             }
             return context
         }
