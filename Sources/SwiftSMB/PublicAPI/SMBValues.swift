@@ -342,6 +342,74 @@ public extension SMB {
         }
     }
 
+    /// File attributes reported by an SMB server.
+    struct FileAttributes: OptionSet, Equatable, Hashable, CustomDebugStringConvertible, Sendable {
+        /// The raw attribute bitfield.
+        public let rawValue: UInt32
+
+        /// The file is read-only.
+        public static let readOnly = FileAttributes(rawValue: 0x00000001)
+
+        /// The file is hidden.
+        public static let hidden = FileAttributes(rawValue: 0x00000002)
+
+        /// The file is a system file.
+        public static let system = FileAttributes(rawValue: 0x00000004)
+
+        /// The item is a directory.
+        public static let directory = FileAttributes(rawValue: 0x00000010)
+
+        /// The file should be archived.
+        public static let archive = FileAttributes(rawValue: 0x00000020)
+
+        /// The file has no other attributes set.
+        public static let normal = FileAttributes(rawValue: 0x00000080)
+
+        /// The file is being used for temporary storage.
+        public static let temporary = FileAttributes(rawValue: 0x00000100)
+
+        /// The file is a sparse file.
+        public static let sparseFile = FileAttributes(rawValue: 0x00000200)
+
+        /// The file has an associated reparse point.
+        public static let reparsePoint = FileAttributes(rawValue: 0x00000400)
+
+        /// The file is compressed.
+        public static let compressed = FileAttributes(rawValue: 0x00000800)
+
+        /// The file is offline.
+        public static let offline = FileAttributes(rawValue: 0x00001000)
+
+        /// The file will not be indexed by the content indexing service.
+        public static let notContentIndexed = FileAttributes(rawValue: 0x00002000)
+
+        /// The file is encrypted.
+        public static let encrypted = FileAttributes(rawValue: 0x00004000)
+
+        /// Creates file attributes from a raw bitfield.
+        public init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+
+        public var debugDescription: String {
+            describeFlags([
+                (.readOnly, "readOnly"),
+                (.hidden, "hidden"),
+                (.system, "system"),
+                (.directory, "directory"),
+                (.archive, "archive"),
+                (.normal, "normal"),
+                (.temporary, "temporary"),
+                (.sparseFile, "sparseFile"),
+                (.reparsePoint, "reparsePoint"),
+                (.compressed, "compressed"),
+                (.offline, "offline"),
+                (.notContentIndexed, "notContentIndexed"),
+                (.encrypted, "encrypted"),
+            ], typeName: "SMB.FileAttributes")
+        }
+    }
+
     /// An entry returned while reading an SMB directory.
     struct DirectoryEntry: Equatable, CustomDebugStringConvertible, Sendable {
         /// The entry name.
