@@ -103,7 +103,7 @@ struct SMBConnectionPipeTests {
 
         var received = Data()
         var isComplete = false
-        while !isComplete, let package = pipe.receive(timeOut: nil) {
+        while !isComplete, let package = pipe.receive(timeout: nil) {
             switch package {
             case .start:
                 continue
@@ -141,7 +141,7 @@ struct SMBConnectionPipeTests {
 
         var received = Data()
         var isComplete = false
-        while !isComplete, let package = pipe.receive(timeOut: nil) {
+        while !isComplete, let package = pipe.receive(timeout: nil) {
             switch package {
             case .start:
                 continue

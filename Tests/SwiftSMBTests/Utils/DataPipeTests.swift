@@ -20,16 +20,16 @@ struct DataPipeTests {
         pipe.send(.data(data))
         pipe.send(.finish)
 
-        #expect(pipe.receive(timeOut: nil) == .start)
-        #expect(pipe.receive(timeOut: nil) == .data(data))
-        #expect(pipe.receive(timeOut: nil) == .finish)
+        #expect(pipe.receive(timeout: nil) == .start)
+        #expect(pipe.receive(timeout: nil) == .data(data))
+        #expect(pipe.receive(timeout: nil) == .finish)
     }
 
     @Test("receive times out when empty")
     func receiveTimesOutWhenEmpty() {
         let pipe = DataPipe(label: "SwiftSMBTests.DataPipeTests.timeout")
 
-        #expect(pipe.receive(timeOut: .now() + .milliseconds(10)) == nil)
+        #expect(pipe.receive(timeout: 0.01) == nil)
     }
 
     @Test("send blocks when all packages are full")
@@ -45,9 +45,9 @@ struct DataPipeTests {
 
         try await Task.sleep(for: .milliseconds(100))
         #expect(sent.current == false)
-        #expect(pipe.receive(timeOut: nil) == .data(Data([0x01])))
+        #expect(pipe.receive(timeout: nil) == .data(Data([0x01])))
         #expect(try await eventually { sent.current })
-        #expect(pipe.receive(timeOut: nil) == .data(Data([0x02])))
+        #expect(pipe.receive(timeout: nil) == .data(Data([0x02])))
     }
 
     @Test("receive blocks until producer sends")
@@ -56,7 +56,7 @@ struct DataPipeTests {
         let got = Protected<DataPipe.Package?>(nil, label: "SwiftSMBTests.DataPipeTests.receiveBlocksUntilSend.got")
 
         Task.detached {
-            got.current = pipe.receive(timeOut: nil)
+            got.current = pipe.receive(timeout: nil)
         }
 
         try await Task.sleep(for: .milliseconds(100))
@@ -72,8 +72,8 @@ struct DataPipeTests {
         pipe.send(.finish)
         pipe.send(.broken)
 
-        #expect(pipe.receive(timeOut: nil) == .finish)
-        #expect(pipe.receive(timeOut: nil) == .broken)
+        #expect(pipe.receive(timeout: nil) == .finish)
+        #expect(pipe.receive(timeout: nil) == .broken)
     }
 
     @Test("pipe can deinitialize with undrained packages")
@@ -97,7 +97,7 @@ struct DataPipeTests {
         let received = Protected<[UInt8]>([], label: "SwiftSMBTests.DataPipeTests.concurrent.received")
 
         Task.detached {
-            while let package = pipe.receive(timeOut: nil) {
+            while let package = pipe.receive(timeout: nil) {
                 switch package {
                 case .start:
                     continue
