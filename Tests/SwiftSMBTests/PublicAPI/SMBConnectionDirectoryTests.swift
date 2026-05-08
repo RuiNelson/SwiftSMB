@@ -82,7 +82,7 @@ struct SMBConnectionDirectoryTests {
         defer { try? connection.removeFile(at: file) }
 
         try connection.makeDirectory(at: directory)
-        try connection.writeFile(Data("not a directory".utf8), to: file)
+        try connection.dumpToFile(Data("not a directory".utf8), to: file)
 
         #expect(try connection.itemExists(at: directory) == .directory)
         #expect(try connection.itemExists(at: "/" + directory) == .directory)
@@ -98,7 +98,7 @@ struct SMBConnectionDirectoryTests {
         let file = uniquePath("make-path-file") + ".txt"
         defer { try? connection.removeFile(at: file) }
 
-        try connection.writeFile(Data("not a directory".utf8), to: file)
+        try connection.dumpToFile(Data("not a directory".utf8), to: file)
 
         #expect(throws: SMB.Error.self) {
             try connection.makeDirectory(at: file + "/child", makePath: true)

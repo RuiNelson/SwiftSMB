@@ -53,7 +53,7 @@ public extension SMB.Connection {
     ///     server maximum are clamped automatically.
     /// - Returns: The file contents.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
-    func readFile(at path: String, chunkSize: Int? = nil) throws -> Data {
+    func loadFile(at path: String, chunkSize: Int? = nil) throws -> Data {
         let path = try SMB.validatePath(path, operation: .smbConnectionReadFile)
         let file = try openFile(at: path)
         defer { try? file.close() }
@@ -72,7 +72,7 @@ public extension SMB.Connection {
     ///   - chunkSize: The preferred write block size. Values above the
     ///     server maximum are clamped automatically.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or written.
-    func writeFile(
+    func dumpToFile(
         _ data: Data,
         to path: String,
         options: SMB.File.OpenOptions = [.create, .truncate],

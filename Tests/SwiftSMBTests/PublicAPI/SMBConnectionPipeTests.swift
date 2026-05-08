@@ -32,7 +32,7 @@ struct SMBConnectionPipeTests {
             return true
         }
 
-        #expect(try connection.readFile(at: path) == Data([0x01, 0x02, 0x03, 0x04]))
+        #expect(try connection.loadFile(at: path) == Data([0x01, 0x02, 0x03, 0x04]))
         #expect(progress.last == 4)
     }
 
@@ -77,10 +77,10 @@ struct SMBConnectionPipeTests {
         let path = uniquePath("leading-slash") + ".txt"
         defer { try? connection.removeFile(at: path) }
 
-        try connection.writeFile(Data("ok".utf8), to: "/" + path)
+        try connection.dumpToFile(Data("ok".utf8), to: "/" + path)
 
-        #expect(try connection.readFile(at: path) == Data("ok".utf8))
-        #expect(try connection.readFile(at: "/" + path) == Data("ok".utf8))
+        #expect(try connection.loadFile(at: path) == Data("ok".utf8))
+        #expect(try connection.loadFile(at: "/" + path) == Data("ok".utf8))
     }
 
     @Test("read to pipe transfers remote file")
@@ -92,7 +92,7 @@ struct SMBConnectionPipeTests {
         defer { try? connection.removeFile(at: path) }
 
         let expected = Data([0xAA, 0xBB, 0xCC, 0xDD])
-        try connection.writeFile(expected, to: path)
+        try connection.dumpToFile(expected, to: path)
 
         let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.read")
         var progress: [UInt64] = []
@@ -130,7 +130,7 @@ struct SMBConnectionPipeTests {
         defer { try? connection.removeFile(at: path) }
 
         let expected = Data([0x10, 0x11, 0x12, 0x13])
-        try connection.writeFile(expected, to: path)
+        try connection.dumpToFile(expected, to: path)
 
         let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.readBlockSize")
         var progress: [UInt64] = []
@@ -182,7 +182,7 @@ struct SMBConnectionPipeTests {
             return true
         }
 
-        #expect(try connection.readFile(at: remote) == expected)
+        #expect(try connection.loadFile(at: remote) == expected)
         #expect(progress.last == UInt64(expected.count))
         #expect(latestSpeeds.last == 0)
     }
@@ -198,14 +198,14 @@ struct SMBConnectionPipeTests {
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.writeFile(Data([0xAA, 0xBB, 0xCC]), to: remote)
+        try connection.dumpToFile(Data([0xAA, 0xBB, 0xCC]), to: remote)
 
         let expected = Data((0 ..< 11).map { UInt8(80 + $0) })
         try expected.write(to: local)
 
         try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { _, _, _, _ in true }
 
-        #expect(try connection.readFile(at: remote) == expected)
+        #expect(try connection.loadFile(at: remote) == expected)
     }
 
     @Test("download file writes local file")
@@ -221,7 +221,7 @@ struct SMBConnectionPipeTests {
         defer { try? FileManager.default.removeItem(at: local) }
 
         let expected = Data((0 ..< 19).map { UInt8(255 - $0) })
-        try connection.writeFile(expected, to: remote)
+        try connection.dumpToFile(expected, to: remote)
 
         var progress: [UInt64] = []
         var latestSpeeds: [Double] = []
@@ -250,7 +250,7 @@ struct SMBConnectionPipeTests {
         defer { try? FileManager.default.removeItem(at: local) }
 
         let expected = Data((0 ..< 10).map { UInt8($0) })
-        try connection.writeFile(expected, to: remote)
+        try connection.dumpToFile(expected, to: remote)
         try expected.prefix(4).write(to: local)
 
         var totals: [UInt64] = []
@@ -283,7 +283,7 @@ struct SMBConnectionPipeTests {
 
         let expected = Data((0 ..< 10).map { UInt8($0) })
         try expected.write(to: local)
-        try connection.writeFile(expected.prefix(4), to: remote)
+        try connection.dumpToFile(expected.prefix(4), to: remote)
 
         var totals: [UInt64] = []
         try connection
@@ -298,7 +298,7 @@ struct SMBConnectionPipeTests {
                 return true
             }
 
-        #expect(try connection.readFile(at: remote) == expected)
+        #expect(try connection.loadFile(at: remote) == expected)
         #expect(totals.last == 6)
     }
 
@@ -324,7 +324,7 @@ struct SMBConnectionPipeTests {
             atomic: false,
         ) { _, _, _, _ in true }
 
-        #expect(try connection.readFile(at: remote) == expected)
+        #expect(try connection.loadFile(at: remote) == expected)
     }
 
     @Test("empty files transfer successfully")
@@ -362,7 +362,7 @@ struct SMBConnectionPipeTests {
         #expect(try connection.stat(at: uploadRemote).size == 0)
         #expect(uploadProgress == [0])
 
-        try connection.writeFile(Data(), to: downloadRemote)
+        try connection.dumpToFile(Data(), to: downloadRemote)
         var downloadProgress: [UInt64] = []
         try connection
             .downloadFile(
@@ -391,7 +391,7 @@ struct SMBConnectionPipeTests {
         try? FileManager.default.removeItem(at: local)
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.writeFile(Data((0 ..< 12).map { UInt8($0) }), to: remote)
+        try connection.dumpToFile(Data((0 ..< 12).map { UInt8($0) }), to: remote)
 
         try connection.downloadFile(remote: remote, local: local, maxBlockSize: 4) { transferred, _, _, _ in
             transferred < 4
@@ -433,7 +433,7 @@ struct SMBConnectionPipeTests {
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.writeFile(Data((0 ..< 8).map { UInt8($0) }), to: remote)
+        try connection.dumpToFile(Data((0 ..< 8).map { UInt8($0) }), to: remote)
         try Data([0xAA, 0xBB]).write(to: local)
 
         #expect(throws: (any Error).self) {
@@ -456,7 +456,7 @@ struct SMBConnectionPipeTests {
         defer { try? FileManager.default.removeItem(at: local) }
 
         try Data((0 ..< 8).map { UInt8($0) }).write(to: local)
-        try connection.writeFile(Data([0xAA, 0xBB]), to: remote)
+        try connection.dumpToFile(Data([0xAA, 0xBB]), to: remote)
 
         #expect(throws: (any Error).self) {
             try connection
