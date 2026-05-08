@@ -6,206 +6,156 @@
 // Copyright its respective authors
 //
 
-import Dispatch
 import Foundation
 
-/// A bounded data pipe that synchronises a single producer with a single
-/// consumer, applying backpressure in both directions.
+/// A bounded pipe that synchronises a single producer with a single consumer.
 ///
-/// The pipe owns a fixed memory budget split into a configurable number of
-/// equal-sized slots arranged as a ring buffer. ``send(validByteCount:_:)``
-/// blocks the producer when every slot is pending consumption.
-/// ``receive(_:)`` blocks the consumer when no slot is ready to read, and
-/// returns `nil` once the producer has called ``endOfProduction()`` *and*
-/// every pending slot has been drained.
+/// `DataPipe` implements a producer–consumer queue with back-pressure: when the
+/// internal buffer is full, calls to ``send(_:)`` block the caller until the
+/// consumer removes a package or the timeout expires, and when the buffer is
+/// empty, calls to ``receive(timeout:)`` block until a package arrives or the
+/// timeout expires.
 ///
-/// The pipe is single-producer / single-consumer. Concurrent calls from more
-/// than one producer or more than one consumer are not supported.
-public final class DataPipe: CustomDebugStringConvertible, @unchecked Sendable {
-    /// Total bytes allocated across all slots.
-    public let totalCapacity: Int
+/// Thread safety is provided by a serial ``DispatchQueue`` for queue access and
+/// two ``DispatchSemaphore`` instances — one that counts available packages and
+/// one that counts free slots.
+public final class DataPipe: @unchecked Sendable {
+    /// A package exchanged between the producer and the consumer.
+    public enum Package: Equatable, Sendable {
+        /// Sent at the beginning of a transmission to signal that the stream has started.
+        case start
 
-    /// Number of slots in the ring buffer.
-    public let slotCount: Int
+        /// Sent at the end of a transmission to signal that an error occurred and the stream has aborted.
+        case broken
 
-    /// Bytes of capacity per slot. Equal to ``totalCapacity`` divided by
-    /// ``slotCount``.
-    public let slotCapacity: Int
+        /// Sent at the end of a transmission to signal that the stream completed successfully.
+        case finish
 
-    private let storage: UnsafeMutableRawBufferPointer
-    private var slotValidByteCounts: [Int]
+        /// A package carrying the data payload.
+        ///
+        /// - Parameter d: The data transmitted in this package.
+        case data(_ d: Data)
+    }
 
-    private var head: Int
-    private var tail: Int
-    private var pendingCount: Int
-    private var ended: Bool
+    private var queue: [Package]
+    private let queueSync: DispatchQueue
+    private let packagesSemaphore: DispatchSemaphore
+    private let isFull: DispatchSemaphore
 
-    private let state: DispatchQueue
-    private let free: DispatchSemaphore
-    private let full: DispatchSemaphore
-
-    /// Creates a data pipe with the given memory budget and slot count.
+    /// Creates a new data pipe.
     ///
     /// - Parameters:
-    ///   - totalCapacity: Total bytes allocated across all slots. Must be a
-    ///     positive multiple of `slotCount`.
-    ///   - slotCount: Number of slots in the ring buffer. Must be greater
-    ///     than zero. Defaults to `4`.
-    public init(totalCapacity: Int, slotCount: Int = 4) {
-        precondition(slotCount > 0, "DataPipe slotCount must be positive")
-        precondition(totalCapacity > 0, "DataPipe totalCapacity must be positive")
-        precondition(totalCapacity.isMultiple(of: slotCount), "DataPipe totalCapacity must be a multiple of slotCount")
-        self.totalCapacity = totalCapacity
-        self.slotCount = slotCount
-        self.slotCapacity = totalCapacity / slotCount
-        self.storage = .allocate(byteCount: totalCapacity, alignment: MemoryLayout<UInt8>.alignment)
-        self.slotValidByteCounts = Array(repeating: 0, count: slotCount)
-        self.head = 0
-        self.tail = 0
-        self.pendingCount = 0
-        self.ended = false
-        self.state = DispatchQueue(label: "SwiftSMB.DataPipe")
-        self.free = DispatchSemaphore(value: slotCount)
-        self.full = DispatchSemaphore(value: 0)
+    ///   - maxPackages: The maximum number of packages the pipe can hold before
+    ///     ``send(_:)`` blocks. Defaults to `3`.
+    ///   - label: A label used to name the internal serial dispatch queue.
+    public init(maxPackages: Int = 3, label: String) {
+        precondition(maxPackages > 0, "maxPackages must be positive")
+        queue = .init()
+        queueSync = .init(label: label + ".queueAccess")
+        packagesSemaphore = .init(value: 0)
+        isFull = .init(value: maxPackages)
     }
 
-    deinit {
-        storage.deallocate()
-    }
-
-    /// Signals that no more data will be sent.
-    ///
-    /// Pending slots remain readable via ``receive(_:)`` and ``receive()``;
-    /// once they are drained, those calls return `nil`. After this call,
-    /// further ``send(validByteCount:_:)`` or ``send(_:)`` triggers a
-    /// precondition violation. Calling ``endOfProduction()`` more than once
-    /// is a no-op.
-    public func endOfProduction() {
-        let alreadyEnded = state.sync { () -> Bool in
-            let was = ended
-            ended = true
-            return was
+    private func push(_ package: Package) {
+        queueSync.sync {
+            queue.append(package)
         }
-        guard !alreadyEnded else { return }
-        free.signal()
-        full.signal()
     }
 
-    /// A Boolean value indicating whether ``endOfProduction()`` has been
-    /// called.
-    public var isAtEndOfProduction: Bool {
-        state.sync { ended }
+    private func pop() -> Package? {
+        queueSync.sync {
+            guard queue.isEmpty == false else {
+                return nil
+            }
+            return queue.removeFirst()
+        }
     }
 
-    /// Writes the next slot, blocking if every slot is pending consumption.
+    /// Sends a package to the pipe, blocking the caller when the pipe is full.
+    ///
+    /// When the internal buffer has reached ``init(maxPackages:label:)``, this
+    /// method blocks the calling thread until the consumer removes a package
+    /// and frees a slot, or until `timeout` expires.
     ///
     /// - Parameters:
-    ///   - validByteCount: Number of valid bytes the writer placed in the
-    ///     slot. Must be between `0` and ``slotCapacity``.
-    ///   - writer: A closure that fills the slot. Receives a mutable raw
-    ///     buffer of ``slotCapacity`` bytes.
-    /// - Throws: Rethrows any error from `writer`. On throw, the slot is
-    ///   released back to the free pool and the pipe is unchanged.
-    public func send(
-        validByteCount: Int,
-        _ writer: (UnsafeMutableRawBufferPointer) throws -> Void,
-    ) rethrows {
-        precondition(
-            validByteCount >= 0 && validByteCount <= slotCapacity,
-            "validByteCount must be between 0 and slotCapacity",
-        )
-        let endedBeforeWait = state.sync { ended }
-        precondition(!endedBeforeWait, "Cannot send after endOfProduction")
-        free.wait()
-        let endedNow = state.sync { ended }
-        guard !endedNow else {
-            return
+    ///   - package: The ``Package`` to enqueue.
+    ///   - timeout: The maximum number of seconds to wait for a free slot.
+    ///     Defaults to `nil`, which waits indefinitely.
+    /// - Returns: `true` if the package was queued, or `false` if the timeout
+    ///   expired before a free slot became available.
+    @discardableResult
+    public func send(_ package: Package, timeout: TimeInterval? = nil) -> Bool {
+        // Wait until a free slot is available in the queue.
+        if let timeout {
+            guard isFull.wait(timeout: Self.deadline(after: timeout)) == .success else {
+                return false
+            }
         }
-        let idx = tail
-        do {
-            try writer(slot(at: idx))
+        else {
+            isFull.wait()
         }
-        catch {
-            free.signal()
-            throw error
-        }
-        state.sync {
-            slotValidByteCounts[idx] = validByteCount
-            tail = (tail + 1) % slotCount
-            pendingCount += 1
-        }
-        full.signal()
+
+        // Insert the package safely on the serial queue.
+        push(package)
+
+        // Signal that a new package is available for consumption.
+        packagesSemaphore.signal()
+        return true
     }
 
-    /// Copies the given data into the next slot, blocking if every slot is
-    /// pending consumption.
+    /// Receives the next package from the pipe, blocking when the pipe is empty.
     ///
-    /// Empty `data` is a no-op.
+    /// When the internal buffer is empty, this method blocks the calling thread
+    /// until a package arrives or the timeout expires. Passing `nil` for
+    /// `timeout` waits indefinitely.
     ///
-    /// - Parameter data: The bytes to send. Must not exceed ``slotCapacity``.
-    public func send(_ data: Data) {
-        precondition(data.count <= slotCapacity, "Data exceeds DataPipe slotCapacity")
-        let endedNow = state.sync { ended }
-        precondition(!endedNow, "Cannot send after endOfProduction")
-        guard !data.isEmpty else { return }
-        send(validByteCount: data.count) { buffer in
-            data.copyBytes(to: buffer)
-        }
+    /// - Parameter timeout: The maximum number of seconds to wait for a
+    ///   package. Defaults to five seconds. Pass `nil` to wait indefinitely.
+    /// - Returns: The next ``Package``, or `nil` if the timeout expired before
+    ///   a package became available.
+    public func receive(timeout: TimeInterval? = 5) -> Package? {
+        waitForPackage(deadline: timeout.map(Self.deadline(after:)))
     }
 
-    /// Reads the next slot, blocking if no slot is ready.
+    /// Receives the next package from the pipe, blocking until an absolute deadline.
     ///
-    /// Returns `nil` once ``endOfProduction()`` has been called *and* every
-    /// pending slot has been drained.
-    ///
-    /// - Parameter reader: A closure that reads the slot. Receives a raw
-    ///   buffer spanning the valid bytes of the slot.
-    /// - Returns: The value returned by `reader`, or `nil` if the pipe is
-    ///   ended and drained.
-    /// - Throws: Rethrows any error from `reader`. On throw, the slot is
-    ///   considered consumed and released back to the free pool.
-    public func receive<R>(
-        _ reader: (UnsafeRawBufferPointer) throws -> R,
-    ) rethrows -> R? {
-        if state.sync(execute: { ended && pendingCount == 0 }) {
+    /// Prefer ``receive(timeout:)`` for new code.
+    @available(*, deprecated, message: "Use receive(timeout:) with a seconds value, or pass nil to wait indefinitely.")
+    public func receive(timeOut: DispatchTime?) -> Package? {
+        waitForPackage(deadline: timeOut)
+    }
+
+    private func waitForPackage(deadline: DispatchTime?) -> Package? {
+        if let deadline {
+            // Wait until a package is available or the timeout expires.
+            guard packagesSemaphore.wait(timeout: deadline) == .success else {
+                return nil
+            }
+        }
+        else {
+            packagesSemaphore.wait()
+        }
+
+        // Remove the package safely on the serial queue.
+        guard let package = pop() else {
+            assertionFailure("DataPipe invariant broken: package semaphore signalled but queue was empty")
             return nil
         }
-        full.wait()
-        let claim: (idx: Int, count: Int)? = state.sync {
-            guard pendingCount > 0 else { return nil }
-            let idx = head
-            let count = slotValidByteCounts[idx]
-            head = (head + 1) % slotCount
-            pendingCount -= 1
-            return (idx, count)
-        }
-        guard let claim else {
-            return nil
-        }
-        defer { free.signal() }
-        let buffer = UnsafeRawBufferPointer(
-            start: storage.baseAddress!.advanced(by: claim.idx * slotCapacity),
-            count: claim.count,
-        )
-        return try reader(buffer)
+
+        // Signal that a free slot has been opened in the queue.
+        isFull.signal()
+
+        return package
     }
 
-    /// Reads the next slot as `Data`, blocking if no slot is ready.
-    ///
-    /// Returns `nil` once ``endOfProduction()`` has been called *and* every
-    /// pending slot has been drained.
-    public func receive() -> Data? {
-        receive { Data($0) }
-    }
+    private static func deadline(after seconds: TimeInterval) -> DispatchTime {
+        precondition(seconds >= 0, "timeout must be non-negative")
+        precondition(seconds.isFinite, "timeout must be finite")
 
-    public var debugDescription: String {
-        "DataPipe(totalCapacity: \(totalCapacity), slotCount: \(slotCount), slotCapacity: \(slotCapacity))"
-    }
+        let nanosecondsPerSecond = 1_000_000_000.0
+        let nanoseconds = (seconds * nanosecondsPerSecond).rounded(.up)
+        precondition(nanoseconds <= Double(Int.max), "timeout is too large")
 
-    private func slot(at index: Int) -> UnsafeMutableRawBufferPointer {
-        UnsafeMutableRawBufferPointer(
-            start: storage.baseAddress!.advanced(by: index * slotCapacity),
-            count: slotCapacity,
-        )
+        return .now() + .nanoseconds(Int(nanoseconds))
     }
 }
