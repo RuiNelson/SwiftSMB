@@ -9,8 +9,6 @@
 import Foundation
 
 extension SMB {
-    private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.swiftsmb.bridge")
-
     /// Lists disk shares advertised by a server.
     ///
     /// The method connects to the server's `IPC$` share, enumerates shares
@@ -31,16 +29,16 @@ extension SMB {
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false,
     ) throws -> [Share] {
-        let context = try BridgeRunner.bridgeExecution {
-            try createContext()
+        let context = try Bridge.bridgeExecution {
+            try Bridge.createContext()
         }
-        defer { destroyContext(context) }
+        defer { Bridge.destroyContext(context) }
 
         try configure(context, with: configuration)
         configureCredentials(credentials, server: server, on: context)
 
-        return try BridgeRunner.bridgeExecution {
-            try SwiftSMB.listShares(
+        return try Bridge.bridgeExecution {
+            try Bridge.listShares(
                 context: context,
                 server: server.address,
                 user: credentials?.user,
@@ -71,15 +69,15 @@ extension SMB {
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try BridgeRunner.bridgeExecution {
-            try createContext()
+        let context = try Bridge.bridgeExecution {
+            try Bridge.createContext()
         }
 
         do {
             try configure(context, with: configuration)
             configureCredentials(credentials, server: server, on: context)
-            try BridgeRunner.bridgeExecution {
-                try SwiftSMB.connectShare(
+            try Bridge.bridgeExecution {
+                try Bridge.connectShare(
                     context: context,
                     server: server.address,
                     share: share,
@@ -89,7 +87,7 @@ extension SMB {
             return Connection(server: server, share: share, configuration: configuration, context: context)
         }
         catch {
-            destroyContext(context)
+            Bridge.destroyContext(context)
             throw error
         }
     }
@@ -100,13 +98,13 @@ extension SMB {
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
     public static func parseURL(_ string: String) throws -> ParsedURL {
-        let context = try BridgeRunner.bridgeExecution {
-            try createContext()
+        let context = try Bridge.bridgeExecution {
+            try Bridge.createContext()
         }
-        defer { destroyContext(context) }
+        defer { Bridge.destroyContext(context) }
 
-        return try BridgeRunner.bridgeExecution {
-            let parsedURL = try ParsedURL(SwiftSMB.parseURL(string, context: context))
+        return try Bridge.bridgeExecution {
+            let parsedURL = try ParsedURL(Bridge.parseURL(string, context: context))
             try validateShareName(parsedURL.share, operation: .smb2ParseURL)
             if let path = parsedURL.path {
                 try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
@@ -124,50 +122,43 @@ extension SMB {
                     onOperation: .smb2SetTimeout,
                 )
             }
-            setTimeout(Int32(timeout), on: context)
+            Bridge.setTimeout(Int32(timeout), on: context)
         }
 
         if let dialect = configuration.dialect {
-            setVersion(dialect.bridgeValue, on: context)
+            Bridge.setVersion(dialect.bridgeValue, on: context)
         }
 
         if let securityMode = configuration.securityMode {
-            setSecurityMode(securityMode.bridgeValue, on: context)
+            Bridge.setSecurityMode(securityMode.bridgeValue, on: context)
         }
 
         if let requiresEncryption = configuration.requiresEncryption {
-            setSeal(requiresEncryption, on: context)
+            Bridge.setSeal(requiresEncryption, on: context)
         }
 
         if let requiresSigning = configuration.requiresSigning {
-            setSign(requiresSigning, on: context)
+            Bridge.setSign(requiresSigning, on: context)
         }
 
         if let authentication = configuration.authentication {
-            setAuthentication(authentication.bridgeValue, on: context)
+            Bridge.setAuthentication(authentication.bridgeValue, on: context)
         }
     }
 
     /// Applies authentication settings to a context before connection.
     static func configureCredentials(_ credentials: Credentials?, server: Server, on context: SMB2Context) {
         if let user = credentials?.user {
-            setUser(user, on: context)
+            Bridge.setUser(user, on: context)
         }
         if let password = credentials?.password {
-            setPassword(password, on: context)
+            Bridge.setPassword(password, on: context)
         }
         if let domain = credentials?.domain ?? server.domain {
-            setDomain(domain, on: context)
+            Bridge.setDomain(domain, on: context)
         }
         if let workstation = credentials?.workstation {
-            setWorkstation(workstation, on: context)
-        }
-    }
-
-    /// Runs a throwing bridge operation.
-    static func bridgeExecution_<T>(_ body: () throws -> T) throws -> T {
-        try bridgeQueue.sync {
-            try body()
+            Bridge.setWorkstation(workstation, on: context)
         }
     }
 }
