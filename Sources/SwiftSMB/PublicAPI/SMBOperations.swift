@@ -9,7 +9,7 @@
 import Foundation
 
 extension SMB {
-    private static let bridgeLock = NSRecursiveLock()
+    private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.swiftsmb.bridge")
 
     /// Lists disk shares advertised by a server.
     ///
@@ -166,8 +166,8 @@ extension SMB {
 
     /// Runs a throwing bridge operation.
     static func run<T>(_ body: () throws -> T) throws -> T {
-        bridgeLock.lock()
-        defer { bridgeLock.unlock() }
-        return try body()
+        try bridgeQueue.sync {
+            try body()
+        }
     }
 }
