@@ -382,6 +382,8 @@ private final class QueryAttributesState: PendingOperationState {
     var fileAttributes: UInt32 = 0
 }
 
+private let fileBasicInformationWireLength = 40
+
 private let setStatsCreateCallback: smb2_command_cb = { _, status, _, callbackData in
     guard let callbackData else { return }
     let state = Unmanaged<SetStatsState>.fromOpaque(callbackData).takeUnretainedValue()
@@ -415,7 +417,7 @@ private let queryAttributesCreateCallback: smb2_command_cb = { _, status, _, cal
     }
 }
 
-private let queryAttributesQueryCallback: smb2_command_cb = { _, status, commandData, callbackData in
+private let queryAttributesQueryCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
     guard let callbackData else { return }
     let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
     if state.status == SMB2_STATUS_SUCCESS {
@@ -423,8 +425,11 @@ private let queryAttributesQueryCallback: smb2_command_cb = { _, status, command
     }
     if status == SMB2_STATUS_SUCCESS, let commandData {
         let reply = commandData.bindMemory(to: smb2_query_info_reply.self, capacity: 1)
-        if let buffer = reply.pointee.output_buffer,
-           reply.pointee.output_buffer_length >= MemoryLayout<smb2_file_basic_info>.size {
+        if let rawContext, let buffer = reply.pointee.output_buffer {
+            defer { smb2_free_data(rawContext, buffer) }
+            guard reply.pointee.output_buffer_length >= fileBasicInformationWireLength else {
+                return
+            }
             let info = buffer.withMemoryRebound(to: smb2_file_basic_info.self, capacity: 1) { $0.pointee }
             state.fileAttributes = info.file_attributes
         }
@@ -496,6 +501,7 @@ func setStats(
 
     let state = SetStatsState()
     let callbackData = Unmanaged.passRetained(state).toOpaque()
+    defer { Unmanaged<SetStatsState>.fromOpaque(callbackData).release() }
 
     let fileIDAllOnes: (
         UInt8,
@@ -577,8 +583,6 @@ func setStats(
             }
         }
     }
-
-    Unmanaged<SetStatsState>.fromOpaque(callbackData).release()
 }
 
 /// Returns the file attributes for a path.
