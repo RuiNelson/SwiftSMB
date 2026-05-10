@@ -31,7 +31,7 @@ extension SMB {
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false,
     ) throws -> [Share] {
-        let context = try run {
+        let context = try BridgeRunner.bridgeExecution {
             try createContext()
         }
         defer { destroyContext(context) }
@@ -39,7 +39,7 @@ extension SMB {
         try configure(context, with: configuration)
         configureCredentials(credentials, server: server, on: context)
 
-        return try run {
+        return try BridgeRunner.bridgeExecution {
             try SwiftSMB.listShares(
                 context: context,
                 server: server.address,
@@ -71,14 +71,14 @@ extension SMB {
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try run {
+        let context = try BridgeRunner.bridgeExecution {
             try createContext()
         }
 
         do {
             try configure(context, with: configuration)
             configureCredentials(credentials, server: server, on: context)
-            try run {
+            try BridgeRunner.bridgeExecution {
                 try SwiftSMB.connectShare(
                     context: context,
                     server: server.address,
@@ -100,12 +100,12 @@ extension SMB {
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
     public static func parseURL(_ string: String) throws -> ParsedURL {
-        let context = try run {
+        let context = try BridgeRunner.bridgeExecution {
             try createContext()
         }
         defer { destroyContext(context) }
 
-        return try run {
+        return try BridgeRunner.bridgeExecution {
             let parsedURL = try ParsedURL(SwiftSMB.parseURL(string, context: context))
             try validateShareName(parsedURL.share, operation: .smb2ParseURL)
             if let path = parsedURL.path {
@@ -165,7 +165,7 @@ extension SMB {
     }
 
     /// Runs a throwing bridge operation.
-    static func run<T>(_ body: () throws -> T) throws -> T {
+    static func bridgeExecution_<T>(_ body: () throws -> T) throws -> T {
         try bridgeQueue.sync {
             try body()
         }
