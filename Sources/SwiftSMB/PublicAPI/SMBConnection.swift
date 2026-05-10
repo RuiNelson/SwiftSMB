@@ -25,7 +25,7 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
-        private let protectedContext = Protected<Bridge.SMB2Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
+        private let protectedContext = Protected<Bridge.Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
         /// Active notification watchers that must be cancelled before context teardown.
         let protectedNotifyWatchers = Protected<[UUID: SMBNotifyWatcherState]>(
             [:],
@@ -33,7 +33,7 @@ public extension SMB {
         )
 
         /// The live bridge context, if the connection is still open.
-        private var context: Bridge.SMB2Context? {
+        private var context: Bridge.Context? {
             get {
                 protectedContext.current
             }
@@ -43,7 +43,7 @@ public extension SMB {
         }
 
         /// Creates a connection around an already connected bridge context.
-        init(server: Server, share: String, configuration: Configuration, context: Bridge.SMB2Context) {
+        init(server: Server, share: String, configuration: Configuration, context: Bridge.Context) {
             self.server = server
             self.share = share
             self.configuration = configuration
@@ -174,7 +174,7 @@ public extension SMB {
                 try Bridge.open(
                     context: context,
                     path: path,
-                    flags: Bridge.SMB2OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
+                    flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
                 )
             }
             return File(connection: self, path: path, handle: handle)
@@ -406,7 +406,7 @@ public extension SMB {
         }
 
         /// Returns the live bridge context or throws if the connection is closed.
-        func requireContext() throws -> Bridge.SMB2Context {
+        func requireContext() throws -> Bridge.Context {
             guard let context else {
                 throw Error.operationRequestedAfterConnectionClosed
             }
@@ -414,7 +414,7 @@ public extension SMB {
         }
 
         /// Takes ownership of the context and marks the connection closed.
-        private func takeContext() -> Bridge.SMB2Context? {
+        private func takeContext() -> Bridge.Context? {
             protectedContext.take(replacingWith: nil)
         }
 

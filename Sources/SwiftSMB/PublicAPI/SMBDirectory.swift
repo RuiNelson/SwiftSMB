@@ -13,13 +13,13 @@ public extension SMB {
         public let path: String
 
         private let connection: Connection
-        private let protectedHandle = Protected<Bridge.SMB2DirectoryHandle?>(
+        private let protectedHandle = Protected<Bridge.DirectoryHandle?>(
             nil,
             label: "SwiftSMB.SMB.Directory.handle",
         )
 
         /// The live bridge directory handle, if the directory is still open.
-        private var handle: Bridge.SMB2DirectoryHandle? {
+        private var handle: Bridge.DirectoryHandle? {
             get {
                 protectedHandle.current
             }
@@ -29,7 +29,7 @@ public extension SMB {
         }
 
         /// Creates a public directory wrapper around an open bridge handle.
-        init(connection: Connection, path: String, handle: Bridge.SMB2DirectoryHandle) {
+        init(connection: Connection, path: String, handle: Bridge.DirectoryHandle) {
             self.connection = connection
             self.path = path
             self.handle = handle
@@ -109,7 +109,7 @@ public extension SMB {
         }
 
         /// Returns the live bridge handle or throws if the directory is closed.
-        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.SMB2DirectoryHandle {
+        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.DirectoryHandle {
             guard let handle else {
                 throw SMB.Error.invalidArgument(cause: .directoryAlreadyClosed, onOperation: operation)
             }
@@ -117,7 +117,7 @@ public extension SMB {
         }
 
         /// Takes ownership of the handle and marks the directory closed.
-        private func takeHandle() -> Bridge.SMB2DirectoryHandle? {
+        private func takeHandle() -> Bridge.DirectoryHandle? {
             protectedHandle.take(replacingWith: nil)
         }
 

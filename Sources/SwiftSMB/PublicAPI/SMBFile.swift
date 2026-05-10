@@ -25,7 +25,7 @@ public extension SMB {
             case readWrite
 
             /// The bridge representation for this access mode.
-            var bridgeValue: Bridge.SMB2OpenAccessMode {
+            var bridgeValue: Bridge.OpenAccessMode {
                 switch self {
                 case .readOnly:
                     .readOnly
@@ -73,8 +73,8 @@ public extension SMB {
             }
 
             /// The bridge representation for these options.
-            var bridgeValue: Bridge.SMB2OpenOptions {
-                var options = Bridge.SMB2OpenOptions()
+            var bridgeValue: Bridge.OpenOptions {
+                var options = Bridge.OpenOptions()
                 if contains(.synchronous) {
                     options.insert(.synchronous)
                 }
@@ -126,10 +126,10 @@ public extension SMB {
         public let path: String
 
         let connection: Connection
-        private let protectedHandle = Protected<Bridge.SMB2FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
+        private let protectedHandle = Protected<Bridge.FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
 
         /// The live bridge file handle, if the file is still open.
-        private var handle: Bridge.SMB2FileHandle? {
+        private var handle: Bridge.FileHandle? {
             get {
                 protectedHandle.current
             }
@@ -139,7 +139,7 @@ public extension SMB {
         }
 
         /// Creates a public file wrapper around an open bridge handle.
-        init(connection: Connection, path: String, handle: Bridge.SMB2FileHandle) {
+        init(connection: Connection, path: String, handle: Bridge.FileHandle) {
             self.connection = connection
             self.path = path
             self.handle = handle
@@ -327,7 +327,7 @@ public extension SMB {
         }
 
         /// Returns the live bridge handle or throws if the file is closed.
-        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.SMB2FileHandle {
+        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.FileHandle {
             guard let handle else {
                 throw SMB.Error.invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
             }
@@ -335,7 +335,7 @@ public extension SMB {
         }
 
         /// Takes ownership of the handle and marks the file closed.
-        private func takeHandle() -> Bridge.SMB2FileHandle? {
+        private func takeHandle() -> Bridge.FileHandle? {
             protectedHandle.take(replacingWith: nil)
         }
 

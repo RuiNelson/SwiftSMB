@@ -10,15 +10,15 @@ import Darwin
 import SMB2
 
 extension Bridge {
-    struct SMB2Context {
+    struct Context {
         let raw: UnsafeMutablePointer<smb2_context>
     }
 
-    struct SMB2FileHandle {
+    struct FileHandle {
         let raw: OpaquePointer
     }
 
-    enum SMB2AuthenticationMethod: Equatable {
+    enum AuthenticationMethod: Equatable {
         case automatic
         case ntlmssp
         case kerberos
@@ -35,14 +35,14 @@ extension Bridge {
         }
     }
 
-    struct SMB2SecurityMode: OptionSet, Equatable {
+    struct SecurityMode: OptionSet, Equatable {
         let rawValue: UInt16
 
-        static let signingEnabled = SMB2SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
-        static let signingRequired = SMB2SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
+        static let signingEnabled = SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
+        static let signingRequired = SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
 
-    enum SMB2OpenAccessMode: Equatable {
+    enum OpenAccessMode: Equatable {
         case readOnly
         case writeOnly
         case readWrite
@@ -59,24 +59,24 @@ extension Bridge {
         }
     }
 
-    struct SMB2OpenOptions: OptionSet, Equatable {
+    struct OpenOptions: OptionSet, Equatable {
         let rawValue: Int32
 
-        static let synchronous = SMB2OpenOptions(rawValue: O_SYNC)
-        static let create = SMB2OpenOptions(rawValue: O_CREAT)
-        static let exclusive = SMB2OpenOptions(rawValue: O_EXCL)
-        static let truncate = SMB2OpenOptions(rawValue: O_TRUNC)
-        static let append = SMB2OpenOptions(rawValue: O_APPEND)
-        static let directory = SMB2OpenOptions(rawValue: O_DIRECTORY)
+        static let synchronous = OpenOptions(rawValue: O_SYNC)
+        static let create = OpenOptions(rawValue: O_CREAT)
+        static let exclusive = OpenOptions(rawValue: O_EXCL)
+        static let truncate = OpenOptions(rawValue: O_TRUNC)
+        static let append = OpenOptions(rawValue: O_APPEND)
+        static let directory = OpenOptions(rawValue: O_DIRECTORY)
     }
 
-    struct SMB2OpenFlags: Equatable {
-        let accessMode: SMB2OpenAccessMode
-        let options: SMB2OpenOptions
+    struct OpenFlags: Equatable {
+        let accessMode: OpenAccessMode
+        let options: OpenOptions
 
         init(
-            _ accessMode: SMB2OpenAccessMode = .readOnly,
-            options: SMB2OpenOptions = [],
+            _ accessMode: OpenAccessMode = .readOnly,
+            options: OpenOptions = [],
         ) {
             self.accessMode = accessMode
             self.options = options
@@ -87,11 +87,11 @@ extension Bridge {
         }
     }
 
-    struct SMB2DirectoryHandle {
+    struct DirectoryHandle {
         let raw: UnsafeMutablePointer<smb2dir>
     }
 
-    enum SMB2ShareEnumerationLevel: Equatable {
+    enum ShareEnumerationLevel: Equatable {
         case namesOnly
         case detailed
 
@@ -105,7 +105,7 @@ extension Bridge {
         }
     }
 
-    enum SMB2ShareKind: Equatable, Hashable {
+    enum ShareKind: Equatable, Hashable {
         case diskTree
         case printQueue
         case device
@@ -128,11 +128,11 @@ extension Bridge {
         }
     }
 
-    struct SMB2ShareAttributes: OptionSet, Equatable, Hashable {
+    struct ShareAttributes: OptionSet, Equatable, Hashable {
         let rawValue: UInt32
 
-        static let temporary = SMB2ShareAttributes(rawValue: UInt32(SHARE_TYPE_TEMPORARY))
-        static let hidden = SMB2ShareAttributes(rawValue: UInt32(SHARE_TYPE_HIDDEN))
+        static let temporary = ShareAttributes(rawValue: UInt32(SHARE_TYPE_TEMPORARY))
+        static let hidden = ShareAttributes(rawValue: UInt32(SHARE_TYPE_HIDDEN))
 
         init(rawValue: UInt32) {
             self.rawValue = rawValue
@@ -143,10 +143,10 @@ extension Bridge {
         }
     }
 
-    struct SMB2Share: Equatable, Hashable {
+    struct Share: Equatable, Hashable {
         let name: String
-        let kind: SMB2ShareKind?
-        let attributes: SMB2ShareAttributes
+        let kind: ShareKind?
+        let attributes: ShareAttributes
         let remark: String?
 
         var isHidden: Bool {
@@ -158,7 +158,7 @@ extension Bridge {
         }
     }
 
-    enum SMB2NodeType: Equatable {
+    enum NodeType: Equatable {
         case file
         case directory
         case link
@@ -178,8 +178,8 @@ extension Bridge {
         }
     }
 
-    struct SMB2Stat: Equatable {
-        let type: SMB2NodeType
+    struct Stat: Equatable {
+        let type: NodeType
         let linkCount: UInt32
         let inode: UInt64
         let size: UInt64
@@ -193,7 +193,7 @@ extension Bridge {
         let birthTimeNanoseconds: UInt64
 
         init(_ stat: smb2_stat_64) {
-            type = SMB2NodeType(rawValue: stat.smb2_type)
+            type = NodeType(rawValue: stat.smb2_type)
             linkCount = stat.smb2_nlink
             inode = stat.smb2_ino
             size = stat.smb2_size
@@ -208,7 +208,7 @@ extension Bridge {
         }
     }
 
-    struct SMB2StatVFS: Equatable {
+    struct VFSStat: Equatable {
         let blockSize: UInt32
         let fragmentSize: UInt32
         let blocks: UInt64
@@ -236,47 +236,47 @@ extension Bridge {
         }
     }
 
-    struct SMB2DirectoryEntry: Equatable {
+    struct DirectoryEntry: Equatable {
         let name: String
-        let stat: SMB2Stat
+        let stat: Stat
 
         init(_ entry: smb2dirent) {
             name = entry.name.map(String.init(cString:)) ?? ""
-            stat = SMB2Stat(entry.st)
+            stat = Stat(entry.st)
         }
     }
 
-    struct SMB2NotifyChangeFlags: OptionSet, Equatable {
+    struct NotifyChangeFlags: OptionSet, Equatable {
         let rawValue: UInt16
 
-        static let watchTree = SMB2NotifyChangeFlags(rawValue: UInt16(SMB2_CHANGE_NOTIFY_WATCH_TREE))
+        static let watchTree = NotifyChangeFlags(rawValue: UInt16(SMB2_CHANGE_NOTIFY_WATCH_TREE))
     }
 
-    struct SMB2NotifyChangeFilter: OptionSet, Equatable {
+    struct NotifyChangeFilter: OptionSet, Equatable {
         let rawValue: UInt32
 
-        static let fileName = SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_FILE_NAME))
+        static let fileName = NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_FILE_NAME))
         static let directoryName =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_DIR_NAME))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_DIR_NAME))
         static let attributes =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_ATTRIBUTES))
-        static let size = SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_SIZE))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_ATTRIBUTES))
+        static let size = NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_SIZE))
         static let lastWrite =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_LAST_WRITE))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_LAST_WRITE))
         static let lastAccess =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_LAST_ACCESS))
-        static let creation = SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_CREATION))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_LAST_ACCESS))
+        static let creation = NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_CREATION))
         static let extendedAttributes =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_EA))
-        static let security = SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_SECURITY))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_EA))
+        static let security = NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_SECURITY))
         static let streamName =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_NAME))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_NAME))
         static let streamSize =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_SIZE))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_SIZE))
         static let streamWrite =
-            SMB2NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_WRITE))
+            NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_STREAM_WRITE))
 
-        static let all: SMB2NotifyChangeFilter = [
+        static let all: NotifyChangeFilter = [
             .fileName,
             .directoryName,
             .attributes,
@@ -292,7 +292,7 @@ extension Bridge {
         ]
     }
 
-    enum SMB2NotifyChangeAction: Equatable {
+    enum NotifyChangeAction: Equatable {
         case added
         case removed
         case modified
@@ -327,27 +327,27 @@ extension Bridge {
         }
     }
 
-    struct SMB2NotifyChange: Equatable {
-        let action: SMB2NotifyChangeAction
+    struct NotifyChange: Equatable {
+        let action: NotifyChangeAction
         let name: String
 
-        init(action: SMB2NotifyChangeAction, name: String) {
+        init(action: NotifyChangeAction, name: String) {
             self.action = action
             self.name = name
         }
 
         init(_ change: smb2_file_notify_change_information) {
-            action = SMB2NotifyChangeAction(rawValue: change.action)
+            action = NotifyChangeAction(rawValue: change.action)
             name = change.name.map(String.init(cString:)) ?? ""
         }
 
         static func changes(from firstChange: UnsafeMutablePointer<smb2_file_notify_change_information>)
-        -> [SMB2NotifyChange] {
-            var changes: [SMB2NotifyChange] = []
+        -> [NotifyChange] {
+            var changes: [NotifyChange] = []
             var change: UnsafeMutablePointer<smb2_file_notify_change_information>? = firstChange
 
             while let currentChange = change {
-                changes.append(SMB2NotifyChange(currentChange.pointee))
+                changes.append(NotifyChange(currentChange.pointee))
                 change = currentChange.pointee.next
             }
 
@@ -355,7 +355,7 @@ extension Bridge {
         }
     }
 
-    typealias SMB2NotifyChangeHandler = @Sendable (Result<[SMB2NotifyChange], SMB.Error>) -> Void
+    typealias NotifyChangeHandler = @Sendable (Result<[NotifyChange], SMB.Error>) -> Void
 
     struct SMB2URL: Equatable {
         let domain: String?

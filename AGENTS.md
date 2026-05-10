@@ -16,10 +16,8 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │       │   ├── Extensions
 │       │   │   ├── Int.swift                 # Extensions to `Int`
 │       │   │   └── String?.swift             # Extensions to `String?`
-│       │   ├── SMB2Bridge.swift              # High-level synchronous POSIX-like bridge calls.
-│       │   ├── SMB2Bridge-ListShares.swift   # SRVSVC/DCERPC share enumeration.
-│       │   ├── SMB2Bridge-Notify.swift       # One-shot cancellable SMB change-notify bridge.
-│       │   ├── SMB2BridgeTypes.swift         # Internal Swift-shaped bridge structs/enums/options.
+│       │   ├── Bridge.swift                  # High-level synchronous POSIX-like bridge calls.
+│       │   ├── SMB2BridgeTypes.swift         # Bridge structs/enums/options nested under `extension Bridge`.
 │       │   └── SMBError+Bridge.swift         # SMB.Error bridge factory and check() helper.
 │       └── PublicAPI                         # User-facing API, all organized under SMB.
 │           ├── SMB.swift                     # public final class SMB; no public initializers.
@@ -39,7 +37,7 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 │           ├── SMBPathValidation.swift       # Share-name and share-relative path validation.
 │           ├── SMBStatus.swift               # SMB.SMBStatus and SMB.SMBStatusSeverity.
 │           └── Util
-│               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer
+│               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer.
 │               ├── Date+.swift               # Date helpers for SMB timestamp values.
 │               ├── OptionSet+DebugDescription.swift # Shared debug formatting helpers.
 │               └── Protected.swift           # DispatchQueue-backed state wrapper for Sendable handles.
@@ -64,17 +62,18 @@ SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB s
 
 ## Bridge Layer
 
-- Keep `SMB2Bridge.swift` focused on the high-level synchronous POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`.
-- Prefer free internal functions over namespace enums for bridge calls.
+- `Bridge` is a `class` (not a namespace enum) with all-static methods. All bridge types (e.g., `SMB2Context`, `SMB2FileHandle`, `SMB2OpenFlags`) are nested inside `Bridge` via `extension Bridge { ... }` in `SMB2BridgeTypes.swift`.
+- Outside the `Bridge` class, reference bridge types with the `Bridge.` prefix (e.g., `Bridge.SMB2Context`). Inside the class or its extensions, types resolve without prefix.
+- Keep `Bridge.swift` focused on the high-level synchronous POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`.
 - Bridge functions should expose Swift-shaped arguments and return values (`String`, `Bool`, `UInt64`, `Int64`, Swift structs/enums/options) and convert to C types only at the boundary.
 - Functions that correspond directly to C `get` functions should keep `get` in the Swift bridge name, even though this is not typical Swift style.
-- Do not expose raw C flags as plain integers. Use Swift `enum` or `OptionSet` types instead. Examples: `SMB2OpenFlags`, `SMB2SecurityMode`, `SMB2AuthenticationMethod`.
+- Do not expose raw C flags as plain integers. Use Swift `enum` or `OptionSet` types instead. Examples: `Bridge.SMB2OpenFlags`, `Bridge.SMB2SecurityMode`, `Bridge.SMB2AuthenticationMethod`.
 - C return values that signal errors through negative `errno` values or `NULL` should become `throw`.
 - Keep SMB/NT status handling granular. Public status values live under `SMB.SMBStatus` and `SMB.SMBStatusSeverity`; unknown NTSTATUS values should still preserve their raw value in `SMB.Error.unknownNTStatus`.
-- Passing `SMB2Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
+- Passing `Bridge.SMB2Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
 - Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
-- `libsmb2` contexts are not safe to service concurrently. Public API calls should go through `SMB.run { ... }` so bridge work is serialized behind the recursive bridge lock. Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) must also go through this path.
-- `SMB2Bridge-Notify.swift` intentionally exposes a one-shot raw-PDU notification primitive. The public layer owns the directory handle, re-arms requests for continuous watching, cancels pending requests before close/context teardown, and services the context while the watcher is active.
+- `libsmb2` contexts are not safe to service concurrently. Public API calls should go through `Bridge.sync { ... }` so bridge work is serialized behind the bridge queue. Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) must also go through this path.
+- The bridge intentionally exposes a one-shot raw-PDU notification primitive. The public layer owns the directory handle, re-arms requests for continuous watching, cancels pending requests before close/context teardown, and services the context while the watcher is active.
 - Keep notify response decoding defensive. Do not call the recursive C `smb2_decode_filenotifychangeinformation` helper from public watcher paths unless it has been audited for malformed server data; the Swift decoder currently validates entry bounds, monotonic offsets, and an entry-count cap.
 - Retry `poll` on `EINTR` in Swift-owned service loops.
 

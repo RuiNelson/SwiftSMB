@@ -91,20 +91,20 @@ struct SMB2NodeTypeTests {
     // SMB2_TYPE_FILE = 0, SMB2_TYPE_DIRECTORY = 1, SMB2_TYPE_LINK = 2 (from libsmb2.h)
 
     @Test("file from raw value") func fileFromRawValue() {
-        #expect(Bridge.SMB2NodeType(rawValue: 0) == .file)
+        #expect(Bridge.NodeType(rawValue: 0) == .file)
     }
 
     @Test("directory from raw value") func directoryFromRawValue() {
-        #expect(Bridge.SMB2NodeType(rawValue: 1) == .directory)
+        #expect(Bridge.NodeType(rawValue: 1) == .directory)
     }
 
     @Test("link from raw value") func linkFromRawValue() {
-        #expect(Bridge.SMB2NodeType(rawValue: 2) == .link)
+        #expect(Bridge.NodeType(rawValue: 2) == .link)
     }
 
     @Test("unknown from unrecognized raw value") func unknownFromUnrecognizedRawValue() {
         let raw: UInt32 = 99
-        if case let .unknown(value) = Bridge.SMB2NodeType(rawValue: raw) {
+        if case let .unknown(value) = Bridge.NodeType(rawValue: raw) {
             #expect(value == raw)
         }
         else {
@@ -117,28 +117,28 @@ struct SMB2NodeTypeTests {
 
 struct SMB2ShareKindTests {
     @Test("disk tree from raw value") func diskTreeFromRawValue() {
-        #expect(Bridge.SMB2ShareKind(rawValue: 0) == .diskTree)
+        #expect(Bridge.ShareKind(rawValue: 0) == .diskTree)
     }
 
     @Test("print queue from raw value") func printQueueFromRawValue() {
-        #expect(Bridge.SMB2ShareKind(rawValue: 1) == .printQueue)
+        #expect(Bridge.ShareKind(rawValue: 1) == .printQueue)
     }
 
     @Test("device from raw value") func deviceFromRawValue() {
-        #expect(Bridge.SMB2ShareKind(rawValue: 2) == .device)
+        #expect(Bridge.ShareKind(rawValue: 2) == .device)
     }
 
     @Test("ipc from raw value") func ipcFromRawValue() {
-        #expect(Bridge.SMB2ShareKind(rawValue: 3) == .ipc)
+        #expect(Bridge.ShareKind(rawValue: 3) == .ipc)
     }
 
     @Test("only lower two bits used for kind") func onlyLowerTwoBitsUsedForKind() {
         // rawValue=4 → 4&3=0 → diskTree
-        #expect(Bridge.SMB2ShareKind(rawValue: 4) == .diskTree)
+        #expect(Bridge.ShareKind(rawValue: 4) == .diskTree)
         // rawValue=5 → 5&3=1 → printQueue
-        #expect(Bridge.SMB2ShareKind(rawValue: 5) == .printQueue)
+        #expect(Bridge.ShareKind(rawValue: 5) == .printQueue)
         // rawValue=7 → 7&3=3 → ipc
-        #expect(Bridge.SMB2ShareKind(rawValue: 7) == .ipc)
+        #expect(Bridge.ShareKind(rawValue: 7) == .ipc)
     }
 }
 
@@ -146,37 +146,37 @@ struct SMB2ShareKindTests {
 
 struct SMB2ShareAttributesTests {
     @Test("temporary flag") func temporaryFlag() {
-        let attrs = Bridge.SMB2ShareAttributes(rawShareType: 0x4000_0000)
+        let attrs = Bridge.ShareAttributes(rawShareType: 0x4000_0000)
         #expect(attrs.contains(.temporary))
         #expect(!attrs.contains(.hidden))
     }
 
     @Test("hidden flag") func hiddenFlag() {
-        let attrs = Bridge.SMB2ShareAttributes(rawShareType: 0x8000_0000)
+        let attrs = Bridge.ShareAttributes(rawShareType: 0x8000_0000)
         #expect(attrs.contains(.hidden))
         #expect(!attrs.contains(.temporary))
     }
 
     @Test("both flags") func bothFlags() {
-        let attrs = Bridge.SMB2ShareAttributes(rawShareType: 0xC000_0000)
+        let attrs = Bridge.ShareAttributes(rawShareType: 0xC000_0000)
         #expect(attrs.contains(.temporary))
         #expect(attrs.contains(.hidden))
     }
 
     @Test("no flags") func noFlags() {
-        let attrs = Bridge.SMB2ShareAttributes(rawShareType: 0x0000_0003)
+        let attrs = Bridge.ShareAttributes(rawShareType: 0x0000_0003)
         #expect(!attrs.contains(.temporary))
         #expect(!attrs.contains(.hidden))
     }
 
     @Test("share is hidden property") func shareIsHiddenProperty() {
-        let hidden = Bridge.SMB2Share(name: "test$", kind: .diskTree, attributes: [.hidden], remark: nil)
+        let hidden = Bridge.Share(name: "test$", kind: .diskTree, attributes: [.hidden], remark: nil)
         #expect(hidden.isHidden)
         #expect(!hidden.isTemporary)
     }
 
     @Test("share is temporary property") func shareIsTemporaryProperty() {
-        let temp = Bridge.SMB2Share(name: "temp", kind: .diskTree, attributes: [.temporary], remark: nil)
+        let temp = Bridge.Share(name: "temp", kind: .diskTree, attributes: [.temporary], remark: nil)
         #expect(temp.isTemporary)
         #expect(!temp.isHidden)
     }
@@ -186,32 +186,32 @@ struct SMB2ShareAttributesTests {
 
 struct SMB2OpenFlagsTests {
     @Test("read only raw value") func readOnlyRawValue() {
-        let flags = Bridge.SMB2OpenFlags(.readOnly)
+        let flags = Bridge.OpenFlags(.readOnly)
         #expect(flags.rawValue == O_RDONLY)
     }
 
     @Test("write only raw value") func writeOnlyRawValue() {
-        let flags = Bridge.SMB2OpenFlags(.writeOnly)
+        let flags = Bridge.OpenFlags(.writeOnly)
         #expect(flags.rawValue == O_WRONLY)
     }
 
     @Test("read write raw value") func readWriteRawValue() {
-        let flags = Bridge.SMB2OpenFlags(.readWrite)
+        let flags = Bridge.OpenFlags(.readWrite)
         #expect(flags.rawValue == O_RDWR)
     }
 
     @Test("create option") func createOption() {
-        let flags = Bridge.SMB2OpenFlags(.writeOnly, options: .create)
+        let flags = Bridge.OpenFlags(.writeOnly, options: .create)
         #expect(flags.rawValue == (O_WRONLY | O_CREAT))
     }
 
     @Test("exclusive option") func exclusiveOption() {
-        let flags = Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive])
+        let flags = Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive])
         #expect(flags.rawValue == (O_WRONLY | O_CREAT | O_EXCL))
     }
 
     @Test("default is read only") func defaultIsReadOnly() {
-        let flags = Bridge.SMB2OpenFlags()
+        let flags = Bridge.OpenFlags()
         #expect(flags.accessMode == .readOnly)
         #expect(flags.options == [])
     }
@@ -221,17 +221,17 @@ struct SMB2OpenFlagsTests {
 
 struct SMB2SecurityModeTests {
     @Test("option set union") func optionSetUnion() {
-        let mode: Bridge.SMB2SecurityMode = [.signingEnabled, .signingRequired]
+        let mode: Bridge.SecurityMode = [.signingEnabled, .signingRequired]
         #expect(mode.contains(.signingEnabled))
         #expect(mode.contains(.signingRequired))
     }
 
     @Test("signing enabled and required are distinct") func signingEnabledAndRequiredAreDistinct() {
-        #expect(Bridge.SMB2SecurityMode.signingEnabled != Bridge.SMB2SecurityMode.signingRequired)
+        #expect(Bridge.SecurityMode.signingEnabled != Bridge.SecurityMode.signingRequired)
     }
 
     @Test("empty mode contains nothing") func emptyModeContainsNothing() {
-        let mode = Bridge.SMB2SecurityMode()
+        let mode = Bridge.SecurityMode()
         #expect(!mode.contains(.signingEnabled))
         #expect(!mode.contains(.signingRequired))
     }
@@ -310,21 +310,21 @@ struct OptionalStringExtensionTests {
 
 struct SMB2AuthenticationMethodTests {
     @Test("cases are distinct") func casesAreDistinct() {
-        #expect(Bridge.SMB2AuthenticationMethod.automatic != .ntlmssp)
-        #expect(Bridge.SMB2AuthenticationMethod.automatic != .kerberos)
-        #expect(Bridge.SMB2AuthenticationMethod.ntlmssp != .kerberos)
+        #expect(Bridge.AuthenticationMethod.automatic != .ntlmssp)
+        #expect(Bridge.AuthenticationMethod.automatic != .kerberos)
+        #expect(Bridge.AuthenticationMethod.ntlmssp != .kerberos)
     }
 
     @Test("automatic raw value is zero") func automaticRawValueIsZero() {
-        #expect(Bridge.SMB2AuthenticationMethod.automatic.rawValue == 0)
+        #expect(Bridge.AuthenticationMethod.automatic.rawValue == 0)
     }
 
     @Test("ntlmssp raw value is one") func ntlmsspRawValueIsOne() {
-        #expect(Bridge.SMB2AuthenticationMethod.ntlmssp.rawValue == 1)
+        #expect(Bridge.AuthenticationMethod.ntlmssp.rawValue == 1)
     }
 
     @Test("kerberos raw value is two") func kerberosRawValueIsTwo() {
-        #expect(Bridge.SMB2AuthenticationMethod.kerberos.rawValue == 2)
+        #expect(Bridge.AuthenticationMethod.kerberos.rawValue == 2)
     }
 }
 
@@ -332,15 +332,15 @@ struct SMB2AuthenticationMethodTests {
 
 struct SMB2OpenAccessModeTests {
     @Test("readOnly raw value is O_RDONLY") func readonlyRawValueIsO_rdonly() {
-        #expect(Bridge.SMB2OpenAccessMode.readOnly.rawValue == O_RDONLY)
+        #expect(Bridge.OpenAccessMode.readOnly.rawValue == O_RDONLY)
     }
 
     @Test("writeOnly raw value is O_WRONLY") func writeonlyRawValueIsO_wronly() {
-        #expect(Bridge.SMB2OpenAccessMode.writeOnly.rawValue == O_WRONLY)
+        #expect(Bridge.OpenAccessMode.writeOnly.rawValue == O_WRONLY)
     }
 
     @Test("readWrite raw value is O_RDWR") func readwriteRawValueIsO_rdwr() {
-        #expect(Bridge.SMB2OpenAccessMode.readWrite.rawValue == O_RDWR)
+        #expect(Bridge.OpenAccessMode.readWrite.rawValue == O_RDWR)
     }
 }
 
@@ -348,19 +348,19 @@ struct SMB2OpenAccessModeTests {
 
 struct SMB2OpenOptionsTests {
     @Test("synchronous raw value is O_SYNC") func synchronousRawValueIsO_sync() {
-        #expect(Bridge.SMB2OpenOptions.synchronous.rawValue == O_SYNC)
+        #expect(Bridge.OpenOptions.synchronous.rawValue == O_SYNC)
     }
 
     @Test("create raw value is O_CREAT") func createRawValueIsO_creat() {
-        #expect(Bridge.SMB2OpenOptions.create.rawValue == O_CREAT)
+        #expect(Bridge.OpenOptions.create.rawValue == O_CREAT)
     }
 
     @Test("exclusive raw value is O_EXCL") func exclusiveRawValueIsO_excl() {
-        #expect(Bridge.SMB2OpenOptions.exclusive.rawValue == O_EXCL)
+        #expect(Bridge.OpenOptions.exclusive.rawValue == O_EXCL)
     }
 
     @Test("combined options raw value") func combinedOptionsRawValue() {
-        let options: Bridge.SMB2OpenOptions = [.create, .exclusive]
+        let options: Bridge.OpenOptions = [.create, .exclusive]
         #expect(options.rawValue == O_CREAT | O_EXCL)
     }
 }
@@ -369,11 +369,11 @@ struct SMB2OpenOptionsTests {
 
 struct SMB2ShareEnumerationLevelTests {
     @Test("namesOnly raw value is SHARE_INFO_0") func namesonlyRawValueIsShare_info_0() {
-        #expect(Bridge.SMB2ShareEnumerationLevel.namesOnly.rawValue == SHARE_INFO_0)
+        #expect(Bridge.ShareEnumerationLevel.namesOnly.rawValue == SHARE_INFO_0)
     }
 
     @Test("detailed raw value is SHARE_INFO_1") func detailedRawValueIsShare_info_1() {
-        #expect(Bridge.SMB2ShareEnumerationLevel.detailed.rawValue == SHARE_INFO_1)
+        #expect(Bridge.ShareEnumerationLevel.detailed.rawValue == SHARE_INFO_1)
     }
 }
 

@@ -114,7 +114,7 @@ public extension SMB {
     }
 
     /// Applies negotiation options to a context before connection.
-    internal static func configure(_ context: Bridge.SMB2Context, with configuration: Configuration) throws {
+    internal static func configure(_ context: Bridge.Context, with configuration: Configuration) throws {
         if let timeout = configuration.timeout {
             guard timeout >= 0, timeout <= Int(Int32.max) else {
                 throw Error.invalidArgument(
@@ -150,7 +150,7 @@ public extension SMB {
     internal static func configureCredentials(
         _ credentials: Credentials?,
         server: Server,
-        on context: Bridge.SMB2Context,
+        on context: Bridge.Context,
     ) {
         if let user = credentials?.user {
             Bridge.setUser(user, on: context)

@@ -205,7 +205,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             let written = try writeAllBytes(context: ctx, file: wh, data: content)
             try Bridge.close(context: ctx, file: wh)
@@ -226,7 +226,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             let data = Array("HELLO".utf8)
             let written = try writeAllBytesAt(context: ctx, file: wh, data: data, offset: 10)
@@ -248,7 +248,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             _ = try writeAllBytes(context: ctx, file: wh, data: content)
             try Bridge.close(context: ctx, file: wh)
@@ -274,7 +274,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             _ = try writeAllBytes(context: ctx, file: wh, data: content)
             try Bridge.truncate(context: ctx, file: wh, length: 3)
@@ -297,7 +297,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: oldPath,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -320,7 +320,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             defer { try? Bridge.close(context: ctx, file: wh) }
 
@@ -335,7 +335,7 @@ struct FileWriteTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -361,7 +361,7 @@ struct FileWriteTests {
                 try Bridge.open(
                     context: ctx,
                     path: uniquePath("file") + ".txt",
-                    flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create]),
+                    flags: Bridge.OpenFlags(.writeOnly, options: [.create]),
                 )
             }
         }
@@ -497,7 +497,7 @@ struct ReadWriteModeTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.readWrite, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
             )
             let content = Array("read-write test".utf8)
             _ = try writeAllBytes(context: ctx, file: wh, data: content)
@@ -559,7 +559,7 @@ struct LargeFileTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             let written = try writeAllBytesChunked(context: ctx, file: wh, data: content)
             try Bridge.close(context: ctx, file: wh)
@@ -585,7 +585,7 @@ struct SetBasicInfoTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -605,7 +605,7 @@ struct SetBasicInfoTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -625,7 +625,7 @@ struct SetBasicInfoTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -645,7 +645,7 @@ struct SetBasicInfoTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 
@@ -679,7 +679,7 @@ struct SetBasicInfoTests {
             let wh = try Bridge.open(
                 context: ctx,
                 path: path,
-                flags: Bridge.SMB2OpenFlags(.writeOnly, options: [.create, .exclusive]),
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
             )
             try Bridge.close(context: ctx, file: wh)
 

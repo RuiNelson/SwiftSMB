@@ -208,7 +208,7 @@ public extension SMB {
         case kerberos
 
         /// The bridge representation for this authentication method.
-        var bridgeValue: Bridge.SMB2AuthenticationMethod {
+        var bridgeValue: Bridge.AuthenticationMethod {
             switch self {
             case .automatic:
                 .automatic
@@ -226,10 +226,10 @@ public extension SMB {
         public let rawValue: UInt16
 
         /// Advertise that SMB signing is supported.
-        public static let signingEnabled = SecurityMode(rawValue: Bridge.SMB2SecurityMode.signingEnabled.rawValue)
+        public static let signingEnabled = SecurityMode(rawValue: Bridge.SecurityMode.signingEnabled.rawValue)
 
         /// Require SMB signing.
-        public static let signingRequired = SecurityMode(rawValue: Bridge.SMB2SecurityMode.signingRequired.rawValue)
+        public static let signingRequired = SecurityMode(rawValue: Bridge.SecurityMode.signingRequired.rawValue)
 
         /// Creates a security mode from a raw SMB bitfield.
         public init(rawValue: UInt16) {
@@ -244,8 +244,8 @@ public extension SMB {
         }
 
         /// The bridge representation for this security mode.
-        var bridgeValue: Bridge.SMB2SecurityMode {
-            Bridge.SMB2SecurityMode(rawValue: rawValue)
+        var bridgeValue: Bridge.SecurityMode {
+            Bridge.SecurityMode(rawValue: rawValue)
         }
     }
 }

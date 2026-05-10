@@ -24,98 +24,98 @@ class Bridge {
     // MARK: - Context Management
 
     /// Creates a new libsmb2 context.
-    static func createContext() throws -> SMB2Context {
+    static func createContext() throws -> Context {
         guard let raw = smb2_init_context() else {
             throw SMB.Error.contextCreationFailed
         }
 
-        return SMB2Context(raw: raw)
+        return Context(raw: raw)
     }
 
     /// Closes the active connection for a context without destroying the context.
-    static func closeContext(_ context: SMB2Context) {
+    static func closeContext(_ context: Context) {
         smb2_close_context(context.raw)
     }
 
     /// Destroys a libsmb2 context and any resources it owns.
-    static func destroyContext(_ context: SMB2Context) {
+    static func destroyContext(_ context: Context) {
         smb2_destroy_context(context.raw)
     }
 
     // MARK: - Configuration
 
     /// Sets the command timeout in seconds for a context.
-    static func setTimeout(_ seconds: Int32, on context: SMB2Context) {
+    static func setTimeout(_ seconds: Int32, on context: Context) {
         smb2_set_timeout(context.raw, seconds)
     }
 
     /// Sets the SMB dialect negotiation preference for a context.
-    static func setVersion(_ version: smb2_negotiate_version, on context: SMB2Context) {
+    static func setVersion(_ version: smb2_negotiate_version, on context: Context) {
         smb2_set_version(context.raw, version)
     }
 
     /// Returns the currently negotiated SMB dialect for a context.
-    static func getDialect(on context: SMB2Context) -> UInt16 {
+    static func getDialect(on context: Context) -> UInt16 {
         smb2_get_dialect(context.raw)
     }
 
     /// Sets SMB signing-related negotiation flags for a context.
-    static func setSecurityMode(_ securityMode: SMB2SecurityMode, on context: SMB2Context) {
+    static func setSecurityMode(_ securityMode: SecurityMode, on context: Context) {
         smb2_set_security_mode(context.raw, securityMode.rawValue)
     }
 
     /// Enables or disables SMB3 encryption for a context.
-    static func setSeal(_ enabled: Bool, on context: SMB2Context) {
+    static func setSeal(_ enabled: Bool, on context: Context) {
         smb2_set_seal(context.raw, enabled ? 1 : 0)
     }
 
     /// Enables or disables required SMB signing for a context.
-    static func setSign(_ required: Bool, on context: SMB2Context) {
+    static func setSign(_ required: Bool, on context: Context) {
         smb2_set_sign(context.raw, required ? 1 : 0)
     }
 
     /// Sets the authentication mechanism for a context.
-    static func setAuthentication(_ authentication: SMB2AuthenticationMethod, on context: SMB2Context) {
+    static func setAuthentication(_ authentication: AuthenticationMethod, on context: Context) {
         smb2_set_authentication(context.raw, authentication.rawValue)
     }
 
     /// Sets the username used for authentication.
-    static func setUser(_ user: String, on context: SMB2Context) {
+    static func setUser(_ user: String, on context: Context) {
         user.withCString { smb2_set_user(context.raw, $0) }
     }
 
     /// Returns the username currently configured on a context.
-    static func getUser(on context: SMB2Context) -> String? {
+    static func getUser(on context: Context) -> String? {
         smb2_get_user(context.raw).map(String.init(cString:))
     }
 
     /// Sets the password used for authentication.
-    static func setPassword(_ password: String, on context: SMB2Context) {
+    static func setPassword(_ password: String, on context: Context) {
         password.withCString { smb2_set_password(context.raw, $0) }
     }
 
     /// Loads the password from the NTLM_USER_FILE credential file if available.
-    static func setPasswordFromFile(on context: SMB2Context) {
+    static func setPasswordFromFile(on context: Context) {
         smb2_set_password_from_file(context.raw)
     }
 
     /// Sets the authentication domain for a context.
-    static func setDomain(_ domain: String, on context: SMB2Context) {
+    static func setDomain(_ domain: String, on context: Context) {
         domain.withCString { smb2_set_domain(context.raw, $0) }
     }
 
     /// Returns the authentication domain currently configured on a context.
-    static func getDomain(on context: SMB2Context) -> String? {
+    static func getDomain(on context: Context) -> String? {
         smb2_get_domain(context.raw).map(String.init(cString:))
     }
 
     /// Sets the workstation name used for authentication.
-    static func setWorkstation(_ workstation: String, on context: SMB2Context) {
+    static func setWorkstation(_ workstation: String, on context: Context) {
         workstation.withCString { smb2_set_workstation(context.raw, $0) }
     }
 
     /// Returns the workstation name currently configured on a context.
-    static func getWorkstation(on context: SMB2Context) -> String? {
+    static func getWorkstation(on context: Context) -> String? {
         smb2_get_workstation(context.raw).map(String.init(cString:))
     }
 
@@ -123,7 +123,7 @@ class Bridge {
 
     /// Connects a context to a share on a server.
     static func connectShare(
-        context: SMB2Context,
+        context: Context,
         server: String,
         share: String,
         user: String? = nil,
@@ -140,17 +140,17 @@ class Bridge {
     }
 
     /// Disconnects a context from its current share.
-    static func disconnectShare(context: SMB2Context) throws {
+    static func disconnectShare(context: Context) throws {
         try check(smb2_disconnect_share(context.raw), context: context, operation: "smb2_disconnect_share")
     }
 
     /// Selects a previously connected tree ID for subsequent requests.
-    static func selectTreeID(_ treeID: UInt32, context: SMB2Context) throws {
+    static func selectTreeID(_ treeID: UInt32, context: Context) throws {
         try check(smb2_select_tree_id(context.raw, treeID), context: context, operation: "smb2_select_tree_id")
     }
 
     /// Returns the SMB session ID for a context.
-    static func getSessionID(context: SMB2Context) throws -> UInt64 {
+    static func getSessionID(context: Context) throws -> UInt64 {
         var sessionID: UInt64 = 0
         try check(smb2_get_session_id(context.raw, &sessionID), context: context, operation: "smb2_get_session_id")
         return sessionID
@@ -159,7 +159,7 @@ class Bridge {
     // MARK: - URL Parsing
 
     /// Parses an SMB URL into Swift-friendly URL components.
-    static func parseURL(_ url: String, context: SMB2Context) throws -> SMB2URL {
+    static func parseURL(_ url: String, context: Context) throws -> SMB2URL {
         let rawURL = url.withCString { smb2_parse_url(context.raw, $0) }
 
         guard let rawURL else {
@@ -174,43 +174,43 @@ class Bridge {
 
     /// Opens or creates a file and returns a file handle.
     static func open(
-        context: SMB2Context,
+        context: Context,
         path: String,
-        flags: SMB2OpenFlags = SMB2OpenFlags(),
-    ) throws -> SMB2FileHandle {
+        flags: OpenFlags = OpenFlags(),
+    ) throws -> FileHandle {
         let rawHandle = path.withCString { smb2_open(context.raw, $0, flags.rawValue) }
 
         guard let rawHandle else {
             throw SMB.Error.fromBridge(context, operation: "smb2_open")
         }
 
-        return SMB2FileHandle(raw: rawHandle)
+        return FileHandle(raw: rawHandle)
     }
 
     /// Closes an open file handle.
-    static func close(context: SMB2Context, file: SMB2FileHandle) throws {
+    static func close(context: Context, file: FileHandle) throws {
         try check(smb2_close(context.raw, file.raw), context: context, operation: "smb2_close")
     }
 
     /// Flushes pending writes for an open file handle.
-    static func sync(context: SMB2Context, file: SMB2FileHandle) throws {
+    static func sync(context: Context, file: FileHandle) throws {
         try check(smb2_fsync(context.raw, file.raw), context: context, operation: "smb2_fsync")
     }
 
     /// Returns the maximum read size supported by the connected server.
-    static func getMaxReadSize(context: SMB2Context) -> UInt32 {
+    static func getMaxReadSize(context: Context) -> UInt32 {
         smb2_get_max_read_size(context.raw)
     }
 
     /// Returns the maximum write size supported by the connected server.
-    static func getMaxWriteSize(context: SMB2Context) -> UInt32 {
+    static func getMaxWriteSize(context: Context) -> UInt32 {
         smb2_get_max_write_size(context.raw)
     }
 
     /// Reads bytes from a file at an explicit offset.
     static func read(
-        context: SMB2Context,
-        file: SMB2FileHandle,
+        context: Context,
+        file: FileHandle,
         into buffer: consuming MutableRawSpan,
         offset: UInt64,
     ) throws -> Int {
@@ -227,8 +227,8 @@ class Bridge {
 
     /// Writes bytes to a file at an explicit offset.
     static func write(
-        context: SMB2Context,
-        file: SMB2FileHandle,
+        context: Context,
+        file: FileHandle,
         bytes: RawSpan,
         offset: UInt64,
     ) throws -> Int {
@@ -244,8 +244,8 @@ class Bridge {
 
     /// Reads bytes from the current file offset.
     static func read(
-        context: SMB2Context,
-        file: SMB2FileHandle,
+        context: Context,
+        file: FileHandle,
         into buffer: consuming MutableRawSpan,
     ) throws -> Int {
         var buffer = buffer
@@ -261,8 +261,8 @@ class Bridge {
 
     /// Writes bytes at the current file offset.
     static func write(
-        context: SMB2Context,
-        file: SMB2FileHandle,
+        context: Context,
+        file: FileHandle,
         bytes: RawSpan,
     ) throws -> Int {
         let count = try bytes.byteCount.asUInt32(operation: .smb2Write)
@@ -277,8 +277,8 @@ class Bridge {
 
     /// Moves the current file offset and returns the resulting offset.
     static func seek(
-        context: SMB2Context,
-        file: SMB2FileHandle,
+        context: Context,
+        file: FileHandle,
         offset: Int64,
         whence: Int32,
     ) throws -> UInt64 {
@@ -292,91 +292,91 @@ class Bridge {
     }
 
     /// Removes a file or link at a path.
-    static func unlink(context: SMB2Context, path: String) throws {
+    static func unlink(context: Context, path: String) throws {
         try check(path.withCString { smb2_unlink(context.raw, $0) }, context: context, operation: "smb2_unlink")
     }
 
     // MARK: - Directory Operations
 
     /// Removes an empty directory at a path.
-    static func removeDir(context: SMB2Context, path: String) throws {
+    static func removeDir(context: Context, path: String) throws {
         try check(path.withCString { smb2_rmdir(context.raw, $0) }, context: context, operation: "smb2_rmdir")
     }
 
     /// Creates a directory at a path.
-    static func makeDir(context: SMB2Context, path: String) throws {
+    static func makeDir(context: Context, path: String) throws {
         try check(path.withCString { smb2_mkdir(context.raw, $0) }, context: context, operation: "smb2_mkdir")
     }
 
     /// Opens a directory and returns a directory handle.
-    static func openDir(context: SMB2Context, path: String) throws -> SMB2DirectoryHandle {
+    static func openDir(context: Context, path: String) throws -> DirectoryHandle {
         let rawDirectory = path.withCString { smb2_opendir(context.raw, $0) }
 
         guard let rawDirectory else {
             throw SMB.Error.fromBridge(context, operation: "smb2_opendir")
         }
 
-        return SMB2DirectoryHandle(raw: rawDirectory)
+        return DirectoryHandle(raw: rawDirectory)
     }
 
     /// Closes an open directory handle.
-    static func closeDir(context: SMB2Context, directory: SMB2DirectoryHandle) {
+    static func closeDir(context: Context, directory: DirectoryHandle) {
         smb2_closedir(context.raw, directory.raw)
     }
 
     /// Reads the next directory entry from a directory handle.
-    static func readDir(context: SMB2Context, directory: SMB2DirectoryHandle) -> SMB2DirectoryEntry? {
-        smb2_readdir(context.raw, directory.raw).map { SMB2DirectoryEntry($0.pointee) }
+    static func readDir(context: Context, directory: DirectoryHandle) -> DirectoryEntry? {
+        smb2_readdir(context.raw, directory.raw).map { DirectoryEntry($0.pointee) }
     }
 
     /// Rewinds a directory handle to the first entry.
-    static func rewindDir(context: SMB2Context, directory: SMB2DirectoryHandle) {
+    static func rewindDir(context: Context, directory: DirectoryHandle) {
         smb2_rewinddir(context.raw, directory.raw)
     }
 
     /// Returns the current directory stream location.
-    static func tellDir(context: SMB2Context, directory: SMB2DirectoryHandle) -> Int {
+    static func tellDir(context: Context, directory: DirectoryHandle) -> Int {
         Int(smb2_telldir(context.raw, directory.raw))
     }
 
     /// Moves a directory handle to a previously returned stream location.
-    static func seekDir(context: SMB2Context, directory: SMB2DirectoryHandle, location: Int) {
+    static func seekDir(context: Context, directory: DirectoryHandle, location: Int) {
         smb2_seekdir(context.raw, directory.raw, numericCast(location))
     }
 
     // MARK: - File Statistics
 
     /// Returns filesystem statistics for a path.
-    static func statVFS(context: SMB2Context, path: String) throws -> SMB2StatVFS {
+    static func statVFS(context: Context, path: String) throws -> VFSStat {
         var statvfs = smb2_statvfs()
         try check(
             path.withCString { smb2_statvfs(context.raw, $0, &statvfs) },
             context: context,
             operation: "smb2_statvfs",
         )
-        return SMB2StatVFS(statvfs)
+        return VFSStat(statvfs)
     }
 
     /// Returns file statistics for an open file handle.
-    static func fileStatistics(context: SMB2Context, file: SMB2FileHandle) throws -> SMB2Stat {
+    static func fileStatistics(context: Context, file: FileHandle) throws -> Stat {
         var stat = smb2_stat_64()
         try check(smb2_fstat(context.raw, file.raw, &stat), context: context, operation: "smb2_fstat")
-        return SMB2Stat(stat)
+        return Stat(stat)
     }
 
     /// Returns file statistics for a path.
-    static func fileStatistics(context: SMB2Context, path: String) throws -> SMB2Stat {
+    static func fileStatistics(context: Context, path: String) throws -> Stat {
         var stat = smb2_stat_64()
         try check(
             path.withCString { smb2_stat(context.raw, $0, &stat) },
             context: context,
             operation: "smb2_stat",
         )
-        return SMB2Stat(stat)
+        return Stat(stat)
     }
 
     /// Renames or moves an entry from one path to another.
-    static func rename(context: SMB2Context, oldPath: String, newPath: String) throws {
+    static func rename(context: Context, oldPath: String, newPath: String) throws {
         let status = oldPath.withCString { oldPathPointer in
             newPath.withCString { newPathPointer in
                 smb2_rename(context.raw, oldPathPointer, newPathPointer)
@@ -387,7 +387,7 @@ class Bridge {
     }
 
     /// Truncates a file at a path to a length in bytes.
-    static func truncate(context: SMB2Context, path: String, length: UInt64) throws {
+    static func truncate(context: Context, path: String, length: UInt64) throws {
         try check(
             path.withCString { smb2_truncate(context.raw, $0, length) },
             context: context,
@@ -396,13 +396,13 @@ class Bridge {
     }
 
     /// Truncates an open file handle to a length in bytes.
-    static func truncate(context: SMB2Context, file: SMB2FileHandle, length: UInt64) throws {
+    static func truncate(context: Context, file: FileHandle, length: UInt64) throws {
         try check(smb2_ftruncate(context.raw, file.raw, length), context: context, operation: "smb2_ftruncate")
     }
 
     /// Reads the destination path of a symbolic link.
     static func readLink(
-        context: SMB2Context,
+        context: Context,
         path: String,
         bufferSize: Int = 4096,
     ) throws -> String {
@@ -423,7 +423,7 @@ class Bridge {
     }
 
     /// Sends an SMB echo request to verify the connection is responsive.
-    static func echo(context: SMB2Context) throws {
+    static func echo(context: Context) throws {
         try check(smb2_echo(context.raw), context: context, operation: "smb2_echo")
     }
 
@@ -431,11 +431,11 @@ class Bridge {
 
     /// Connects to IPC$, enumerates user-visible disk shares, and disconnects.
     static func listShares(
-        context: SMB2Context,
+        context: Context,
         server: String,
         user: String? = nil,
         includeHidden: Bool = false,
-    ) throws -> [SMB2Share] {
+    ) throws -> [Share] {
         setSecurityMode(.signingEnabled, on: context)
         try connectShare(context: context, server: server, share: "IPC$", user: user)
 
@@ -455,9 +455,9 @@ class Bridge {
 
     /// Enumerates shares using SRVSVC on a context that is already connected to IPC$.
     static func listSharesOnConnectedIPCShare(
-        context: SMB2Context,
-        level: SMB2ShareEnumerationLevel = .detailed,
-    ) throws -> [SMB2Share] {
+        context: Context,
+        level: ShareEnumerationLevel = .detailed,
+    ) throws -> [Share] {
         guard let response = smb2_share_enum_sync(context.raw, level.rawValue) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_share_enum_sync")
         }
@@ -481,11 +481,11 @@ class Bridge {
 
     /// Starts a one-shot cancellable change notification request for an open directory file handle.
     static func notifyChange(
-        context: SMB2Context,
-        directory: SMB2FileHandle,
-        flags: SMB2NotifyChangeFlags = [],
-        filter: SMB2NotifyChangeFilter = .all,
-        handler: @escaping SMB2NotifyChangeHandler,
+        context: Context,
+        directory: FileHandle,
+        flags: NotifyChangeFlags = [],
+        filter: NotifyChangeFilter = .all,
+        handler: @escaping NotifyChangeHandler,
     ) throws -> SMB2PendingRequest {
         guard let fileID = smb2_get_file_id(directory.raw) else {
             throw SMB.Error.invalidArgument(
@@ -523,7 +523,7 @@ class Bridge {
     }
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.
-    static func cancel(context: SMB2Context, request: SMB2PendingRequest) {
+    static func cancel(context: Context, request: SMB2PendingRequest) {
         guard let cancellation = request.state.cancel() else {
             return
         }
@@ -534,7 +534,7 @@ class Bridge {
 
     /// Services pending SMB2 events for a notification watcher.
     static func serviceNotifyEvents(
-        context: SMB2Context,
+        context: Context,
         timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
     ) throws {
         var pfd = pollfd()
@@ -565,7 +565,7 @@ class Bridge {
     /// Checks an SMB status code and throws if it indicates an error.
     @discardableResult private static func check(
         _ status: Int32,
-        context: SMB2Context,
+        context: Context,
         operation: String,
     ) throws -> Int32 {
         guard status >= 0 else {
@@ -576,17 +576,17 @@ class Bridge {
 
     // MARK: - Share Listing Helpers
 
-    private static func shares(_ count: UInt32, _ body: (Int) -> SMB2Share) -> [SMB2Share] {
+    private static func shares(_ count: UInt32, _ body: (Int) -> Share) -> [Share] {
         (0 ..< Int(count)).map(body)
     }
 
-    private static func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [SMB2Share] {
+    private static func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [Share] {
         guard let buffer = container.Buffer?.pointee.share_info_0 else {
             return []
         }
 
         return shares(container.EntriesRead) { index in
-            SMB2Share(
+            Share(
                 name: string(from: buffer[index].netname),
                 kind: nil,
                 attributes: [],
@@ -595,17 +595,17 @@ class Bridge {
         }
     }
 
-    private static func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [SMB2Share] {
+    private static func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [Share] {
         guard let buffer = container.Buffer?.pointee.share_info_1 else {
             return []
         }
 
         return shares(container.EntriesRead) { index in
             let info = buffer[index]
-            return SMB2Share(
+            return Share(
                 name: string(from: info.netname),
-                kind: SMB2ShareKind(rawValue: info.type),
-                attributes: SMB2ShareAttributes(rawShareType: info.type),
+                kind: ShareKind(rawValue: info.type),
+                attributes: ShareAttributes(rawShareType: info.type),
                 remark: string(from: info.remark),
             )
         }
@@ -615,7 +615,7 @@ class Bridge {
         string.utf8.map(String.init(cString:)) ?? ""
     }
 
-    private static func filterForUserVisibleDiskShares(_ shares: [SMB2Share], includeHidden: Bool) -> [SMB2Share] {
+    private static func filterForUserVisibleDiskShares(_ shares: [Share], includeHidden: Bool) -> [Share] {
         shares.filter { share in
             share.kind == .diskTree && (includeHidden || !share.isHidden)
         }
@@ -703,7 +703,7 @@ class Bridge {
         state.isFinished = true
     }
 
-    private static func serviceUntilFinished(context: SMB2Context, state: some PendingOperationState) throws {
+    private static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
         var pfd = pollfd()
         pfd.fd = smb2_get_fd(context.raw)
 
@@ -729,7 +729,7 @@ class Bridge {
 
     /// Sets basic file information (timestamps and attributes) for a path.
     static func setStats(
-        context: SMB2Context,
+        context: Context,
         path: String,
         creationTime: Date? = nil,
         lastAccessTime: Date? = nil,
@@ -844,7 +844,7 @@ class Bridge {
     }
 
     /// Returns the file attributes for a path.
-    static func getFileAttributes(context: SMB2Context, path: String) throws -> UInt32 {
+    static func getFileAttributes(context: Context, path: String) throws -> UInt32 {
         let state = QueryAttributesState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
 
@@ -973,7 +973,7 @@ class Bridge {
             return
         }
 
-        let context = SMB2Context(raw: rawContext)
+        let context = Context(raw: rawContext)
 
         guard status == 0 else {
             handler(.failure(notifyChangeError(context: context, status: status, operation: state.operation)))
@@ -989,9 +989,9 @@ class Bridge {
     }
 
     private static func decodeNotifyChanges(
-        context: SMB2Context,
+        context: Context,
         commandData: UnsafeMutableRawPointer,
-    ) -> Result<[SMB2NotifyChange], SMB.Error> {
+    ) -> Result<[NotifyChange], SMB.Error> {
         let reply = commandData.assumingMemoryBound(to: smb2_change_notify_reply.self).pointee
 
         guard reply.output_buffer_length > 0, let output = reply.output else {
@@ -1005,8 +1005,8 @@ class Bridge {
         return decodeNotifyChanges(buffer)
     }
 
-    private static func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[SMB2NotifyChange], SMB.Error> {
-        var changes: [SMB2NotifyChange] = []
+    private static func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[NotifyChange], SMB.Error> {
+        var changes: [NotifyChange] = []
         var offset = 0
 
         for _ in 0 ..< maximumNotifyChangeEntryCount {
@@ -1024,8 +1024,8 @@ class Bridge {
                 return .failure(malformedNotifyChangeResponse("Entry name exceeds output buffer length"))
             }
 
-            changes.append(SMB2NotifyChange(
-                action: SMB2NotifyChangeAction(rawValue: action),
+            changes.append(NotifyChange(
+                action: NotifyChangeAction(rawValue: action),
                 name: decodeNotifyChangeName(from: buffer, offset: nameOffset, byteCount: nameLength),
             ))
 
@@ -1078,7 +1078,7 @@ class Bridge {
     }
 
     private static func notifyChangeError(
-        context: SMB2Context,
+        context: Context,
         status: Int32,
         operation: String,
     ) -> SMB.Error {
@@ -1101,7 +1101,7 @@ struct SMB2PendingRequest {
 
 private final class SMB2PendingRequestState: @unchecked Sendable {
     let operation: String
-    let handler: Bridge.SMB2NotifyChangeHandler
+    let handler: Bridge.NotifyChangeHandler
 
     private let lock = NSLock()
     private var raw: UnsafeMutablePointer<smb2_pdu>?
@@ -1110,7 +1110,7 @@ private final class SMB2PendingRequestState: @unchecked Sendable {
 
     init(
         operation: String,
-        handler: @escaping Bridge.SMB2NotifyChangeHandler,
+        handler: @escaping Bridge.NotifyChangeHandler,
     ) {
         self.operation = operation
         self.handler = handler
@@ -1142,7 +1142,7 @@ private final class SMB2PendingRequestState: @unchecked Sendable {
         return (raw, callbackData)
     }
 
-    func complete() -> Bridge.SMB2NotifyChangeHandler? {
+    func complete() -> Bridge.NotifyChangeHandler? {
         lock.lock()
         defer { lock.unlock() }
 
