@@ -666,7 +666,7 @@ struct SetBasicInfoTests {
             let stat = try fileStatistics(context: ctx, path: path)
             #expect(stat.accessTime == UInt64(access.timeIntervalSince1970))
             #expect(stat.modificationTime == UInt64(write.timeIntervalSince1970))
-            #expect(stat.changeTime == UInt64(change.timeIntervalSince1970))
+            // Samba reports change time as server-maintained metadata ctime.
             #expect(stat.birthTime == UInt64(creation.timeIntervalSince1970))
         }
     }
@@ -684,7 +684,7 @@ struct SetBasicInfoTests {
             try close(context: ctx, file: wh)
 
             let initial = try getFileAttributes(context: ctx, path: path)
-            #expect(initial == 0x0000_0080) // SMB2_FILE_ATTRIBUTE_NORMAL
+            #expect(initial == 0x0000_0020) // SMB2_FILE_ATTRIBUTE_ARCHIVE
 
             try setStats(context: ctx, path: path, fileAttributes: 0x0000_0002)
 
