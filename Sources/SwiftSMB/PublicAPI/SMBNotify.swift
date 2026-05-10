@@ -376,8 +376,8 @@ public extension SMB.Connection {
     ) throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
-        let directory = try BridgeRunner.bridgeExecution {
-            try SwiftSMB.open(
+        let directory = try Bridge.bridgeExecution {
+            try Bridge.open(
                 context: context,
                 path: path,
                 flags: SMB2OpenFlags(.readOnly, options: [.directory]),
@@ -574,8 +574,8 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
         while !isCancellationRequested {
             do {
-                let request = try BridgeRunner.bridgeExecution {
-                    try SwiftSMB.notifyChange(
+                let request = try Bridge.bridgeExecution {
+                    try Bridge.notifyChange(
                         context: context,
                         directory: directory,
                         flags: options,
@@ -586,8 +586,8 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                 }
 
                 guard setPendingRequest(request) else {
-                    try BridgeRunner.bridgeExecution {
-                        SwiftSMB.cancel(context: context, request: request)
+                    try Bridge.bridgeExecution {
+                        Bridge.cancel(context: context, request: request)
                     }
                     return
                 }
@@ -600,8 +600,8 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                         break
                     }
 
-                    try BridgeRunner.bridgeExecution {
-                        try SwiftSMB.serviceNotifyEvents(context: context)
+                    try Bridge.bridgeExecution {
+                        try Bridge.serviceNotifyEvents(context: context)
                     }
                 }
             }
@@ -685,13 +685,13 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Cancels pending bridge work and closes the watcher directory handle.
     private func cleanUp() {
         if let request = takePendingRequest() {
-            try? BridgeRunner.bridgeExecution {
-                SwiftSMB.cancel(context: context, request: request)
+            try? Bridge.bridgeExecution {
+                Bridge.cancel(context: context, request: request)
             }
         }
 
-        try? BridgeRunner.bridgeExecution {
-            try SwiftSMB.close(context: context, file: directory)
+        try? Bridge.bridgeExecution {
+            try Bridge.close(context: context, file: directory)
         }
         finish()
         onFinish(id)

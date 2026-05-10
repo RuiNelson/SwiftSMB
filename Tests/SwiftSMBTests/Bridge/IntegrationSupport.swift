@@ -55,8 +55,8 @@ extension Tag {
 
 @discardableResult
 func withFreshContext<T>(_ body: (SMB2Context) throws -> T) throws -> T {
-    let ctx = try createContext()
-    defer { destroyContext(ctx) }
+    let ctx = try Bridge.createContext()
+    defer { Bridge.destroyContext(ctx) }
     return try body(ctx)
 }
 
@@ -65,15 +65,15 @@ private func withShare<T>(
     credentials: (user: String, password: String)? = nil,
     body: (SMB2Context) throws -> T,
 ) throws -> T {
-    let ctx = try createContext()
+    let ctx = try Bridge.createContext()
     if let credentials {
-        setUser(credentials.user, on: ctx)
-        setPassword(credentials.password, on: ctx)
+        Bridge.setUser(credentials.user, on: ctx)
+        Bridge.setPassword(credentials.password, on: ctx)
     }
-    try connectShare(context: ctx, server: testServerHost, share: shareName)
+    try Bridge.connectShare(context: ctx, server: testServerHost, share: shareName)
     defer {
-        try? disconnectShare(context: ctx)
-        destroyContext(ctx)
+        try? Bridge.disconnectShare(context: ctx)
+        Bridge.destroyContext(ctx)
     }
     return try body(ctx)
 }
@@ -97,15 +97,15 @@ func withReadonlyShare<T>(_ body: (SMB2Context) throws -> T) throws -> T {
 
 func allEntries(context: SMB2Context, directory: SMB2DirectoryHandle) -> [SMB2DirectoryEntry] {
     var entries: [SMB2DirectoryEntry] = []
-    while let entry = readDir(context: context, directory: directory) {
+    while let entry = Bridge.readDir(context: context, directory: directory) {
         entries.append(entry)
     }
     return entries
 }
 
 func listDirectory(context: SMB2Context, path: String) throws -> [SMB2DirectoryEntry] {
-    let dir = try openDir(context: context, path: path)
-    defer { closeDir(context: context, directory: dir) }
+    let dir = try Bridge.openDir(context: context, path: path)
+    defer { Bridge.closeDir(context: context, directory: dir) }
     return allEntries(context: context, directory: dir)
 }
 
@@ -116,7 +116,7 @@ func readAllBytes(context: SMB2Context, file: SMB2FileHandle, chunkSize: Int = 6
     var buffer = [UInt8](repeating: 0, count: chunkSize)
     while true {
         let n = try buffer.withUnsafeMutableBytes { rawBuf in
-            try read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
+            try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
         }
         guard n > 0 else { break }
         result.append(contentsOf: buffer.prefix(n))
@@ -127,7 +127,7 @@ func readAllBytes(context: SMB2Context, file: SMB2FileHandle, chunkSize: Int = 6
 func readSomeBytes(context: SMB2Context, file: SMB2FileHandle, count: Int) throws -> [UInt8] {
     var buffer = [UInt8](repeating: 0, count: count)
     let n = try buffer.withUnsafeMutableBytes { rawBuf in
-        try read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
+        try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
     }
     buffer.removeLast(count - n)
     return buffer
@@ -141,7 +141,7 @@ func readSomeBytesAt(
 ) throws -> [UInt8] {
     var buffer = [UInt8](repeating: 0, count: count)
     let n = try buffer.withUnsafeMutableBytes { rawBuf in
-        try read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf), offset: offset)
+        try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf), offset: offset)
     }
     buffer.removeLast(count - n)
     return buffer
@@ -149,7 +149,7 @@ func readSomeBytesAt(
 
 func writeAllBytes(context: SMB2Context, file: SMB2FileHandle, data: [UInt8]) throws -> Int {
     try data.withUnsafeBytes { rawBuf in
-        try write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf))
+        try Bridge.write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf))
     }
 }
 
@@ -160,12 +160,12 @@ func writeAllBytesAt(
     offset: UInt64,
 ) throws -> Int {
     try data.withUnsafeBytes { rawBuf in
-        try write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf), offset: offset)
+        try Bridge.write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf), offset: offset)
     }
 }
 
 func writeAllBytesChunked(context: SMB2Context, file: SMB2FileHandle, data: [UInt8]) throws -> Int {
-    let chunkSize = min(65536, Int(getMaxWriteSize(context: context)))
+    let chunkSize = min(65536, Int(Bridge.getMaxWriteSize(context: context)))
     var offset = 0
     while offset < data.count {
         let chunk = Array(data[offset ..< min(offset + chunkSize, data.count)])

@@ -34,8 +34,8 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? BridgeRunner.bridgeExecution {
-                    SwiftSMB.closeDir(context: context, directory: handle)
+                try? Bridge.bridgeExecution {
+                    Bridge.closeDir(context: context, directory: handle)
                 }
             }
         }
@@ -53,8 +53,8 @@ public extension SMB {
                   let context = try? connection.requireContext() else {
                 return
             }
-            try? BridgeRunner.bridgeExecution {
-                SwiftSMB.closeDir(context: context, directory: handle)
+            try? Bridge.bridgeExecution {
+                Bridge.closeDir(context: context, directory: handle)
             }
         }
 
@@ -65,8 +65,8 @@ public extension SMB {
         public func readNext() throws -> DirectoryEntry? {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Readdir)
-            return try BridgeRunner.bridgeExecution {
-                SwiftSMB.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+            return try Bridge.bridgeExecution {
+                Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
             }
         }
 
@@ -76,8 +76,8 @@ public extension SMB {
         public func rewind() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Rewinddir)
-            try BridgeRunner.bridgeExecution {
-                SwiftSMB.rewindDir(context: context, directory: handle)
+            try Bridge.bridgeExecution {
+                Bridge.rewindDir(context: context, directory: handle)
             }
         }
 
@@ -88,8 +88,8 @@ public extension SMB {
         public func tell() throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Telldir)
-            return try BridgeRunner.bridgeExecution {
-                SwiftSMB.tellDir(context: context, directory: handle)
+            return try Bridge.bridgeExecution {
+                Bridge.tellDir(context: context, directory: handle)
             }
         }
 
@@ -100,8 +100,8 @@ public extension SMB {
         public func seek(to location: Int) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Seekdir)
-            try BridgeRunner.bridgeExecution {
-                SwiftSMB.seekDir(context: context, directory: handle, location: location)
+            try Bridge.bridgeExecution {
+                Bridge.seekDir(context: context, directory: handle, location: location)
             }
         }
 

@@ -147,8 +147,8 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? BridgeRunner.bridgeExecution {
-                    try SwiftSMB.close(context: context, file: handle)
+                try? Bridge.bridgeExecution {
+                    try Bridge.close(context: context, file: handle)
                 }
             }
         }
@@ -166,8 +166,8 @@ public extension SMB {
         public func close() throws {
             guard let handle = takeHandle() else { return }
             let context = try connection.requireContext()
-            try BridgeRunner.bridgeExecution {
-                try SwiftSMB.close(context: context, file: handle)
+            try Bridge.bridgeExecution {
+                try Bridge.close(context: context, file: handle)
             }
         }
 
@@ -206,9 +206,9 @@ public extension SMB {
         public func write(_ data: Data) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Write)
-            return try BridgeRunner.bridgeExecution {
+            return try Bridge.bridgeExecution {
                 try data.withUnsafeBytes { rawBuffer in
-                    try SwiftSMB.write(context: context, file: handle, bytes: RawSpan(_unsafeBytes: rawBuffer))
+                    try Bridge.write(context: context, file: handle, bytes: RawSpan(_unsafeBytes: rawBuffer))
                 }
             }
         }
@@ -224,9 +224,9 @@ public extension SMB {
         public func write(_ data: Data, atOffset offset: UInt64) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Pwrite)
-            return try BridgeRunner.bridgeExecution {
+            return try Bridge.bridgeExecution {
                 try data.withUnsafeBytes { rawBuffer in
-                    try SwiftSMB.write(
+                    try Bridge.write(
                         context: context,
                         file: handle,
                         bytes: RawSpan(_unsafeBytes: rawBuffer),
@@ -247,8 +247,8 @@ public extension SMB {
         public func seek(offset: Int64, from origin: SeekOrigin) throws -> UInt64 {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Lseek)
-            return try BridgeRunner.bridgeExecution {
-                try SwiftSMB.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
+            return try Bridge.bridgeExecution {
+                try Bridge.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
             }
         }
 
@@ -258,8 +258,8 @@ public extension SMB {
         public func sync() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fsync)
-            try BridgeRunner.bridgeExecution {
-                try SwiftSMB.sync(context: context, file: handle)
+            try Bridge.bridgeExecution {
+                try Bridge.sync(context: context, file: handle)
             }
         }
 
@@ -270,8 +270,8 @@ public extension SMB {
         public func truncate(toLength length: UInt64) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Ftruncate)
-            try BridgeRunner.bridgeExecution {
-                try SwiftSMB.truncate(context: context, file: handle, length: length)
+            try Bridge.bridgeExecution {
+                try Bridge.truncate(context: context, file: handle, length: length)
             }
         }
 
@@ -282,8 +282,8 @@ public extension SMB {
         public func stat() throws -> Stat {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fstat)
-            return try BridgeRunner.bridgeExecution {
-                try Stat(SwiftSMB.fileStatistics(context: context, file: handle))
+            return try Bridge.bridgeExecution {
+                try Stat(Bridge.fileStatistics(context: context, file: handle))
             }
         }
 
@@ -303,10 +303,10 @@ public extension SMB {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: operation)
             var data = Data(repeating: 0, count: acceptedByteCount)
-            let readCount = try BridgeRunner.bridgeExecution {
+            let readCount = try Bridge.bridgeExecution {
                 try data.withUnsafeMutableBytes { rawBuffer in
                     if let offset {
-                        try SwiftSMB.read(
+                        try Bridge.read(
                             context: context,
                             file: handle,
                             into: MutableRawSpan(_unsafeBytes: rawBuffer),
@@ -314,7 +314,7 @@ public extension SMB {
                         )
                     }
                     else {
-                        try SwiftSMB.read(
+                        try Bridge.read(
                             context: context,
                             file: handle,
                             into: MutableRawSpan(_unsafeBytes: rawBuffer),

@@ -13,8 +13,8 @@ import Testing
 struct DirectoryTests {
     @Test("open and close root directory") func openAndCloseRootDirectory() throws {
         try withPublicShare { ctx in
-            let dir = try openDir(context: ctx, path: "")
-            closeDir(context: ctx, directory: dir)
+            let dir = try Bridge.openDir(context: ctx, path: "")
+            Bridge.closeDir(context: ctx, directory: dir)
         }
     }
 
@@ -66,11 +66,11 @@ struct DirectoryTests {
 
     @Test("rewind directory reads from start") func rewindDirectoryReadsFromStart() throws {
         try withPublicShare { ctx in
-            let dir = try openDir(context: ctx, path: TestContent.testdirPath)
-            defer { closeDir(context: ctx, directory: dir) }
+            let dir = try Bridge.openDir(context: ctx, path: TestContent.testdirPath)
+            defer { Bridge.closeDir(context: ctx, directory: dir) }
 
             let first = allEntries(context: ctx, directory: dir)
-            rewindDir(context: ctx, directory: dir)
+            Bridge.rewindDir(context: ctx, directory: dir)
             let second = allEntries(context: ctx, directory: dir)
 
             #expect(first.map(\.name) == second.map(\.name))
@@ -79,28 +79,28 @@ struct DirectoryTests {
 
     @Test("tell dir at start is zero") func tellDirAtStartIsZero() throws {
         try withPublicShare { ctx in
-            let dir = try openDir(context: ctx, path: TestContent.testdirPath)
-            defer { closeDir(context: ctx, directory: dir) }
-            #expect(tellDir(context: ctx, directory: dir) == 0)
+            let dir = try Bridge.openDir(context: ctx, path: TestContent.testdirPath)
+            defer { Bridge.closeDir(context: ctx, directory: dir) }
+            #expect(Bridge.tellDir(context: ctx, directory: dir) == 0)
         }
     }
 
     @Test("tell and seek return to same position") func tellAndSeekReturnToSamePosition() throws {
         try withPublicShare { ctx in
-            let dir = try openDir(context: ctx, path: TestContent.testdirPath)
-            defer { closeDir(context: ctx, directory: dir) }
+            let dir = try Bridge.openDir(context: ctx, path: TestContent.testdirPath)
+            defer { Bridge.closeDir(context: ctx, directory: dir) }
 
-            let firstEntry = readDir(context: ctx, directory: dir)
-            let posAfterFirst = tellDir(context: ctx, directory: dir)
+            let firstEntry = Bridge.readDir(context: ctx, directory: dir)
+            let posAfterFirst = Bridge.tellDir(context: ctx, directory: dir)
 
-            let secondEntry = readDir(context: ctx, directory: dir)
-            let posAfterSecond = tellDir(context: ctx, directory: dir)
+            let secondEntry = Bridge.readDir(context: ctx, directory: dir)
+            let posAfterSecond = Bridge.tellDir(context: ctx, directory: dir)
 
             #expect(firstEntry?.name != secondEntry?.name)
             #expect(posAfterFirst != posAfterSecond)
 
-            seekDir(context: ctx, directory: dir, location: posAfterFirst)
-            let reRead = readDir(context: ctx, directory: dir)
+            Bridge.seekDir(context: ctx, directory: dir, location: posAfterFirst)
+            let reRead = Bridge.readDir(context: ctx, directory: dir)
             #expect(reRead?.name == secondEntry?.name)
         }
     }
@@ -108,13 +108,13 @@ struct DirectoryTests {
     @Test("create and remove directory") func createAndRemoveDirectory() throws {
         try withPublicShare { ctx in
             let path = uniquePath("dir")
-            try makeDir(context: ctx, path: path)
-            defer { try? removeDir(context: ctx, path: path) }
+            try Bridge.makeDir(context: ctx, path: path)
+            defer { try? Bridge.removeDir(context: ctx, path: path) }
 
-            try removeDir(context: ctx, path: path)
+            try Bridge.removeDir(context: ctx, path: path)
 
             #expect(throws: SMB.Error.self) {
-                try fileStatistics(context: ctx, path: path)
+                try Bridge.fileStatistics(context: ctx, path: path)
             }
         }
     }
@@ -122,7 +122,7 @@ struct DirectoryTests {
     @Test("removing non existent directory throws") func removingNonExistentDirectoryThrows() throws {
         try withPublicShare { ctx in
             #expect(throws: SMB.Error.self) {
-                try removeDir(context: ctx, path: "nonexistent_\(uniquePath())")
+                try Bridge.removeDir(context: ctx, path: "nonexistent_\(uniquePath())")
             }
         }
     }
