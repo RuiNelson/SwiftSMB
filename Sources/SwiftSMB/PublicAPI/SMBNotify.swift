@@ -376,7 +376,7 @@ public extension SMB.Connection {
     ) throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
-        let directory = try SMB.run {
+        let directory = try BridgeRunner.bridgeExecution {
             try SwiftSMB.open(
                 context: context,
                 path: path,
@@ -574,7 +574,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
         while !isCancellationRequested {
             do {
-                let request = try SMB.run {
+                let request = try BridgeRunner.bridgeExecution {
                     try SwiftSMB.notifyChange(
                         context: context,
                         directory: directory,
@@ -586,7 +586,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                 }
 
                 guard setPendingRequest(request) else {
-                    try SMB.run {
+                    try BridgeRunner.bridgeExecution {
                         SwiftSMB.cancel(context: context, request: request)
                     }
                     return
@@ -600,7 +600,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                         break
                     }
 
-                    try SMB.run {
+                    try BridgeRunner.bridgeExecution {
                         try SwiftSMB.serviceNotifyEvents(context: context)
                     }
                 }
@@ -685,12 +685,12 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Cancels pending bridge work and closes the watcher directory handle.
     private func cleanUp() {
         if let request = takePendingRequest() {
-            try? SMB.run {
+            try? BridgeRunner.bridgeExecution {
                 SwiftSMB.cancel(context: context, request: request)
             }
         }
 
-        try? SMB.run {
+        try? BridgeRunner.bridgeExecution {
             try SwiftSMB.close(context: context, file: directory)
         }
         finish()
