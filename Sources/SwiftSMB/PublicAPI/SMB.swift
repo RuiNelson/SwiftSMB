@@ -12,6 +12,4 @@
 /// higher-level objects for files and directories. `SMB` cannot be instantiated;
 /// all entry points are static methods or nested types.
 public final class SMB {
-    private init() {
-    }
 }
