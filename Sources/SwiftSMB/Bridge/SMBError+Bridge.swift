@@ -42,11 +42,3 @@ extension SMB.Error {
     }
 }
 
-/// Throws an SMB error if a C status code represents failure.
-@discardableResult func check(_ status: Int32, context: SMB2Context, operation: String) throws -> Int32 {
-    guard status >= 0 else {
-        throw SMB.Error.fromBridge(context, operation: operation, status: status)
-    }
-
-    return status
-}
