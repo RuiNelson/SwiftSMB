@@ -46,15 +46,15 @@ let connection = try SMB.connect(
 defer { try? connection.disconnect() }
 ```
 
-Paths are relative to the connected share root. A leading `/` is accepted and normalized away, so `"Projects"` and `"/Projects"` refer to the same remote path.
-
 ### Listing a directory
 
 `listDirectory(at:)` returns an array with the entries in a directory:
 
 ```swift
-let entries = try connection.listDirectory(at: "Inbox")
+let entries = try connection.listDirectory(at: "Anna/Inbox")
 ```
+
+In this library, just like `libsmb2` uses forward slash for separating directories. You don't need to add "/" to indicate the root of the file share.
 
 ### uploadFile
 
@@ -65,7 +65,7 @@ let localURL = URL(fileURLWithPath: "/Users/Anna/Desktop/report.pdf")
 
 try connection.uploadFile(
     local: localURL,
-    remote: "Inbox/report.pdf"
+    remote: "Anna/Inbox/report.pdf"
 ) { completed, total, lastBlockSpeed, averageSpeedSinceTheStartOfTheTransfer in
     let speed = 0.5 * lastBlockSpeed + 0.5 * averageSpeedSinceTheStartOfTheTransfer
     print("Uploaded \(completed) of \(total) bytes at \(round(speed/1000.0)) kB/s")
@@ -83,7 +83,7 @@ Return `false` from the progress closure to cancel the upload.
 let localURL = URL(fileURLWithPath: "/Users/alice/Downloads/report.pdf")
 
 try connection.downloadFile(
-    remote: "Inbox/report.pdf",
+    remote: "Anna/Inbox/report.pdf",
     local: localURL
 ) { completed, total, latestSpeed, averageSpeed in
     print("Downloaded \(completed) of \(total) bytes")
