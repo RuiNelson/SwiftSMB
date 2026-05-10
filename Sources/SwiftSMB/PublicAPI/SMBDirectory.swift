@@ -13,10 +13,13 @@ public extension SMB {
         public let path: String
 
         private let connection: Connection
-        private let protectedHandle = Protected<SMB2DirectoryHandle?>(nil, label: "SwiftSMB.SMB.Directory.handle")
+        private let protectedHandle = Protected<Bridge.SMB2DirectoryHandle?>(
+            nil,
+            label: "SwiftSMB.SMB.Directory.handle",
+        )
 
         /// The live bridge directory handle, if the directory is still open.
-        private var handle: SMB2DirectoryHandle? {
+        private var handle: Bridge.SMB2DirectoryHandle? {
             get {
                 protectedHandle.current
             }
@@ -26,7 +29,7 @@ public extension SMB {
         }
 
         /// Creates a public directory wrapper around an open bridge handle.
-        init(connection: Connection, path: String, handle: SMB2DirectoryHandle) {
+        init(connection: Connection, path: String, handle: Bridge.SMB2DirectoryHandle) {
             self.connection = connection
             self.path = path
             self.handle = handle
@@ -34,7 +37,7 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? Bridge.bridgeExecution {
+                try? Bridge.sync {
                     Bridge.closeDir(context: context, directory: handle)
                 }
             }
@@ -53,7 +56,7 @@ public extension SMB {
                   let context = try? connection.requireContext() else {
                 return
             }
-            try? Bridge.bridgeExecution {
+            try? Bridge.sync {
                 Bridge.closeDir(context: context, directory: handle)
             }
         }
@@ -65,7 +68,7 @@ public extension SMB {
         public func readNext() throws -> DirectoryEntry? {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Readdir)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
             }
         }
@@ -76,7 +79,7 @@ public extension SMB {
         public func rewind() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Rewinddir)
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 Bridge.rewindDir(context: context, directory: handle)
             }
         }
@@ -88,7 +91,7 @@ public extension SMB {
         public func tell() throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Telldir)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 Bridge.tellDir(context: context, directory: handle)
             }
         }
@@ -100,13 +103,13 @@ public extension SMB {
         public func seek(to location: Int) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Seekdir)
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 Bridge.seekDir(context: context, directory: handle, location: location)
             }
         }
 
         /// Returns the live bridge handle or throws if the directory is closed.
-        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> SMB2DirectoryHandle {
+        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.SMB2DirectoryHandle {
             guard let handle else {
                 throw SMB.Error.invalidArgument(cause: .directoryAlreadyClosed, onOperation: operation)
             }
@@ -114,7 +117,7 @@ public extension SMB {
         }
 
         /// Takes ownership of the handle and marks the directory closed.
-        private func takeHandle() -> SMB2DirectoryHandle? {
+        private func takeHandle() -> Bridge.SMB2DirectoryHandle? {
             protectedHandle.take(replacingWith: nil)
         }
 

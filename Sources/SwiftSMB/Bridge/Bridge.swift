@@ -15,7 +15,7 @@ class Bridge {
     private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.swiftsmb.bridge")
 
     /// Executes a throwing bridge operation on the bridge queue.
-    static func bridgeExecution<T>(_ body: () throws -> T) throws -> T {
+    static func sync<T>(_ body: () throws -> T) throws -> T {
         try bridgeQueue.sync {
             try body()
         }
@@ -440,9 +440,9 @@ class Bridge {
         try connectShare(context: context, server: server, share: "IPC$", user: user)
 
         do {
-            let shares = filterForUserVisibleDiskShares(
-                try listSharesOnConnectedIPCShare(context: context),
-                includeHidden: includeHidden
+            let shares = try filterForUserVisibleDiskShares(
+                listSharesOnConnectedIPCShare(context: context),
+                includeHidden: includeHidden,
             )
             try disconnectShare(context: context)
             return shares
@@ -563,7 +563,11 @@ class Bridge {
     // MARK: - Private Helpers
 
     /// Checks an SMB status code and throws if it indicates an error.
-    @discardableResult private static func check(_ status: Int32, context: SMB2Context, operation: String) throws -> Int32 {
+    @discardableResult private static func check(
+        _ status: Int32,
+        context: SMB2Context,
+        operation: String,
+    ) throws -> Int32 {
         guard status >= 0 else {
             throw SMB.Error.fromBridge(context, operation: operation, status: status)
         }
@@ -670,24 +674,25 @@ class Bridge {
         }
     }
 
-    private static let queryAttributesQueryCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
-        guard let callbackData else { return }
-        let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        if status == SMB2_STATUS_SUCCESS, let commandData {
-            let reply = commandData.bindMemory(to: smb2_query_info_reply.self, capacity: 1)
-            if let rawContext, let buffer = reply.pointee.output_buffer {
-                defer { smb2_free_data(rawContext, buffer) }
-                guard reply.pointee.output_buffer_length >= fileBasicInformationWireLength else {
-                    return
+    private static let queryAttributesQueryCallback: smb2_command_cb =
+        { rawContext, status, commandData, callbackData in
+            guard let callbackData else { return }
+            let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
+            if state.status == SMB2_STATUS_SUCCESS {
+                state.status = status
+            }
+            if status == SMB2_STATUS_SUCCESS, let commandData {
+                let reply = commandData.bindMemory(to: smb2_query_info_reply.self, capacity: 1)
+                if let rawContext, let buffer = reply.pointee.output_buffer {
+                    defer { smb2_free_data(rawContext, buffer) }
+                    guard reply.pointee.output_buffer_length >= fileBasicInformationWireLength else {
+                        return
+                    }
+                    let info = buffer.withMemoryRebound(to: smb2_file_basic_info.self, capacity: 1) { $0.pointee }
+                    state.fileAttributes = info.file_attributes
                 }
-                let info = buffer.withMemoryRebound(to: smb2_file_basic_info.self, capacity: 1) { $0.pointee }
-                state.fileAttributes = info.file_attributes
             }
         }
-    }
 
     private static let queryAttributesCloseCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
@@ -917,7 +922,12 @@ class Bridge {
                 file_id: fileIDAllOnes,
             )
 
-            guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, queryAttributesCloseCallback, callbackData) else {
+            guard let close_pdu = smb2_cmd_close_async(
+                context.raw,
+                &cl_req,
+                queryAttributesCloseCallback,
+                callbackData,
+            ) else {
                 smb2_free_pdu(context.raw, pdu)
                 throw SMB.Error.fromBridge(context, operation: "smb2_cmd_close_async")
             }
@@ -1091,7 +1101,7 @@ struct SMB2PendingRequest {
 
 private final class SMB2PendingRequestState: @unchecked Sendable {
     let operation: String
-    let handler: SMB2NotifyChangeHandler
+    let handler: Bridge.SMB2NotifyChangeHandler
 
     private let lock = NSLock()
     private var raw: UnsafeMutablePointer<smb2_pdu>?
@@ -1100,7 +1110,7 @@ private final class SMB2PendingRequestState: @unchecked Sendable {
 
     init(
         operation: String,
-        handler: @escaping SMB2NotifyChangeHandler,
+        handler: @escaping Bridge.SMB2NotifyChangeHandler,
     ) {
         self.operation = operation
         self.handler = handler
@@ -1132,7 +1142,7 @@ private final class SMB2PendingRequestState: @unchecked Sendable {
         return (raw, callbackData)
     }
 
-    func complete() -> SMB2NotifyChangeHandler? {
+    func complete() -> Bridge.SMB2NotifyChangeHandler? {
         lock.lock()
         defer { lock.unlock() }
 

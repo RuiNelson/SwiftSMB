@@ -10,7 +10,7 @@ import Foundation
 import SMB2
 
 extension SMB.Error {
-    static func fromBridge(_ context: SMB2Context, operation: String, status: Int32? = nil) -> SMB.Error {
+    static func fromBridge(_ context: Bridge.SMB2Context, operation: String, status: Int32? = nil) -> SMB.Error {
         let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""
         let posixCode = status.map { $0 < 0 ? -$0 : $0 }
         let ntStatusCode = smb2_get_nterror(context.raw)
@@ -41,4 +41,3 @@ extension SMB.Error {
         return .unknown(operation: operation, message: message)
     }
 }
-

@@ -25,7 +25,7 @@ public extension SMB {
             case readWrite
 
             /// The bridge representation for this access mode.
-            var bridgeValue: SMB2OpenAccessMode {
+            var bridgeValue: Bridge.SMB2OpenAccessMode {
                 switch self {
                 case .readOnly:
                     .readOnly
@@ -73,8 +73,8 @@ public extension SMB {
             }
 
             /// The bridge representation for these options.
-            var bridgeValue: SMB2OpenOptions {
-                var options = SMB2OpenOptions()
+            var bridgeValue: Bridge.SMB2OpenOptions {
+                var options = Bridge.SMB2OpenOptions()
                 if contains(.synchronous) {
                     options.insert(.synchronous)
                 }
@@ -126,10 +126,10 @@ public extension SMB {
         public let path: String
 
         let connection: Connection
-        private let protectedHandle = Protected<SMB2FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
+        private let protectedHandle = Protected<Bridge.SMB2FileHandle?>(nil, label: "SwiftSMB.SMB.File.handle")
 
         /// The live bridge file handle, if the file is still open.
-        private var handle: SMB2FileHandle? {
+        private var handle: Bridge.SMB2FileHandle? {
             get {
                 protectedHandle.current
             }
@@ -139,7 +139,7 @@ public extension SMB {
         }
 
         /// Creates a public file wrapper around an open bridge handle.
-        init(connection: Connection, path: String, handle: SMB2FileHandle) {
+        init(connection: Connection, path: String, handle: Bridge.SMB2FileHandle) {
             self.connection = connection
             self.path = path
             self.handle = handle
@@ -147,7 +147,7 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? Bridge.bridgeExecution {
+                try? Bridge.sync {
                     try Bridge.close(context: context, file: handle)
                 }
             }
@@ -166,7 +166,7 @@ public extension SMB {
         public func close() throws {
             guard let handle = takeHandle() else { return }
             let context = try connection.requireContext()
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 try Bridge.close(context: context, file: handle)
             }
         }
@@ -206,7 +206,7 @@ public extension SMB {
         public func write(_ data: Data) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Write)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 try data.withUnsafeBytes { rawBuffer in
                     try Bridge.write(context: context, file: handle, bytes: RawSpan(_unsafeBytes: rawBuffer))
                 }
@@ -224,7 +224,7 @@ public extension SMB {
         public func write(_ data: Data, atOffset offset: UInt64) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Pwrite)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 try data.withUnsafeBytes { rawBuffer in
                     try Bridge.write(
                         context: context,
@@ -247,7 +247,7 @@ public extension SMB {
         public func seek(offset: Int64, from origin: SeekOrigin) throws -> UInt64 {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Lseek)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 try Bridge.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
             }
         }
@@ -258,7 +258,7 @@ public extension SMB {
         public func sync() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fsync)
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 try Bridge.sync(context: context, file: handle)
             }
         }
@@ -270,7 +270,7 @@ public extension SMB {
         public func truncate(toLength length: UInt64) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Ftruncate)
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 try Bridge.truncate(context: context, file: handle, length: length)
             }
         }
@@ -282,7 +282,7 @@ public extension SMB {
         public func stat() throws -> Stat {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fstat)
-            return try Bridge.bridgeExecution {
+            return try Bridge.sync {
                 try Stat(Bridge.fileStatistics(context: context, file: handle))
             }
         }
@@ -303,7 +303,7 @@ public extension SMB {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: operation)
             var data = Data(repeating: 0, count: acceptedByteCount)
-            let readCount = try Bridge.bridgeExecution {
+            let readCount = try Bridge.sync {
                 try data.withUnsafeMutableBytes { rawBuffer in
                     if let offset {
                         try Bridge.read(
@@ -327,7 +327,7 @@ public extension SMB {
         }
 
         /// Returns the live bridge handle or throws if the file is closed.
-        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> SMB2FileHandle {
+        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.SMB2FileHandle {
             guard let handle else {
                 throw SMB.Error.invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
             }
@@ -335,7 +335,7 @@ public extension SMB {
         }
 
         /// Takes ownership of the handle and marks the file closed.
-        private func takeHandle() -> SMB2FileHandle? {
+        private func takeHandle() -> Bridge.SMB2FileHandle? {
             protectedHandle.take(replacingWith: nil)
         }
 

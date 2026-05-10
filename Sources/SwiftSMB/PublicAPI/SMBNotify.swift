@@ -16,7 +16,7 @@ public extension SMB {
         public let rawValue: UInt16
 
         /// Watch the entire subtree rooted at the requested directory.
-        public static let recursive = NotifyOptions(rawValue: SMB2NotifyChangeFlags.watchTree.rawValue)
+        public static let recursive = NotifyOptions(rawValue: Bridge.SMB2NotifyChangeFlags.watchTree.rawValue)
 
         /// Creates notification options from a raw bitfield.
         ///
@@ -26,8 +26,8 @@ public extension SMB {
         }
 
         /// The bridge representation for these options.
-        var bridgeValue: SMB2NotifyChangeFlags {
-            var flags = SMB2NotifyChangeFlags()
+        var bridgeValue: Bridge.SMB2NotifyChangeFlags {
+            var flags = Bridge.SMB2NotifyChangeFlags()
             if contains(.recursive) {
                 flags.insert(.watchTree)
             }
@@ -48,44 +48,44 @@ public extension SMB {
         public let rawValue: UInt32
 
         /// File name changes.
-        public static let fileName = NotifyFilter(rawValue: SMB2NotifyChangeFilter.fileName.rawValue)
+        public static let fileName = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.fileName.rawValue)
 
         /// Directory name changes.
-        public static let directoryName = NotifyFilter(rawValue: SMB2NotifyChangeFilter.directoryName.rawValue)
+        public static let directoryName = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.directoryName.rawValue)
 
         /// File or directory attribute changes.
-        public static let attributes = NotifyFilter(rawValue: SMB2NotifyChangeFilter.attributes.rawValue)
+        public static let attributes = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.attributes.rawValue)
 
         /// File size changes.
-        public static let size = NotifyFilter(rawValue: SMB2NotifyChangeFilter.size.rawValue)
+        public static let size = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.size.rawValue)
 
         /// Last-write timestamp changes.
-        public static let lastWrite = NotifyFilter(rawValue: SMB2NotifyChangeFilter.lastWrite.rawValue)
+        public static let lastWrite = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.lastWrite.rawValue)
 
         /// Last-access timestamp changes.
-        public static let lastAccess = NotifyFilter(rawValue: SMB2NotifyChangeFilter.lastAccess.rawValue)
+        public static let lastAccess = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.lastAccess.rawValue)
 
         /// Creation timestamp changes.
-        public static let creation = NotifyFilter(rawValue: SMB2NotifyChangeFilter.creation.rawValue)
+        public static let creation = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.creation.rawValue)
 
         /// Extended attribute changes.
-        public static let extendedAttributes = NotifyFilter(rawValue: SMB2NotifyChangeFilter.extendedAttributes
+        public static let extendedAttributes = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.extendedAttributes
             .rawValue)
 
         /// Security descriptor changes.
-        public static let security = NotifyFilter(rawValue: SMB2NotifyChangeFilter.security.rawValue)
+        public static let security = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.security.rawValue)
 
         /// Alternate data stream name changes.
-        public static let streamName = NotifyFilter(rawValue: SMB2NotifyChangeFilter.streamName.rawValue)
+        public static let streamName = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.streamName.rawValue)
 
         /// Alternate data stream size changes.
-        public static let streamSize = NotifyFilter(rawValue: SMB2NotifyChangeFilter.streamSize.rawValue)
+        public static let streamSize = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.streamSize.rawValue)
 
         /// Alternate data stream write changes.
-        public static let streamWrite = NotifyFilter(rawValue: SMB2NotifyChangeFilter.streamWrite.rawValue)
+        public static let streamWrite = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.streamWrite.rawValue)
 
         /// All change kinds supported by this library.
-        public static let all = NotifyFilter(rawValue: SMB2NotifyChangeFilter.all.rawValue)
+        public static let all = NotifyFilter(rawValue: Bridge.SMB2NotifyChangeFilter.all.rawValue)
 
         /// Creates a notification filter from a raw bitfield.
         ///
@@ -95,8 +95,8 @@ public extension SMB {
         }
 
         /// The bridge representation for this filter.
-        var bridgeValue: SMB2NotifyChangeFilter {
-            SMB2NotifyChangeFilter(rawValue: rawValue)
+        var bridgeValue: Bridge.SMB2NotifyChangeFilter {
+            Bridge.SMB2NotifyChangeFilter(rawValue: rawValue)
         }
 
         /// A debug description of the enabled notification filters.
@@ -150,7 +150,7 @@ public extension SMB {
             case unknown(UInt32)
 
             /// Creates a public action from a bridge value.
-            init(_ bridgeValue: SMB2NotifyChangeAction) {
+            init(_ bridgeValue: Bridge.SMB2NotifyChangeAction) {
                 switch bridgeValue {
                 case .added:
                     self = .added
@@ -206,7 +206,7 @@ public extension SMB {
         }
 
         /// Creates a public change from a bridge value.
-        init(_ bridgeValue: SMB2NotifyChange) {
+        init(_ bridgeValue: Bridge.SMB2NotifyChange) {
             action = Action(bridgeValue.action)
             name = bridgeValue.name
         }
@@ -376,11 +376,11 @@ public extension SMB.Connection {
     ) throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
-        let directory = try Bridge.bridgeExecution {
+        let directory = try Bridge.sync {
             try Bridge.open(
                 context: context,
                 path: path,
-                flags: SMB2OpenFlags(.readOnly, options: [.directory]),
+                flags: Bridge.SMB2OpenFlags(.readOnly, options: [.directory]),
             )
         }
         let callbacks = SMBNotifyWatcherCallbacks()
@@ -476,23 +476,23 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         var pendingRequest: SMB2PendingRequest?
 
         /// The completed bridge result waiting to be handled by the loop.
-        var completedResult: Result<[SMB2NotifyChange], SMB.Error>?
+        var completedResult: Result<[Bridge.SMB2NotifyChange], SMB.Error>?
     }
 
     /// Stable identity used by the connection watcher registry.
     let id = UUID()
 
     /// The SMB context that owns the pending request.
-    private let context: SMB2Context
+    private let context: Bridge.SMB2Context
 
     /// The open directory handle used to arm notifications.
-    private let directory: SMB2FileHandle
+    private let directory: Bridge.SMB2FileHandle
 
     /// Bridge options used for each notification request.
-    private let options: SMB2NotifyChangeFlags
+    private let options: Bridge.SMB2NotifyChangeFlags
 
     /// Bridge filter used for each notification request.
-    private let filter: SMB2NotifyChangeFilter
+    private let filter: Bridge.SMB2NotifyChangeFilter
 
     /// Callback router for public watcher events.
     private let callbacks: SMBNotifyWatcherCallbacks
@@ -523,10 +523,10 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
     /// Creates watcher state for an open directory handle.
     init(
-        context: SMB2Context,
-        directory: SMB2FileHandle,
-        options: SMB2NotifyChangeFlags,
-        filter: SMB2NotifyChangeFilter,
+        context: Bridge.SMB2Context,
+        directory: Bridge.SMB2FileHandle,
+        options: Bridge.SMB2NotifyChangeFlags,
+        filter: Bridge.SMB2NotifyChangeFilter,
         callbacks: SMBNotifyWatcherCallbacks,
         onFinish: @escaping @Sendable (UUID) -> Void,
     ) {
@@ -574,7 +574,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
         while !isCancellationRequested {
             do {
-                let request = try Bridge.bridgeExecution {
+                let request = try Bridge.sync {
                     try Bridge.notifyChange(
                         context: context,
                         directory: directory,
@@ -586,7 +586,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                 }
 
                 guard setPendingRequest(request) else {
-                    try Bridge.bridgeExecution {
+                    try Bridge.sync {
                         Bridge.cancel(context: context, request: request)
                     }
                     return
@@ -600,7 +600,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                         break
                     }
 
-                    try Bridge.bridgeExecution {
+                    try Bridge.sync {
                         try Bridge.serviceNotifyEvents(context: context)
                     }
                 }
@@ -644,7 +644,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     }
 
     /// Stores a completed bridge result for the run loop to consume.
-    private func complete(_ result: Result<[SMB2NotifyChange], SMB.Error>) {
+    private func complete(_ result: Result<[Bridge.SMB2NotifyChange], SMB.Error>) {
         var state = protectedState.current
         state.pendingRequest = nil
         state.completedResult = result
@@ -652,7 +652,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     }
 
     /// Takes the completed bridge result, if one is available.
-    private func takeCompletedResult() -> Result<[SMB2NotifyChange], SMB.Error>? {
+    private func takeCompletedResult() -> Result<[Bridge.SMB2NotifyChange], SMB.Error>? {
         var state = protectedState.current
         let result = state.completedResult
         state.completedResult = nil
@@ -670,7 +670,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     }
 
     /// Converts a bridge result into public delegate callbacks.
-    private func handle(_ result: Result<[SMB2NotifyChange], SMB.Error>) throws {
+    private func handle(_ result: Result<[Bridge.SMB2NotifyChange], SMB.Error>) throws {
         switch result {
         case let .success(changes):
             let publicChanges = changes.map(SMB.NotifyChange.init)
@@ -685,12 +685,12 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Cancels pending bridge work and closes the watcher directory handle.
     private func cleanUp() {
         if let request = takePendingRequest() {
-            try? Bridge.bridgeExecution {
+            try? Bridge.sync {
                 Bridge.cancel(context: context, request: request)
             }
         }
 
-        try? Bridge.bridgeExecution {
+        try? Bridge.sync {
             try Bridge.close(context: context, file: directory)
         }
         finish()

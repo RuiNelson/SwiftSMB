@@ -29,7 +29,7 @@ public extension SMB {
             case unknown(UInt32)
 
             /// Creates a public share kind from a bridge value.
-            init(_ bridgeValue: SMB2ShareKind) {
+            init(_ bridgeValue: Bridge.SMB2ShareKind) {
                 switch bridgeValue {
                 case .diskTree:
                     self = .diskTree
@@ -61,10 +61,10 @@ public extension SMB {
             public let rawValue: UInt32
 
             /// The share is temporary.
-            public static let temporary = Attributes(rawValue: SMB2ShareAttributes.temporary.rawValue)
+            public static let temporary = Attributes(rawValue: Bridge.SMB2ShareAttributes.temporary.rawValue)
 
             /// The share is hidden.
-            public static let hidden = Attributes(rawValue: SMB2ShareAttributes.hidden.rawValue)
+            public static let hidden = Attributes(rawValue: Bridge.SMB2ShareAttributes.hidden.rawValue)
 
             /// Creates share attributes from a raw bitfield.
             public init(rawValue: UInt32) {
@@ -116,7 +116,7 @@ public extension SMB {
         }
 
         /// Creates a public share value from a bridge value.
-        init(_ bridgeValue: SMB2Share) {
+        init(_ bridgeValue: Bridge.SMB2Share) {
             name = bridgeValue.name
             kind = bridgeValue.kind.map(Kind.init)
             attributes = Attributes(rawValue: bridgeValue.attributes.rawValue)
@@ -143,7 +143,7 @@ public extension SMB {
         case unknown(UInt32)
 
         /// Creates a public node type from a bridge value.
-        init(_ bridgeValue: SMB2NodeType) {
+        init(_ bridgeValue: Bridge.SMB2NodeType) {
             switch bridgeValue {
             case .file:
                 self = .file
@@ -267,7 +267,7 @@ public extension SMB {
         }
 
         /// Creates a public stat value from a bridge value.
-        init(_ bridgeValue: SMB2Stat) {
+        init(_ bridgeValue: Bridge.SMB2Stat) {
             type = NodeType(bridgeValue.type)
             linkCount = bridgeValue.linkCount
             inode = bridgeValue.inode
@@ -323,7 +323,7 @@ public extension SMB {
         public let maximumNameLength: UInt32
 
         /// Creates a public filesystem stat value from a bridge value.
-        init(_ bridgeValue: SMB2StatVFS) {
+        init(_ bridgeValue: Bridge.SMB2StatVFS) {
             blockSize = bridgeValue.blockSize
             fragmentSize = bridgeValue.fragmentSize
             blocks = bridgeValue.blocks
@@ -419,7 +419,7 @@ public extension SMB {
         public let stat: Stat
 
         /// Creates a public directory entry from a bridge value.
-        init(_ bridgeValue: SMB2DirectoryEntry) {
+        init(_ bridgeValue: Bridge.SMB2DirectoryEntry) {
             name = bridgeValue.name
             stat = Stat(bridgeValue.stat)
         }
@@ -447,7 +447,7 @@ public extension SMB {
         public let path: String?
 
         /// Creates a public parsed URL value from a bridge value.
-        init(_ bridgeValue: SMB2URL) {
+        init(_ bridgeValue: Bridge.SMB2URL) {
             domain = bridgeValue.domain
             user = bridgeValue.user
             server = bridgeValue.server

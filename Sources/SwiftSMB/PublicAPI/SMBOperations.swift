@@ -8,7 +8,7 @@
 
 import Foundation
 
-extension SMB {
+public extension SMB {
     /// Lists disk shares advertised by a server.
     ///
     /// The method connects to the server's `IPC$` share, enumerates shares
@@ -23,13 +23,13 @@ extension SMB {
     /// - Returns: The server's visible disk shares.
     /// - Throws: ``SMB/Error`` when context creation, authentication,
     ///   connection, enumeration, or disconnection fails.
-    public static func listShares(
+    static func listShares(
         server: Server,
         credentials: Credentials? = nil,
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false,
     ) throws -> [Share] {
-        let context = try Bridge.bridgeExecution {
+        let context = try Bridge.sync {
             try Bridge.createContext()
         }
         defer { Bridge.destroyContext(context) }
@@ -37,7 +37,7 @@ extension SMB {
         try configure(context, with: configuration)
         configureCredentials(credentials, server: server, on: context)
 
-        return try Bridge.bridgeExecution {
+        return try Bridge.sync {
             try Bridge.listShares(
                 context: context,
                 server: server.address,
@@ -61,7 +61,7 @@ extension SMB {
     /// - Returns: An open connection to `share`.
     /// - Throws: ``SMB/Error`` when the context cannot be created or the share
     ///   connection fails.
-    public static func connect(
+    static func connect(
         server: Server,
         credentials: Credentials? = nil,
         share: String,
@@ -69,14 +69,14 @@ extension SMB {
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try Bridge.bridgeExecution {
+        let context = try Bridge.sync {
             try Bridge.createContext()
         }
 
         do {
             try configure(context, with: configuration)
             configureCredentials(credentials, server: server, on: context)
-            try Bridge.bridgeExecution {
+            try Bridge.sync {
                 try Bridge.connectShare(
                     context: context,
                     server: server.address,
@@ -97,13 +97,13 @@ extension SMB {
     /// - Parameter string: An SMB URL, such as `smb://server/share/path`.
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
-    public static func parseURL(_ string: String) throws -> ParsedURL {
-        let context = try Bridge.bridgeExecution {
+    static func parseURL(_ string: String) throws -> ParsedURL {
+        let context = try Bridge.sync {
             try Bridge.createContext()
         }
         defer { Bridge.destroyContext(context) }
 
-        return try Bridge.bridgeExecution {
+        return try Bridge.sync {
             let parsedURL = try ParsedURL(Bridge.parseURL(string, context: context))
             try validateShareName(parsedURL.share, operation: .smb2ParseURL)
             if let path = parsedURL.path {
@@ -114,7 +114,7 @@ extension SMB {
     }
 
     /// Applies negotiation options to a context before connection.
-    static func configure(_ context: SMB2Context, with configuration: Configuration) throws {
+    internal static func configure(_ context: Bridge.SMB2Context, with configuration: Configuration) throws {
         if let timeout = configuration.timeout {
             guard timeout >= 0, timeout <= Int(Int32.max) else {
                 throw Error.invalidArgument(
@@ -147,7 +147,11 @@ extension SMB {
     }
 
     /// Applies authentication settings to a context before connection.
-    static func configureCredentials(_ credentials: Credentials?, server: Server, on context: SMB2Context) {
+    internal static func configureCredentials(
+        _ credentials: Credentials?,
+        server: Server,
+        on context: Bridge.SMB2Context,
+    ) {
         if let user = credentials?.user {
             Bridge.setUser(user, on: context)
         }
