@@ -86,7 +86,7 @@ public extension SMB.Connection {
         toFile path: String,
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [.create, .truncate],
-        maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        maxBlockSize: UInt64? = nil,
         makePath: Bool = true,
         continuation: @escaping PipeProgress,
     ) throws {
@@ -228,7 +228,7 @@ public extension SMB.Connection {
         toPipe pipe: DataPipe,
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [],
-        maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        maxBlockSize: UInt64? = nil,
         continuation: @escaping PipeProgress,
     ) throws {
         let path = try SMB.validatePath(path, operation: .smbConnectionReadFromFileToPipe)
@@ -365,7 +365,7 @@ public extension SMB.Connection {
         local: URL,
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [],
-        maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        maxBlockSize: UInt64? = nil,
         continuation: @escaping FileProgress,
     ) throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
@@ -410,7 +410,7 @@ public extension SMB.Connection {
             let directory = local.deletingLastPathComponent()
 
             for _ in 0 ..< 100 {
-                let candidate = directory.appendingPathComponent(".SwiftSMB.\(UUID().uuidString).tmp")
+                let candidate = directory.appendingPathComponent("SwiftSMB.\(UUID().uuidString).tmp")
                 if FileManager.default.createFile(atPath: candidate.path, contents: nil) {
                     return candidate
                 }
@@ -619,7 +619,7 @@ public extension SMB.Connection {
         remote: String,
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [],
-        maxBlockSize: UInt64 = (10 * 1024 * 1024),
+        maxBlockSize: UInt64? = nil,
         makePath: Bool = true,
         atomic: Bool = true,
         continuation: @escaping FileProgress,
@@ -898,7 +898,10 @@ private func receivePackage(from pipe: DataPipe, operation: SMB.Error.InvalidArg
 }
 
 /// Resolves a caller-preferred block size against the server limit.
-private func pipeBlockSize(_ preferred: UInt64, acceptedBlockSize: Int) throws -> Int {
+private func pipeBlockSize(_ preferred: UInt64?, acceptedBlockSize: Int) throws -> Int {
+    guard let preferred else {
+        return acceptedBlockSize
+    }
     guard preferred > 0, preferred <= UInt64(Int.max) else {
         throw SMB.Error.invalidArgument(
             cause: .blockSizeMustBePositiveAndFitInInt,
@@ -1001,7 +1004,7 @@ private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOpe
 /// Builds a temporary remote path that does not currently exist.
 private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.Connection) throws -> String {
     for _ in 0 ..< 100 {
-        let name = ".SwiftSMB.\(UUID().uuidString).tmp"
+        let name = "partial-xfer.\(UUID().uuidString).tmp"
         let directory = remote.removingLastPathComponent
         let candidate = directory.isEmpty ? name : directory.appendingPathComponent(name)
         if try connection.itemExists(at: candidate) == .false {
