@@ -92,115 +92,33 @@ public extension SMB.Connection {
     ) throws {
         let path = try SMB.validatePath(path, operation: .smbConnectionWriteFromPipeToFile)
         let offset = from.offsetValue
+        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionWriteFromPipeToFile
 
-        try validateOrCreateRemoteParent(
+        try prepareRemoteDestination(
             on: self,
-            for: path,
+            path: path,
+            offset: offset,
+            options: options,
             makePath: makePath,
-            operation: .smbConnectionWriteFromPipeToFile,
+            operation: operation,
         )
 
-        if offset > 0 {
-            try validateRemoteFile(
-                on: self,
-                at: path,
-                minimumSize: offset,
-                operation: .smbConnectionWriteFromPipeToFile,
-            )
-        }
-        else {
-            switch try itemExists(at: path) {
-            case .false:
-                guard options.contains(.create) else {
-                    throw SMB.Error.posix(
-                        code: POSIXErrorCode.ENOENT.rawValue,
-                        operation: SMB.Error.InvalidArgumentOperation.smbConnectionWriteFromPipeToFile.description,
-                        message: "Remote file does not exist",
-                    )
-                }
-            case .file, .link:
-                guard !options.contains(.exclusive) else {
-                    throw SMB.Error.posix(
-                        code: POSIXErrorCode.EEXIST.rawValue,
-                        operation: SMB.Error.InvalidArgumentOperation.smbConnectionWriteFromPipeToFile.description,
-                        message: "Remote file already exists",
-                    )
-                }
-            case .directory, .other:
-                throw SMB.Error.invalidArgument(
-                    cause: .remoteDestinationIsNotAFile,
-                    onOperation: .smbConnectionWriteFromPipeToFile,
-                )
-            }
-        }
-
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
-
-        while true {
-            let package = try receivePackage(from: pipe, operation: .smbConnectionWriteFromPipeToFile)
-            switch package {
-            case .start:
-                break
-            case .broken:
-                throw brokenPipeError(operation: .smbConnectionWriteFromPipeToFile)
-            case .data, .finish:
-                // Treat malformed producer order as a caller bug. Silently skipping
-                // data here would make uploads appear successful while losing bytes.
-                throw SMB.Error.invalidArgument(
-                    cause: .pipeDataMustBeginWithStartPackage,
-                    onOperation: .smbConnectionWriteFromPipeToFile,
-                )
-            }
-            break
-        }
+        try expectStartPackage(from: pipe, operation: operation, strict: true)
 
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
         defer { try? file.close() }
 
-        var remoteOffset = offset
-        var transferred: UInt64 = 0
-        let operationStart = DispatchTime.now()
-
-        while true {
-            let package = try receivePackage(from: pipe, operation: .smbConnectionWriteFromPipeToFile)
-            switch package {
-            case .start:
-                continue
-            case .finish:
-                _ = continuation(transferred, 0, speed(bytes: transferred, from: operationStart, to: .now()))
-                return
-            case .broken:
-                throw brokenPipeError(operation: .smbConnectionWriteFromPipeToFile)
-            case let .data(data):
-                // A pipe package may be larger than the negotiated SMB write size.
-                // Split it here so callers can use convenient local buffer sizes.
-                var dataOffset = 0
-                while dataOffset < data.count {
-                    let blockEnd = min(dataOffset + blockSize, data.count)
-                    let block = data.subdata(in: dataOffset ..< blockEnd)
-                    let blockStart = DispatchTime.now()
-                    _ = try file.seek(offset: Int64(remoteOffset), from: .start)
-                    let written = try file.write(block)
-                    guard written > 0 else {
-                        throw SMB.Error.unknown(
-                            operation: "smb2_write",
-                            message: "Write made no progress before all pipe data was written",
-                        )
-                    }
-
-                    dataOffset += Int(written)
-                    remoteOffset += UInt64(written)
-                    transferred += UInt64(written)
-
-                    let end = DispatchTime.now()
-                    let latestSpeed = speed(bytes: UInt64(written), from: blockStart, to: end)
-                    let averageSpeed = speed(bytes: transferred, from: operationStart, to: end)
-                    guard continuation(transferred, latestSpeed, averageSpeed) else { return }
-                }
-            }
-        }
+        _ = try transferPipeToFile(
+            pipe: pipe,
+            file: file,
+            startingOffset: offset,
+            blockSize: blockSize,
+            operation: operation,
+            continuation: continuation,
+        )
     }
-    
+
     /// Reads a file from the SMB share into a pipe.
     ///
     /// The method reads from `path` in server-accepted blocks and sends each
@@ -234,84 +152,26 @@ public extension SMB.Connection {
     ) throws {
         let path = try SMB.validatePath(path, operation: .smbConnectionReadFromFileToPipe)
         let offset = from.offsetValue
+        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionReadFromFileToPipe
+
         try validateRemoteFile(
             on: self,
             at: path,
             minimumSize: offset,
-            operation: .smbConnectionReadFromFileToPipe,
+            operation: operation,
         )
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
-        let startup = DispatchSemaphore(value: 0)
-        let startupError = Protected<Swift.Error?>(
-            nil,
-            label: "com.ruinelson.SwiftSMB.SMB.Connection.read.startupError",
+        try startPipeReadWorker(
+            on: self,
+            path: path,
+            offset: offset,
+            blockSize: blockSize,
+            options: options,
+            operation: operation,
+            pipe: pipe,
+            continuation: continuation,
         )
-
-        readWorkerQueue.async {
-            var didSignalReady = false
-            func signalReady(_ error: Swift.Error?) {
-                guard !didSignalReady else { return }
-                didSignalReady = true
-                startupError.current = error
-                startup.signal()
-            }
-
-            do {
-                // Signal .start before opening the remote file so consumers can begin
-                // waiting immediately; startup errors are still reported through ready.
-                try sendPackage(.start, to: pipe, operation: .smbConnectionReadFromFileToPipe)
-
-                let file = try self.openFile(at: path, accessMode: .readOnly, options: options)
-                signalReady(nil)
-
-                var remoteOffset = offset
-                var transferred: UInt64 = 0
-                let operationStart = DispatchTime.now()
-
-                while true {
-                    let blockStart = DispatchTime.now()
-                    _ = try file.seek(offset: Int64(remoteOffset), from: .start)
-                    let data = try file.read(upTo: Int64(blockSize))
-                    guard !data.isEmpty else {
-                        // EOF is reported as both final progress and .finish so high-level
-                        // file transfers can delay their own final callback until commit.
-                        _ = continuation(
-                            transferred,
-                            0,
-                            speed(bytes: transferred, from: operationStart, to: .now()),
-                        )
-                        try? file.close()
-                        try sendPackage(.finish, to: pipe, operation: .smbConnectionReadFromFileToPipe)
-                        return
-                    }
-
-                    try sendPackage(.data(data), to: pipe, operation: .smbConnectionReadFromFileToPipe)
-                    remoteOffset += UInt64(data.count)
-                    transferred += UInt64(data.count)
-
-                    let end = DispatchTime.now()
-                    let latestSpeed = speed(bytes: UInt64(data.count), from: blockStart, to: end)
-                    let averageSpeed = speed(bytes: transferred, from: operationStart, to: end)
-                    guard continuation(transferred, latestSpeed, averageSpeed) else {
-                        // Caller cancellation is a clean stop: sent data remains readable
-                        // and the terminal package is .finish, not .broken.
-                        try? file.close()
-                        try sendPackage(.finish, to: pipe, operation: .smbConnectionReadFromFileToPipe)
-                        return
-                    }
-                }
-            }
-            catch {
-                signalReady(error)
-                try? sendPackage(.broken, to: pipe, operation: .smbConnectionReadFromFileToPipe)
-            }
-        }
-
-        startup.wait()
-        if let error = startupError.current {
-            throw error
-        }
     }
 
     /// Reports progress for a local file transfer.
@@ -374,159 +234,31 @@ public extension SMB.Connection {
     ) throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
         let offset = from.offsetValue
+        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile
+
         let remoteStat = try validateRemoteFile(
             on: self,
             at: remote,
             minimumSize: offset,
-            operation: .smbConnectionDownloadFile,
+            operation: operation,
         )
         let totalBytes = remoteStat.size - offset
-        _ = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
-        let parent = local.deletingLastPathComponent()
-        var parentIsDirectory = ObjCBool(false)
-        guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &parentIsDirectory) else {
-            throw SMB.Error.posix(
-                code: POSIXErrorCode.ENOENT.rawValue,
-                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
-                message: "Local parent directory does not exist",
-            )
-        }
-        guard parentIsDirectory.boolValue else {
-            throw SMB.Error.posix(
-                code: POSIXErrorCode.ENOTDIR.rawValue,
-                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
-                message: "Local parent path is not a directory",
-            )
-        }
-
-        var destinationIsDirectory = ObjCBool(false)
-        if FileManager.default.fileExists(atPath: local.path, isDirectory: &destinationIsDirectory),
-           destinationIsDirectory.boolValue {
-            throw SMB.Error.posix(
-                code: POSIXErrorCode.EISDIR.rawValue,
-                operation: SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile.description,
-                message: "Local destination is a directory",
-            )
-        }
-
-        let tempFile: URL = try {
-            let directory = local.deletingLastPathComponent()
-
-            for _ in 0 ..< 100 {
-                let candidate = directory.appendingPathComponent("SwiftSMB.\(UUID().uuidString).tmp")
-                if FileManager.default.createFile(atPath: candidate.path, contents: nil) {
-                    return candidate
-                }
-            }
-
-            throw SMB.Error.unknown(
-                operation: "SMB.Connection.uniqueTemporaryFileURL",
-                message: "Unable to create a unique temporary file",
-            )
-        }()
-        var shouldRemoveTemp = true
-        defer {
-            if shouldRemoveTemp {
-                try? FileManager.default.removeItem(at: tempFile)
-            }
-        }
+        try assertValidLocalDestination(local, operation: operation)
+        let tempFile = try createUniqueLocalTempFile(near: local, operation: operation)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
 
         if offset > 0 {
-            let existingSize = try localFileSize(for: local, operation: .smbConnectionDownloadFile)
-            guard existingSize >= offset else {
-                throw SMB.Error.invalidArgument(
-                    cause: .localFileShorterThanResumeOffset,
-                    onOperation: .smbConnectionDownloadFile,
-                )
-            }
-
-            let input = try FileHandle(forReadingFrom: local)
-            defer { try? input.close() }
-            let output = try FileHandle(forWritingTo: tempFile)
-            defer { try? output.close() }
-
-            var remaining = offset
-            while remaining > 0 {
-                let chunkSize = min(Int(remaining), 1024 * 1024)
-                let data = input.readData(ofLength: chunkSize)
-                guard !data.isEmpty else {
-                    throw SMB.Error.invalidArgument(
-                        cause: .localFileShorterThanResumeOffset,
-                        onOperation: .smbConnectionDownloadFile,
-                    )
-                }
-                output.write(data)
-                remaining -= UInt64(data.count)
-            }
+            try copyLocalPrefix(from: local, to: tempFile, byteCount: offset, operation: operation)
         }
 
         let pipe = DataPipe(maxPackages: 3, label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile")
-        let consumer = DispatchGroup()
-        let consumerError = Protected<Swift.Error?>(
-            nil,
-            label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.error",
+        let consumer = try startLocalFileConsumer(
+            pipe: pipe,
+            destination: tempFile,
+            operation: operation,
+            on: self,
         )
-        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.cancelled")
-
-        // The SMB reader owns the producer side of the pipe; this consumer keeps
-        // local file I/O off that path so slow disks naturally apply back-pressure.
-        consumer.enter()
-        downloaderQueue.async {
-            defer { consumer.leave() }
-
-            var shouldDrain = true
-            do {
-                let handle = try FileHandle(forWritingTo: tempFile)
-                defer { try? handle.close() }
-                handle.seekToEndOfFile()
-
-                // Ignore any noise before .start so a future producer wrapper can
-                // still send setup metadata without making the download fail.
-                while true {
-                    let package = try receivePackage(from: pipe, operation: .smbConnectionDownloadFile)
-                    switch package {
-                    case .start:
-                        break
-                    case .broken:
-                        shouldDrain = false
-                        throw brokenPipeError(operation: .smbConnectionDownloadFile)
-                    case .data, .finish:
-                        continue
-                    }
-                    break
-                }
-
-                var isFinished = false
-                while !isFinished {
-                    let package = try receivePackage(from: pipe, operation: .smbConnectionDownloadFile)
-                    switch package {
-                    case .start:
-                        continue
-                    case .finish:
-                        shouldDrain = false
-                        isFinished = true
-                    case .broken:
-                        shouldDrain = false
-                        throw brokenPipeError(operation: .smbConnectionDownloadFile)
-                    case let .data(data):
-                        // FileHandle.write can throw Objective-C exceptions on
-                        // some platforms; once an error is observed, stop writing
-                        // but keep consuming until the producer can stop cleanly.
-                        if consumerError.current == nil {
-                            handle.write(data)
-                        }
-                    }
-                }
-            }
-            catch {
-                consumerError.current = error
-                cancelled.current = true
-                if shouldDrain {
-                    drain(pipe)
-                }
-            }
-        }
 
         let reportedBytes = Protected<UInt64>(
             0,
@@ -536,6 +268,7 @@ public extension SMB.Connection {
             0,
             label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.finalAverageSpeed",
         )
+        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.cancelled")
 
         do {
             try read(
@@ -545,49 +278,29 @@ public extension SMB.Connection {
                 options: options,
                 maxBlockSize: maxBlockSize,
             ) { completed, latestSpeed, averageSpeed in
-                // If the local writer failed, ask the remote reader to stop so it
-                // sends a terminal package instead of filling a pipe nobody wants.
-                if consumerError.current != nil {
-                    cancelled.current = true
-                    finalAverageSpeed.current = averageSpeed
-                    return false
-                }
-
-                // read(fromFile:toPipe:) emits a final progress call with the same
-                // byte count and latestSpeed == 0. Save the final average, but let
-                // downloadFile report completion only after the temp file is moved.
-                if completed == reportedBytes.current, latestSpeed == 0 {
-                    finalAverageSpeed.current = averageSpeed
-                    return true
-                }
-
-                reportedBytes.current = completed
-                let shouldContinue = continuation(completed, totalBytes, latestSpeed, averageSpeed)
+                let shouldContinue = adaptPipeProgressToFileProgress(
+                    pipeProgress: continuation,
+                    reportedBytes: reportedBytes,
+                    finalAverageSpeed: finalAverageSpeed,
+                    completed: completed,
+                    totalBytes: totalBytes,
+                    latestSpeed: latestSpeed,
+                    averageSpeed: averageSpeed,
+                )
                 if !shouldContinue {
                     cancelled.current = true
                 }
                 return shouldContinue
             }
 
-            consumer.wait()
-            if let error = consumerError.current {
-                throw error
-            }
-
+            try consumer.wait()
             guard !cancelled.current else { return }
-
-            if FileManager.default.fileExists(atPath: local.path) {
-                _ = try FileManager.default.replaceItemAt(local, withItemAt: tempFile)
-            }
-            else {
-                try FileManager.default.moveItem(at: tempFile, to: local)
-            }
-            shouldRemoveTemp = false
+            try moveTempFile(tempFile, to: local)
             _ = continuation(reportedBytes.current, totalBytes, 0, finalAverageSpeed.current)
         }
         catch {
-            cancelled.current = true
-            consumer.wait()
+            consumer.cancel()
+            try consumer.wait()
             throw error
         }
     }
@@ -638,141 +351,64 @@ public extension SMB.Connection {
         continuation: @escaping FileProgress,
     ) throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
+        let offset = from.offsetValue
+        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionUploadFile
+
         try validateOrCreateRemoteParent(
             on: self,
             for: remote,
             makePath: makePath,
-            operation: .smbConnectionUploadFile,
+            operation: operation,
         )
 
-        let offset = from.offsetValue
-        let fileSize = try localFileSize(for: local, operation: .smbConnectionUploadFile)
+        let fileSize = try localFileSize(for: local, operation: operation)
         guard offset <= fileSize else {
             throw SMB.Error.invalidArgument(
                 cause: .offsetBeyondEndOfLocalFile,
-                onOperation: .smbConnectionUploadFile,
+                onOperation: operation,
             )
         }
 
         let totalBytes = fileSize - offset
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
-        let target: String = if atomic {
-            // libsmb2 rename cannot replace in place, so the upload is staged
-            // under a unique sibling path and swapped after all bytes land.
-            try uniqueRemoteTemporaryPath(near: remote, on: self)
+
+        let target: String
+        let openOptions: SMB.File.OpenOptions
+        if atomic {
+            target = try uniqueRemoteTemporaryPath(near: remote, on: self)
+            openOptions = (offset == 0) ? [.create, .exclusive] : []
+            try prepareAtomicUploadTarget(
+                on: self,
+                remote: remote,
+                target: target,
+                offset: offset,
+                blockSize: blockSize,
+                operation: operation,
+            )
         }
         else {
-            remote
+            target = remote
+            openOptions = options
         }
-        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.cancelled")
-        let producerError = Protected<Swift.Error?>(
-            nil,
-            label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.error",
-        )
-        let producer = DispatchGroup()
-        let pipe = DataPipe(maxPackages: 3, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile")
-        var shouldRemoveRemoteTemp = atomic
 
+        var shouldRemoveRemoteTemp = atomic
         defer {
             if shouldRemoveRemoteTemp {
                 try? removeFile(at: target)
             }
         }
 
-        if offset > 0 {
-            _ = try validateRemoteFile(
-                on: self,
-                at: remote,
-                minimumSize: offset,
-                operation: .smbConnectionUploadFile,
-            )
-        }
-        if atomic, offset > 0 {
-            // For resumed atomic uploads, seed the temp file with the trusted
-            // remote prefix before appending bytes from the local resume offset.
-            let input = try openFile(at: remote, accessMode: .readOnly)
-            defer { try? input.close() }
-            let output = try openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
-            defer { try? output.close() }
-
-            var copied: UInt64 = 0
-            while copied < offset {
-                let requested = min(blockSize, Int(offset - copied))
-                _ = try input.seek(offset: Int64(copied), from: .start)
-                let data = try input.read(upTo: Int64(requested))
-                guard !data.isEmpty else {
-                    throw SMB.Error.invalidArgument(
-                        cause: .remoteFileShorterThanResumeOffset,
-                        onOperation: .smbConnectionUploadFile,
-                    )
-                }
-
-                var dataOffset = 0
-                while dataOffset < data.count {
-                    // Continue from dataOffset because SMB writes may accept only a
-                    // prefix of the buffer even when the read returned a full chunk.
-                    _ = try output.seek(offset: Int64(copied), from: .start)
-                    let written = try output.write(data.subdata(in: dataOffset ..< data.count))
-                    guard written > 0 else {
-                        throw SMB.Error.unknown(
-                            operation: "smb2_write",
-                            message: "Write made no progress while copying the remote prefix",
-                        )
-                    }
-                    copied += UInt64(written)
-                    dataOffset += Int(written)
-                }
-            }
-        }
-        else if atomic {
-            switch try itemExists(at: remote) {
-            case .false, .file, .link:
-                break
-            case .directory, .other:
-                throw SMB.Error.invalidArgument(
-                    cause: .remoteDestinationIsNotAFile,
-                    onOperation: .smbConnectionUploadFile,
-                )
-            }
-        }
-
-        producer.enter()
-        uploadProducerQueue.async {
-            var didBreak = false
-            defer {
-                // A normal return from the producer is EOF or cancellation, both
-                // represented as .finish. Real local I/O failures send .broken.
-                if !didBreak {
-                    do {
-                        try sendPackage(.finish, to: pipe, operation: .smbConnectionUploadFile)
-                    }
-                    catch {
-                        producerError.current = producerError.current ?? error
-                    }
-                }
-                producer.leave()
-            }
-
-            do {
-                let handle = try FileHandle(forReadingFrom: local)
-                defer { try? handle.close() }
-                handle.seek(toFileOffset: offset)
-
-                // The pipe protocol requires .start first; write(fromPipe:) now
-                // rejects data before start instead of silently discarding it.
-                try sendPackage(.start, to: pipe, operation: .smbConnectionUploadFile)
-                while !cancelled.current {
-                    let data = handle.readData(ofLength: blockSize)
-                    guard !data.isEmpty else { return }
-                    try sendPackage(.data(data), to: pipe, operation: .smbConnectionUploadFile)
-                }
-            }
-            catch {
-                producerError.current = error
-                didBreak = true
-                try? sendPackage(.broken, to: pipe, operation: .smbConnectionUploadFile)
-            }
-        }
+        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.cancelled")
+        let pipe = DataPipe(maxPackages: 3, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile")
+        let producer = try startLocalFileProducer(
+            pipe: pipe,
+            source: local,
+            offset: offset,
+            blockSize: blockSize,
+            cancelled: cancelled,
+            operation: operation,
+            on: self,
+        )
 
         let reportedBytes = Protected<UInt64>(
             0,
@@ -784,13 +420,6 @@ public extension SMB.Connection {
         )
 
         do {
-            let openOptions: SMB.File.OpenOptions = if atomic {
-                offset == 0 ? [.create, .exclusive] : []
-            }
-            else {
-                options
-            }
-
             try write(
                 fromPipe: pipe,
                 toFile: target,
@@ -798,13 +427,15 @@ public extension SMB.Connection {
                 options: openOptions,
                 maxBlockSize: maxBlockSize,
             ) { completed, latestSpeed, averageSpeed in
-                if completed == reportedBytes.current, latestSpeed == 0 {
-                    finalAverageSpeed.current = averageSpeed
-                    return true
-                }
-
-                reportedBytes.current = completed
-                let shouldContinue = continuation(completed, totalBytes, latestSpeed, averageSpeed)
+                let shouldContinue = adaptPipeProgressToFileProgress(
+                    pipeProgress: continuation,
+                    reportedBytes: reportedBytes,
+                    finalAverageSpeed: finalAverageSpeed,
+                    completed: completed,
+                    totalBytes: totalBytes,
+                    latestSpeed: latestSpeed,
+                    averageSpeed: averageSpeed,
+                )
                 if !shouldContinue {
                     cancelled.current = true
                 }
@@ -812,53 +443,13 @@ public extension SMB.Connection {
             }
 
             if cancelled.current {
-                // Cancellation can leave producer packages queued. Drain them before
-                // waiting so a blocked producer has room to send its terminal package.
                 drain(pipe)
             }
-            producer.wait()
-
-            if let error = producerError.current, !cancelled.current {
-                throw error
-            }
+            try producer.wait()
             guard !cancelled.current else { return }
 
             if atomic {
-                // Keep the old destination recoverable until the temp file has been
-                // renamed into place.
-                let backup: String?
-                switch try itemExists(at: remote) {
-                case .false:
-                    backup = nil
-                case .file, .link:
-                    // libsmb2 sets replace_if_exist = 0 for rename, so move the old file
-                    // aside first. This gives us a chance to restore it if the final rename
-                    // fails after the upload itself has completed.
-                    let backupPath = try uniqueRemoteTemporaryPath(near: remote, on: self)
-                    try move(from: remote, to: backupPath)
-                    backup = backupPath
-                case .directory, .other:
-                    throw SMB.Error.invalidArgument(
-                        cause: .remoteDestinationIsNotAFile,
-                        onOperation: .smbConnectionUploadFile,
-                    )
-                }
-
-                do {
-                    try move(from: target, to: remote)
-                }
-                catch {
-                    if let backup {
-                        // Best-effort rollback: preserving the user's existing file matters
-                        // more than surfacing a secondary cleanup failure here.
-                        try? move(from: backup, to: remote)
-                    }
-                    throw error
-                }
-
-                if let backup {
-                    try? removeFile(at: backup)
-                }
+                try commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
                 shouldRemoveRemoteTemp = false
             }
 
@@ -866,16 +457,704 @@ public extension SMB.Connection {
         }
         catch {
             cancelled.current = true
-            // On failures, unblock the producer before waiting for it; otherwise a
-            // full pipe can deadlock the cleanup path.
             drain(pipe)
-            producer.wait()
-            if let producerError = producerError.current {
-                throw producerError
-            }
+            try producer.wait()
             throw error
         }
     }
+}
+
+// MARK: - Pipe Transfer Engine
+
+/// Transfers all data from a pipe into an already-open remote file.
+/// Returns the total number of bytes transferred (excluding the resume offset).
+private func transferPipeToFile(
+    pipe: DataPipe,
+    file: SMB.File,
+    startingOffset: UInt64,
+    blockSize: Int,
+    operation: SMB.Error.InvalidArgumentOperation,
+    continuation: SMB.Connection.PipeProgress,
+) throws -> UInt64 {
+    var remoteOffset = startingOffset
+    var transferred: UInt64 = 0
+    let operationStart = DispatchTime.now()
+
+    while true {
+        let package = try receivePackage(from: pipe, operation: operation)
+        switch package {
+        case .start:
+            continue
+        case .finish:
+            _ = continuation(transferred, 0, speed(bytes: transferred, from: operationStart, to: .now()))
+            return transferred
+        case .broken:
+            throw brokenPipeError(operation: operation)
+        case let .data(data):
+            let shouldContinue = try writeDataBlock(
+                data,
+                to: file,
+                at: &remoteOffset,
+                blockSize: blockSize,
+                operationStart: operationStart,
+                operation: operation,
+                continuation: continuation,
+                globalTransferred: &transferred,
+            )
+            guard shouldContinue else {
+                _ = continuation(transferred, 0, speed(bytes: transferred, from: operationStart, to: .now()))
+                return transferred
+            }
+        }
+    }
+}
+
+/// Writes a single pipe data package to the remote file, splitting it into
+/// server-sized blocks and reporting progress for each block.
+/// Returns `true` if the entire package was written; `false` if cancellation
+/// was requested mid-block.
+private func writeDataBlock(
+    _ data: Data,
+    to file: SMB.File,
+    at remoteOffset: inout UInt64,
+    blockSize: Int,
+    operationStart: DispatchTime,
+    operation: SMB.Error.InvalidArgumentOperation,
+    continuation: SMB.Connection.PipeProgress,
+    globalTransferred: inout UInt64,
+) throws -> Bool {
+    var dataOffset = 0
+
+    while dataOffset < data.count {
+        let blockEnd = min(dataOffset + blockSize, data.count)
+        let block = data.subdata(in: dataOffset ..< blockEnd)
+        let blockStart = DispatchTime.now()
+
+        _ = try file.seek(offset: Int64(remoteOffset), from: .start)
+        let written = try file.write(block)
+        guard written > 0 else {
+            throw SMB.Error.unknown(
+                operation: "smb2_write",
+                message: "Write made no progress before all pipe data was written",
+            )
+        }
+
+        dataOffset += Int(written)
+        remoteOffset += UInt64(written)
+        globalTransferred += UInt64(written)
+
+        let latestSpeed = speed(bytes: UInt64(written), from: blockStart, to: .now())
+        let averageSpeed = speed(bytes: globalTransferred, from: operationStart, to: .now())
+        guard continuation(globalTransferred, latestSpeed, averageSpeed) else {
+            return false
+        }
+    }
+
+    return true
+}
+
+// MARK: - Pipe Read Worker
+
+/// Starts an asynchronous worker that reads a remote file into a pipe.
+/// Blocks until the file is successfully opened, propagating startup errors
+/// to the caller synchronously.
+private func startPipeReadWorker(
+    on connection: SMB.Connection,
+    path: String,
+    offset: UInt64,
+    blockSize: Int,
+    options: SMB.File.OpenOptions,
+    operation: SMB.Error.InvalidArgumentOperation,
+    pipe: DataPipe,
+    continuation: @escaping SMB.Connection.PipeProgress,
+) throws {
+    let startup = DispatchSemaphore(value: 0)
+    let startupError = Protected<Swift.Error?>(
+        nil,
+        label: "com.ruinelson.SwiftSMB.SMB.Connection.read.startupError",
+    )
+
+    connection.readWorkerQueue.async {
+        var didSignalReady = false
+        func signalReady(_ error: Swift.Error?) {
+            guard !didSignalReady else { return }
+            didSignalReady = true
+            startupError.current = error
+            startup.signal()
+        }
+
+        do {
+            try sendPackage(.start, to: pipe, operation: operation)
+            let file = try connection.openFile(at: path, accessMode: .readOnly, options: options)
+            signalReady(nil)
+
+            _ = try transferFileToPipe(
+                file: file,
+                pipe: pipe,
+                startingOffset: offset,
+                blockSize: blockSize,
+                operation: operation,
+                continuation: continuation,
+            )
+
+            try? file.close()
+            try sendPackage(.finish, to: pipe, operation: operation)
+        }
+        catch {
+            signalReady(error)
+            try? sendPackage(.broken, to: pipe, operation: operation)
+        }
+    }
+
+    startup.wait()
+    if let error = startupError.current {
+        throw error
+    }
+}
+
+/// Reads blocks from an open remote file and pushes them into a pipe.
+/// Returns the total bytes transferred and the final average speed.
+private func transferFileToPipe(
+    file: SMB.File,
+    pipe: DataPipe,
+    startingOffset: UInt64,
+    blockSize: Int,
+    operation: SMB.Error.InvalidArgumentOperation,
+    continuation: SMB.Connection.PipeProgress,
+) throws -> (transferred: UInt64, finalAverageSpeed: Double) {
+    var remoteOffset = startingOffset
+    var transferred: UInt64 = 0
+    let operationStart = DispatchTime.now()
+
+    while true {
+        let blockStart = DispatchTime.now()
+        _ = try file.seek(offset: Int64(remoteOffset), from: .start)
+        let data = try file.read(upTo: Int64(blockSize))
+
+        guard !data.isEmpty else {
+            let finalAverage = speed(bytes: transferred, from: operationStart, to: .now())
+            _ = continuation(transferred, 0, finalAverage)
+            return (transferred, finalAverage)
+        }
+
+        try sendPackage(.data(data), to: pipe, operation: operation)
+        remoteOffset += UInt64(data.count)
+        transferred += UInt64(data.count)
+
+        let latestSpeed = speed(bytes: UInt64(data.count), from: blockStart, to: .now())
+        let averageSpeed = speed(bytes: transferred, from: operationStart, to: .now())
+        guard continuation(transferred, latestSpeed, averageSpeed) else {
+            return (transferred, averageSpeed)
+        }
+    }
+}
+
+// MARK: - Local File Consumer / Producer
+
+/// Represents an asynchronous local-file consumer that can be awaited.
+private struct LocalFileConsumer {
+    private let group: DispatchGroup
+    private let errorBox: Protected<Swift.Error?>
+    private let cancelledBox: Protected<Bool>
+
+    init(group: DispatchGroup, errorBox: Protected<Swift.Error?>, cancelledBox: Protected<Bool>) {
+        self.group = group
+        self.errorBox = errorBox
+        self.cancelledBox = cancelledBox
+    }
+
+    /// Waits for the consumer to finish and throws if it failed.
+    func wait() throws {
+        group.wait()
+        if let error = errorBox.current {
+            throw error
+        }
+    }
+
+    /// Signals cancellation so the consumer stops writing and finishes cleanly.
+    func cancel() {
+        cancelledBox.current = true
+    }
+}
+
+/// Starts an asynchronous worker that consumes a pipe and writes to a local file.
+private func startLocalFileConsumer(
+    pipe: DataPipe,
+    destination: URL,
+    operation: SMB.Error.InvalidArgumentOperation,
+    on connection: SMB.Connection,
+) throws -> LocalFileConsumer {
+    let group = DispatchGroup()
+    let errorBox = Protected<Swift.Error?>(nil, label: "com.ruinelson.SwiftSMB.consumer.error")
+    let cancelledBox = Protected(false, label: "com.ruinelson.SwiftSMB.consumer.cancelled")
+
+    group.enter()
+    connection.downloaderQueue.async {
+        defer { group.leave() }
+        do {
+            let handle = try FileHandle(forWritingTo: destination)
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+
+            try consumePipePackages(pipe: pipe, handle: handle, cancelled: cancelledBox, operation: operation)
+        }
+        catch {
+            errorBox.current = error
+            cancelledBox.current = true
+            drain(pipe)
+        }
+    }
+
+    return LocalFileConsumer(group: group, errorBox: errorBox, cancelledBox: cancelledBox)
+}
+
+/// Reads packages from a pipe and writes data to a local file handle.
+private func consumePipePackages(
+    pipe: DataPipe,
+    handle: FileHandle,
+    cancelled: Protected<Bool>,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    // Ignore any noise before .start.
+    try expectStartPackage(from: pipe, operation: operation)
+
+    var isFinished = false
+    while !isFinished {
+        let package = try receivePackage(from: pipe, operation: operation)
+        switch package {
+        case .start:
+            continue
+        case .finish:
+            isFinished = true
+        case .broken:
+            throw brokenPipeError(operation: operation)
+        case let .data(data):
+            if !cancelled.current {
+                handle.write(data)
+            }
+        }
+    }
+}
+
+/// Represents an asynchronous local-file producer that can be awaited.
+private struct LocalFileProducer {
+    private let group: DispatchGroup
+    private let errorBox: Protected<Swift.Error?>
+
+    init(group: DispatchGroup, errorBox: Protected<Swift.Error?>) {
+        self.group = group
+        self.errorBox = errorBox
+    }
+
+    func wait() throws {
+        group.wait()
+        if let error = errorBox.current {
+            throw error
+        }
+    }
+}
+
+/// Starts an asynchronous worker that reads a local file and produces into a pipe.
+private func startLocalFileProducer(
+    pipe: DataPipe,
+    source: URL,
+    offset: UInt64,
+    blockSize: Int,
+    cancelled: Protected<Bool>,
+    operation: SMB.Error.InvalidArgumentOperation,
+    on connection: SMB.Connection,
+) throws -> LocalFileProducer {
+    let group = DispatchGroup()
+    let errorBox = Protected<Swift.Error?>(nil, label: "com.ruinelson.SwiftSMB.producer.error")
+
+    group.enter()
+    connection.uploadProducerQueue.async {
+        var didBreak = false
+        defer {
+            if !didBreak {
+                try? sendPackage(.finish, to: pipe, operation: operation)
+            }
+            group.leave()
+        }
+
+        do {
+            let handle = try FileHandle(forReadingFrom: source)
+            defer { try? handle.close() }
+            handle.seek(toFileOffset: offset)
+
+            try sendPackage(.start, to: pipe, operation: operation)
+            while !cancelled.current {
+                let data = handle.readData(ofLength: blockSize)
+                guard !data.isEmpty else { return }
+                try sendPackage(.data(data), to: pipe, operation: operation)
+            }
+        }
+        catch {
+            errorBox.current = error
+            didBreak = true
+            try? sendPackage(.broken, to: pipe, operation: operation)
+        }
+    }
+
+    return LocalFileProducer(group: group, errorBox: errorBox)
+}
+
+// MARK: - Validation & Preparation
+
+/// Validates the remote destination before writing, creating parent directories
+/// if requested, and checking preconditions based on the resume offset.
+private func prepareRemoteDestination(
+    on connection: SMB.Connection,
+    path: String,
+    offset: UInt64,
+    options: SMB.File.OpenOptions,
+    makePath: Bool,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    try validateOrCreateRemoteParent(
+        on: connection,
+        for: path,
+        makePath: makePath,
+        operation: operation,
+    )
+
+    if offset > 0 {
+        try validateRemoteFile(
+            on: connection,
+            at: path,
+            minimumSize: offset,
+            operation: operation,
+        )
+    }
+    else {
+        try validateRemoteDestinationForNewFile(
+            on: connection,
+            at: path,
+            options: options,
+            operation: operation,
+        )
+    }
+}
+
+/// Checks that a remote path is usable for creating or truncating a file.
+private func validateRemoteDestinationForNewFile(
+    on connection: SMB.Connection,
+    at path: String,
+    options: SMB.File.OpenOptions,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    switch try connection.itemExists(at: path) {
+    case .false:
+        guard options.contains(.create) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.ENOENT.rawValue,
+                operation: operation.description,
+                message: "Remote file does not exist",
+            )
+        }
+    case .file, .link:
+        guard !options.contains(.exclusive) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EEXIST.rawValue,
+                operation: operation.description,
+                message: "Remote file already exists",
+            )
+        }
+    case .directory, .other:
+        throw SMB.Error.invalidArgument(
+            cause: .remoteDestinationIsNotAFile,
+            onOperation: operation,
+        )
+    }
+}
+
+/// Ensures the local destination URL is inside an existing directory and is
+/// not itself a directory.
+private func assertValidLocalDestination(_ url: URL, operation: SMB.Error.InvalidArgumentOperation) throws {
+    let parent = url.deletingLastPathComponent()
+    var isDirectory = ObjCBool(false)
+
+    guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory) else {
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.ENOENT.rawValue,
+            operation: operation.description,
+            message: "Local parent directory does not exist",
+        )
+    }
+    guard isDirectory.boolValue else {
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.ENOTDIR.rawValue,
+            operation: operation.description,
+            message: "Local parent path is not a directory",
+        )
+    }
+
+    if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.EISDIR.rawValue,
+            operation: operation.description,
+            message: "Local destination is a directory",
+        )
+    }
+}
+
+/// Creates a uniquely-named temporary file in the same directory as `near`.
+private func createUniqueLocalTempFile(near: URL, operation: SMB.Error.InvalidArgumentOperation) throws -> URL {
+    let directory = near.deletingLastPathComponent()
+    for _ in 0 ..< 100 {
+        let candidate = directory.appendingPathComponent("SwiftSMB.\(UUID().uuidString).tmp")
+        if FileManager.default.createFile(atPath: candidate.path, contents: nil) {
+            return candidate
+        }
+    }
+    throw SMB.Error.unknown(
+        operation: "SMB.Connection.uniqueTemporaryFileURL",
+        message: "Unable to create a unique temporary file",
+    )
+}
+
+/// Copies the first `byteCount` bytes from `source` into `destination`.
+private func copyLocalPrefix(
+    from source: URL,
+    to destination: URL,
+    byteCount: UInt64,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    let existingSize = try localFileSize(for: source, operation: operation)
+    guard existingSize >= byteCount else {
+        throw SMB.Error.invalidArgument(
+            cause: .localFileShorterThanResumeOffset,
+            onOperation: operation,
+        )
+    }
+
+    let input = try FileHandle(forReadingFrom: source)
+    defer { try? input.close() }
+    let output = try FileHandle(forWritingTo: destination)
+    defer { try? output.close() }
+
+    var remaining = byteCount
+    while remaining > 0 {
+        let chunkSize = min(Int(remaining), 1024 * 1024)
+        let data = input.readData(ofLength: chunkSize)
+        guard !data.isEmpty else {
+            throw SMB.Error.invalidArgument(
+                cause: .localFileShorterThanResumeOffset,
+                onOperation: operation,
+            )
+        }
+        output.write(data)
+        remaining -= UInt64(data.count)
+    }
+}
+
+/// Seeds the temporary remote file for an atomic resumed upload by copying the
+/// trusted remote prefix.
+private func prepareAtomicUploadTarget(
+    on connection: SMB.Connection,
+    remote: String,
+    target: String,
+    offset: UInt64,
+    blockSize: Int,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    guard offset > 0 else {
+        switch try connection.itemExists(at: remote) {
+        case .false, .file, .link:
+            return
+        case .directory, .other:
+            throw SMB.Error.invalidArgument(
+                cause: .remoteDestinationIsNotAFile,
+                onOperation: operation,
+            )
+        }
+    }
+
+    _ = try validateRemoteFile(
+        on: connection,
+        at: remote,
+        minimumSize: offset,
+        operation: operation,
+    )
+
+    let input = try connection.openFile(at: remote, accessMode: .readOnly)
+    defer { try? input.close() }
+    let output = try connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
+    defer { try? output.close() }
+
+    var copied: UInt64 = 0
+    while copied < offset {
+        let requested = min(UInt64(blockSize), offset - copied)
+        _ = try input.seek(offset: Int64(copied), from: .start)
+        let data = try input.read(upTo: Int64(requested))
+        guard !data.isEmpty else {
+            throw SMB.Error.invalidArgument(
+                cause: .remoteFileShorterThanResumeOffset,
+                onOperation: operation,
+            )
+        }
+        try writeEntireData(data, to: output, atOffset: copied, operation: operation)
+        copied += UInt64(data.count)
+    }
+}
+
+/// Writes a complete data buffer to a remote file, retrying internally if the
+/// server accepts only a prefix.
+private func writeEntireData(
+    _ data: Data,
+    to file: SMB.File,
+    atOffset baseOffset: UInt64,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    var dataOffset = 0
+    var fileOffset = baseOffset
+    while dataOffset < data.count {
+        _ = try file.seek(offset: Int64(fileOffset), from: .start)
+        let written = try file.write(data.subdata(in: dataOffset ..< data.count))
+        guard written > 0 else {
+            throw SMB.Error.unknown(
+                operation: "smb2_write",
+                message: "Write made no progress while copying the remote prefix",
+            )
+        }
+        dataOffset += Int(written)
+        fileOffset += UInt64(written)
+    }
+}
+
+// MARK: - Atomic Commit
+
+/// Renames the temporary upload file into place, preserving the old destination
+/// via a backup path when necessary.
+private func commitAtomicUpload(
+    from target: String,
+    to remote: String,
+    on connection: SMB.Connection,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    let backup: String?
+    switch try connection.itemExists(at: remote) {
+    case .false:
+        backup = nil
+    case .file, .link:
+        let backupPath = try uniqueRemoteTemporaryPath(near: remote, on: connection)
+        try connection.move(from: remote, to: backupPath)
+        backup = backupPath
+    case .directory, .other:
+        throw SMB.Error.invalidArgument(
+            cause: .remoteDestinationIsNotAFile,
+            onOperation: operation,
+        )
+    }
+
+    do {
+        try connection.move(from: target, to: remote)
+    }
+    catch {
+        if let backup {
+            try? connection.move(from: backup, to: remote)
+        }
+        throw error
+    }
+
+    if let backup {
+        try? connection.removeFile(at: backup)
+    }
+}
+
+// MARK: - Progress Adaptation
+
+/// Adapts a ``SMB.Connection.FileProgress`` closure to the shape expected by
+/// pipe operations, deduplicating the final zero-speed call and caching the
+/// last average speed for the explicit completion call.
+private func adaptPipeProgressToFileProgress(
+    pipeProgress: @escaping SMB.Connection.FileProgress,
+    reportedBytes: Protected<UInt64>,
+    finalAverageSpeed: Protected<Double>,
+    completed: UInt64,
+    totalBytes: UInt64,
+    latestSpeed: Double,
+    averageSpeed: Double,
+) -> Bool {
+    if completed == reportedBytes.current, latestSpeed == 0 {
+        finalAverageSpeed.current = averageSpeed
+        return true
+    }
+    reportedBytes.current = completed
+    return pipeProgress(completed, totalBytes, latestSpeed, averageSpeed)
+}
+
+// MARK: - Pipe Protocol Primitives
+
+/// Expects and consumes a `.start` package from the pipe.
+/// When `strict` is `true`, receiving `.data` or `.finish` before `.start`
+/// is treated as an invalid-argument error rather than ignored.
+private func expectStartPackage(
+    from pipe: DataPipe,
+    operation: SMB.Error.InvalidArgumentOperation,
+    strict: Bool = false,
+) throws {
+    while true {
+        let package = try receivePackage(from: pipe, operation: operation)
+        switch package {
+        case .start:
+            return
+        case .broken:
+            throw brokenPipeError(operation: operation)
+        case .data, .finish:
+            if strict {
+                throw SMB.Error.invalidArgument(
+                    cause: .pipeDataMustBeginWithStartPackage,
+                    onOperation: operation,
+                )
+            }
+            continue
+        }
+    }
+}
+
+/// Sends a package to a pipe, translating timeout into a typed error.
+private func sendPackage(
+    _ package: DataPipe.Package,
+    to pipe: DataPipe,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws {
+    guard pipe.send(package, timeout: pipePackageTimeout) else {
+        throw pipeTimeoutError(operation: operation)
+    }
+}
+
+/// Receives a package from a pipe, translating timeout into a typed error.
+private func receivePackage(
+    from pipe: DataPipe,
+    operation: SMB.Error.InvalidArgumentOperation,
+) throws -> DataPipe.Package {
+    guard let package = pipe.receive(timeout: pipePackageTimeout) else {
+        throw pipeTimeoutError(operation: operation)
+    }
+    return package
+}
+
+/// Consumes pending pipe packages until a terminal package is received.
+private func drain(_ pipe: DataPipe) {
+    while let package = pipe.receive(timeout: pipePackageTimeout), package != .finish, package != .broken {
+    }
+}
+
+// MARK: - Block Size & Speed
+
+/// Resolves a caller-preferred block size against the server limit.
+private func pipeBlockSize(_ preferred: UInt64?, acceptedBlockSize: Int) throws -> Int {
+    guard let preferred else {
+        return acceptedBlockSize
+    }
+    guard preferred > 0, preferred <= UInt64(Int.max) else {
+        throw SMB.Error.invalidArgument(
+            cause: .blockSizeMustBePositiveAndFitInInt,
+            onOperation: .smbConnectionPipeBlockSize,
+        )
+    }
+    return min(Int(preferred), acceptedBlockSize)
 }
 
 /// Calculates bytes per second for an elapsed interval.
@@ -884,6 +1163,8 @@ private func speed(bytes: UInt64, from start: DispatchTime, to end: DispatchTime
     guard elapsed > 0 else { return 0 }
     return Double(bytes) / elapsed
 }
+
+// MARK: - Error Factories
 
 private let pipePackageTimeout: TimeInterval = 30
 
@@ -903,43 +1184,7 @@ private func pipeTimeoutError(operation: SMB.Error.InvalidArgumentOperation) -> 
     )
 }
 
-private func sendPackage(
-    _ package: DataPipe.Package,
-    to pipe: DataPipe,
-    operation: SMB.Error.InvalidArgumentOperation,
-) throws {
-    guard pipe.send(package, timeout: pipePackageTimeout) else {
-        throw pipeTimeoutError(operation: operation)
-    }
-}
-
-private func receivePackage(from pipe: DataPipe, operation: SMB.Error.InvalidArgumentOperation) throws -> DataPipe
-.Package {
-    guard let package = pipe.receive(timeout: pipePackageTimeout) else {
-        throw pipeTimeoutError(operation: operation)
-    }
-    return package
-}
-
-/// Resolves a caller-preferred block size against the server limit.
-private func pipeBlockSize(_ preferred: UInt64?, acceptedBlockSize: Int) throws -> Int {
-    guard let preferred else {
-        return acceptedBlockSize
-    }
-    guard preferred > 0, preferred <= UInt64(Int.max) else {
-        throw SMB.Error.invalidArgument(
-            cause: .blockSizeMustBePositiveAndFitInInt,
-            onOperation: .smbConnectionPipeBlockSize,
-        )
-    }
-    return min(Int(preferred), acceptedBlockSize)
-}
-
-/// Consumes pending pipe packages until a terminal package is received.
-private func drain(_ pipe: DataPipe) {
-    while let package = pipe.receive(timeout: pipePackageTimeout), package != .finish, package != .broken {
-    }
-}
+// MARK: - Remote Validation
 
 /// Validates that a remote path exists, is a regular file, and is large enough for a resume offset.
 @discardableResult
@@ -992,6 +1237,8 @@ private func validateOrCreateRemoteParent(
     }
 }
 
+// MARK: - Local File Helpers
+
 /// Returns the size of a local regular file.
 private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOperation) throws -> UInt64 {
     let operationString = operation.description
@@ -1040,4 +1287,14 @@ private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.C
         operation: "SMB.Connection.uniqueRemoteTemporaryPath",
         message: "Unable to create a unique temporary remote path",
     )
+}
+
+/// Moves a completed temporary file into its final destination.
+private func moveTempFile(_ temp: URL, to destination: URL) throws {
+    if FileManager.default.fileExists(atPath: destination.path) {
+        _ = try FileManager.default.replaceItemAt(destination, withItemAt: temp)
+    }
+    else {
+        try FileManager.default.moveItem(at: temp, to: destination)
+    }
 }
