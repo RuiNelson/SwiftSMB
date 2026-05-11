@@ -179,7 +179,8 @@ public extension SMB.Connection {
                     let blockEnd = min(dataOffset + blockSize, data.count)
                     let block = data.subdata(in: dataOffset ..< blockEnd)
                     let blockStart = DispatchTime.now()
-                    let written = try file._write(block, atOffset: remoteOffset)
+                    _ = try file.seek(offset: Int64(remoteOffset), from: .start)
+                    let written = try file.write(block)
                     guard written > 0 else {
                         throw SMB.Error.unknown(
                             operation: "smb2_write",
@@ -187,7 +188,7 @@ public extension SMB.Connection {
                         )
                     }
 
-                    dataOffset += written
+                    dataOffset += Int(written)
                     remoteOffset += UInt64(written)
                     transferred += UInt64(written)
 
@@ -267,7 +268,8 @@ public extension SMB.Connection {
 
                 while true {
                     let blockStart = DispatchTime.now()
-                    let data = try file.read(upToByteCount: blockSize, atOffset: remoteOffset)
+                    _ = try file.seek(offset: Int64(remoteOffset), from: .start)
+                    let data = try file.read(upTo: Int64(blockSize))
                     guard !data.isEmpty else {
                         // EOF is reported as both final progress and .finish so high-level
                         // file transfers can delay their own final callback until commit.
@@ -681,7 +683,8 @@ public extension SMB.Connection {
             var copied: UInt64 = 0
             while copied < offset {
                 let requested = min(blockSize, Int(offset - copied))
-                let data = try input.read(upToByteCount: requested, atOffset: copied)
+                _ = try input.seek(offset: Int64(copied), from: .start)
+                let data = try input.read(upTo: Int64(requested))
                 guard !data.isEmpty else {
                     throw SMB.Error.invalidArgument(
                         cause: .remoteFileShorterThanResumeOffset,
@@ -693,7 +696,8 @@ public extension SMB.Connection {
                 while dataOffset < data.count {
                     // Continue from dataOffset because SMB writes may accept only a
                     // prefix of the buffer even when the read returned a full chunk.
-                    let written = try output._write(data.subdata(in: dataOffset ..< data.count), atOffset: copied)
+                    _ = try output.seek(offset: Int64(copied), from: .start)
+                    let written = try output.write(data.subdata(in: dataOffset ..< data.count))
                     guard written > 0 else {
                         throw SMB.Error.unknown(
                             operation: "smb2_write",
@@ -701,7 +705,7 @@ public extension SMB.Connection {
                         )
                     }
                     copied += UInt64(written)
-                    dataOffset += written
+                    dataOffset += Int(written)
                 }
             }
         }

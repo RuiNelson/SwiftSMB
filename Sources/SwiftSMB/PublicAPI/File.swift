@@ -165,66 +165,91 @@ public extension SMB {
             let context = try connection.requireContext()
             try Bridge.close(context: context, file: handle)
         }
-
-        /// Reads bytes from the current file offset.
+        
+        /// Reads bytes from the file.
         ///
-        /// If `byteCount` is larger than the server's maximum read size, the
-        /// request is clamped to the accepted read block size.
-        ///
-        /// - Parameter byteCount: The preferred number of bytes to read.
-        /// - Returns: The bytes read. An empty value indicates end of file.
-        /// - Throws: ``SMB/Error`` if the read fails.
-        public func read(upToByteCount byteCount: Int) throws -> Data {
-            try readBytes(upToByteCount: byteCount, atOffset: nil)
-        }
-
-        /// Reads bytes at an explicit file offset.
-        ///
-        /// If `byteCount` is larger than the server's maximum read size, the
-        /// request is clamped to the accepted read block size.
+        /// When `upTo` is `nil`, reads until end of file. Reading to end of file
+        /// may consume unbounded memory for large files.
         ///
         /// - Parameters:
-        ///   - byteCount: The preferred number of bytes to read.
-        ///   - offset: The file offset to read from.
+        ///   - upTo: The maximum number of bytes to read, or `nil` to read to EOF.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to
+        ///     use the server's maximum read size.
         /// - Returns: The bytes read. An empty value indicates end of file.
         /// - Throws: ``SMB/Error`` if the read fails.
-        public func read(upToByteCount byteCount: Int, atOffset offset: UInt64) throws -> Data {
-            try readBytes(upToByteCount: byteCount, atOffset: offset)
-        }
+        public func read(
+            upTo: Int64? = nil,
+            transferChunkSize: Int64? = nil,
+        ) throws -> Data {
+            if let upTo, upTo <= 0 { return Data() }
 
-        /// Writes bytes at the current file offset.
-        ///
-        /// - Parameter data: The bytes to write.
-        /// - Returns: The number of bytes written.
-        /// - Throws: ``SMB/Error`` if the write fails.
-        @discardableResult
-        func _write(_ data: Data) throws -> Int {
+            let chunkSize = try transferChunkSize ?? Int64(connection.maxReadSize)
             let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Write)
-            return try data.withUnsafeBytes { rawBuffer in
-                try Bridge.write(context: context, file: handle, bytes: RawSpan(_unsafeBytes: rawBuffer))
+            let handle = try requireHandle(operation: .smb2Read)
+
+            var result = Data()
+            var remaining = upTo
+
+            while remaining == nil || remaining! > 0 {
+                let byteCount = remaining.map { Int(min($0, chunkSize)) } ?? Int(chunkSize)
+                let accepted = try connection.acceptedReadBlockSize(byteCount)
+                var buffer = Data(repeating: 0, count: accepted)
+                let readCount = try buffer.withUnsafeMutableBytes { rawBuffer in
+                    try Bridge.read(
+                        context: context,
+                        file: handle,
+                        into: MutableRawSpan(_unsafeBytes: rawBuffer),
+                    )
+                }
+                guard readCount > 0 else { break }
+                result.append(buffer.prefix(readCount))
+                remaining = remaining.map { $0 - Int64(readCount) }
             }
+
+            return result
         }
 
-        /// Writes bytes at an explicit file offset.
+        /// Writes bytes to the file.
+        ///
+        /// Data larger than the transfer chunk size is automatically split into
+        /// accepted block sizes.
         ///
         /// - Parameters:
         ///   - data: The bytes to write.
-        ///   - offset: The file offset to write to.
-        /// - Returns: The number of bytes written.
-        /// - Throws: ``SMB/Error`` if the write fails.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to
+        ///     use the server's maximum write size.
+        /// - Returns: The total number of bytes written.
+        /// - Throws: ``SMB/Error`` if the write fails or no progress is made.
         @discardableResult
-        func _write(_ data: Data, atOffset offset: UInt64) throws -> Int {
+        public func write(
+            _ data: Data,
+            transferChunkSize: Int64? = nil,
+        ) throws -> Int64 {
+            let chunkSize = try transferChunkSize ?? Int64(connection.maxWriteSize)
             let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Pwrite)
-            return try data.withUnsafeBytes { rawBuffer in
-                try Bridge.write(
-                    context: context,
-                    file: handle,
-                    bytes: RawSpan(_unsafeBytes: rawBuffer),
-                    offset: offset,
-                )
+            let handle = try requireHandle(operation: .smb2Write)
+
+            var written: Int64 = 0
+
+            while written < data.count {
+                let end = min(Int(written) + Int(chunkSize), data.count)
+                let count = try data.subdata(in: Int(written) ..< end).withUnsafeBytes { rawBuffer in
+                    try Bridge.write(
+                        context: context,
+                        file: handle,
+                        bytes: RawSpan(_unsafeBytes: rawBuffer),
+                    )
+                }
+                guard count > 0 else {
+                    throw SMB.Error.unknown(
+                        operation: "smb2_write",
+                        message: "Write made no progress before all data was written",
+                    )
+                }
+                written += Int64(count)
             }
+
+            return written
         }
 
         /// Moves the current file offset.
@@ -268,43 +293,6 @@ public extension SMB {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Fstat)
             return try Stat(Bridge.fileStatistics(context: context, file: handle))
-        }
-
-        /// Shared implementation for positioned and unpositioned reads.
-        private func readBytes(upToByteCount byteCount: Int, atOffset offset: UInt64?) throws -> Data {
-            let operation: SMB.Error.InvalidArgumentOperation = offset == nil ? .smb2Read : .smb2Pread
-            guard byteCount >= 0 else {
-                throw SMB.Error.invalidArgument(
-                    cause: .byteCountMustBeNonNegative,
-                    onOperation: operation,
-                )
-            }
-            guard byteCount > 0 else {
-                return Data()
-            }
-            let acceptedByteCount = try connection.acceptedReadBlockSize(byteCount)
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: operation)
-            var data = Data(repeating: 0, count: acceptedByteCount)
-            let readCount = try data.withUnsafeMutableBytes { rawBuffer in
-                if let offset {
-                    try Bridge.read(
-                        context: context,
-                        file: handle,
-                        into: MutableRawSpan(_unsafeBytes: rawBuffer),
-                        offset: offset,
-                    )
-                }
-                else {
-                    try Bridge.read(
-                        context: context,
-                        file: handle,
-                        into: MutableRawSpan(_unsafeBytes: rawBuffer),
-                    )
-                }
-            }
-
-            return data.prefix(readCount)
         }
 
         /// Returns the live bridge handle or throws if the file is closed.

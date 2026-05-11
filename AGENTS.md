@@ -4,6 +4,8 @@
 
 SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB shares from Swift. It is cross-platform and aims to be compatible with Linux and Windows in addition to Apple platforms.
 
+The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (detailed guides). Keep those in sync when public APIs change.
+
 ## Project Tree
 
 ```text

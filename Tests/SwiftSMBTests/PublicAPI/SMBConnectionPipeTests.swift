@@ -508,8 +508,9 @@ struct SMBConnectionPipeTests {
 
         let file = try connection.openFile(at: remote, accessMode: .readOnly)
         defer { try? file.close() }
-        let firstChunk = try file.read(upToByteCount: 1024)
-        let lastChunk = try file.read(upToByteCount: 1024, atOffset: UInt64(100 * 1024 * 1024 - 1024))
+        let firstChunk = try file.read(upTo: 1024)
+        _ = try file.seek(offset: Int64(100 * 1024 * 1024 - 1024), from: .start)
+        let lastChunk = try file.read(upTo: 1024)
         #expect(firstChunk == chunk)
         #expect(lastChunk == chunk)
     }

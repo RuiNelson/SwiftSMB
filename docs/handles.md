@@ -52,25 +52,28 @@ Read from the current offset until end of file:
 let file = try connection.openFile(at: "report.pdf")
 defer { try? file.close() }
 
-let data = try file.readToEnd()
+let data = try file.read()
 ```
 
 Read a specific number of bytes from the current offset:
 
 ```swift
-let chunk = try file.read(upToByteCount: 65536)
+let chunk = try file.read(upTo: 65536)
 ```
 
-Read at an explicit offset without changing the current offset:
+Read at an explicit offset using `seek` first:
 
 ```swift
-let header = try file.read(upToByteCount: 1024, atOffset: 0)
-let footer = try file.read(upToByteCount: 1024, atOffset: fileSize - 1024)
+let info = try file.stat()
+try file.seek(offset: 0, from: .start)
+let header = try file.read(upTo: 1024)
+try file.seek(offset: Int64(info.size - 1024), from: .start)
+let footer = try file.read(upTo: 1024)
 ```
 
 ## Writing to a file handle
 
-Write all data in a loop, automatically splitting into accepted block sizes:
+Write all data:
 
 ```swift
 let file = try connection.openFile(
@@ -81,6 +84,13 @@ let file = try connection.openFile(
 defer { try? file.close() }
 
 try file.write(largeData)
+```
+
+Write at a specific offset using `seek`:
+
+```swift
+try file.seek(offset: 4096, from: .start)
+try file.write(data)
 ```
 
 ## Seeking
