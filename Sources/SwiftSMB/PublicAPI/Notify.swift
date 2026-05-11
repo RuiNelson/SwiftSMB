@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBNotify.swift
+// Notify.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors

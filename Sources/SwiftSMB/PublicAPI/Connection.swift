@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBConnection.swift
+// Connection.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors
@@ -414,7 +414,7 @@ public extension SMB {
         }
 
         public var debugDescription: String {
-            "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected))"
+            "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected), context: \(context.map(\.debugDescription) ?? "<nil>"))"
         }
     }
 }

@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBConnection-Conv-Pipe.swift
+// Connection-Conv-Pipe.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors

@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBConfiguration.swift
+// Configuration.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors

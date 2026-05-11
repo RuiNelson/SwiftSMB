@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBFile-Conv.swift
+// File-Conv.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors

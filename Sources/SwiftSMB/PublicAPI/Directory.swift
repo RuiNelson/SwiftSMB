@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBDirectory.swift
+// Directory.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors

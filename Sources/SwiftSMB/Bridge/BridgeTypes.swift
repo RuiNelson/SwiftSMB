@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMB2BridgeTypes.swift
+// BridgeTypes.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors
@@ -456,5 +456,149 @@ extension Bridge {
 
             return handler
         }
+    }
+}
+
+extension Bridge.Context: CustomDebugStringConvertible {
+    var debugDescription: String {
+        makeDebugString(for: raw.pointee)
+    }
+}
+
+private func makeDebugString(for ctx: smb2_context) -> String {
+    var lines: [String] = []
+
+    lines.append("fd: \(ctx.fd)")
+    lines.append("timeout: \(ctx.timeout)")
+    lines.append("sec: \(secName(ctx.sec))")
+    lines.append("securityMode: 0x\(String(ctx.security_mode, radix: 16, uppercase: false))")
+    lines.append("capabilities: 0x\(String(ctx.capabilities, radix: 16, uppercase: false))")
+    lines.append("version: \(versionName(ctx.version))")
+    lines.append("server: \(stringOrNil(ctx.server))")
+    lines.append("share: \(stringOrNil(ctx.share))")
+    lines.append("user: \(stringOrNil(ctx.user))")
+    #if DEBUG
+        lines.append("password: \(stringOrNil(ctx.password))")
+    #else
+        lines.append("password: \(ctx.password != nil ? "<redacted>" : "<nil>")")
+    #endif
+    lines.append("domain: \(stringOrNil(ctx.domain))")
+    lines.append("workstation: \(stringOrNil(ctx.workstation))")
+    lines.append("clientGuid: \(hexString(from: ctx.client_guid))")
+    lines.append("treeIDTop: \(ctx.tree_id_top)")
+    lines.append("treeIDCur: \(ctx.tree_id_cur)")
+    lines.append("messageID: \(ctx.message_id)")
+    lines.append("sessionID: \(ctx.session_id)")
+    lines.append("asyncID: \(ctx.async_id)")
+    lines.append("sessionKey: \(hexString(from: ctx.session_key, count: Int(ctx.session_key_size)))")
+    lines.append("credits: \(ctx.credits)")
+    lines.append("seal: \(ctx.seal != 0)")
+    lines.append("sign: \(ctx.sign != 0)")
+    lines.append("signingKey: \(hexString(from: ctx.signing_key))")
+    lines.append("serverInKey: \(hexString(from: ctx.serverin_key))")
+    lines.append("serverOutKey: \(hexString(from: ctx.serverout_key))")
+    lines.append("salt: \(hexString(from: ctx.salt))")
+    lines.append("cypher: 0x\(String(ctx.cypher, radix: 16, uppercase: false))")
+    lines.append("preauthHash: \(hexString(from: ctx.preauthhash))")
+    lines.append("dialect: 0x\(String(ctx.dialect, radix: 16, uppercase: false))")
+    lines.append("maxTransactSize: \(ctx.max_transact_size)")
+    lines.append("maxReadSize: \(ctx.max_read_size)")
+    lines.append("maxWriteSize: \(ctx.max_write_size)")
+    lines.append("ntError: \(ctx.nterror)")
+    lines.append("errorString: \(stringFromFixedCCharArray(ctx.error_string))")
+    lines.append("passthrough: \(ctx.passthrough)")
+    lines.append("oplockBreakCount: \(ctx.oplock_break_count)")
+    lines.append("lastFileID: \(hexString(from: ctx.last_file_id))")
+    lines.append("supportsMultiCredit: \(ctx.supports_multi_credit != 0)")
+    lines.append("ndr: \(ctx.ndr)")
+    lines.append("endianness: \(ctx.endianness)")
+    lines.append("events: \(ctx.events)")
+    lines.append("recvState: \(recvStateName(ctx.recv_state))")
+    lines.append("spl: \(ctx.spl)")
+    lines.append("payloadOffset: \(ctx.payload_offset)")
+    lines.append("connectingFdsCount: \(ctx.connecting_fds_count)")
+    lines.append("useCachedCreds: \(ctx.use_cached_creds)")
+
+    return "Context {\n" + lines.map { "  \($0)" }.joined(separator: "\n") + "\n}"
+}
+
+private func stringOrNil(_ ptr: UnsafePointer<CChar>?) -> String {
+    ptr.map { String(cString: $0) } ?? "<nil>"
+}
+
+private func stringFromFixedCCharArray(_ value: some Any) -> String {
+    withUnsafeBytes(of: value) { bytes in
+        guard let baseAddress = bytes.bindMemory(to: CChar.self).baseAddress else {
+            return ""
+        }
+        return String(cString: baseAddress)
+    }
+}
+
+private func hexString(from value: some Any) -> String {
+    withUnsafeBytes(of: value) { bytes in
+        bytes.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private func hexString(from ptr: UnsafePointer<UInt8>?, count: Int) -> String {
+    guard let ptr, count > 0 else { return "<nil>" }
+    return (0 ..< count).map { String(format: "%02x", ptr[$0]) }.joined()
+}
+
+private func secName(_ sec: smb2_sec) -> String {
+    switch sec {
+    case SMB2_SEC_UNDEFINED:
+        "undefined"
+    case SMB2_SEC_NTLMSSP:
+        "ntlmssp"
+    case SMB2_SEC_KRB5:
+        "krb5"
+    default:
+        "unknown(0x\(String(sec.rawValue, radix: 16)))"
+    }
+}
+
+private func versionName(_ version: smb2_negotiate_version) -> String {
+    switch version {
+    case SMB2_VERSION_ANY:
+        "any"
+    case SMB2_VERSION_ANY2:
+        "any2"
+    case SMB2_VERSION_ANY3:
+        "any3"
+    case SMB2_VERSION_0202:
+        "0x0202"
+    case SMB2_VERSION_0210:
+        "0x0210"
+    case SMB2_VERSION_0300:
+        "0x0300"
+    case SMB2_VERSION_0302:
+        "0x0302"
+    case SMB2_VERSION_0311:
+        "0x0311"
+    default:
+        "unknown(0x\(String(version.rawValue, radix: 16)))"
+    }
+}
+
+private func recvStateName(_ state: smb2_recv_state) -> String {
+    switch state {
+    case SMB2_RECV_SPL:
+        "spl"
+    case SMB2_RECV_HEADER:
+        "header"
+    case SMB2_RECV_FIXED:
+        "fixed"
+    case SMB2_RECV_VARIABLE:
+        "variable"
+    case SMB2_RECV_PAD:
+        "pad"
+    case SMB2_RECV_TRFM:
+        "trfm"
+    case SMB2_RECV_UNKNOWN:
+        "unknown"
+    default:
+        "unknown(0x\(String(state.rawValue, radix: 16)))"
     }
 }
