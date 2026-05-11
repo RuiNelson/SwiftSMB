@@ -6,7 +6,6 @@
 // Copyright its respective authors
 //
 
-import Darwin
 import Dispatch
 import Foundation
 

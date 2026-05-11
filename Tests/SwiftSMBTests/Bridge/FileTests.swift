@@ -7,7 +7,6 @@
 //
 
 @testable import SwiftSMB
-import Darwin
 import Foundation
 import Testing
 
