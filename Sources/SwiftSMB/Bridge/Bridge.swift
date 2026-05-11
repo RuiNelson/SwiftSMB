@@ -1036,7 +1036,7 @@ class Bridge {
                     requested_oplock_level: 0,
                     impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
                     smb_create_flags: 0,
-                    desired_access: UInt32(SMB2_GENERIC_WRITE),
+                    desired_access: UInt32(SMB2_FILE_WRITE_ATTRIBUTES),
                     file_attributes: 0,
                     share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE),
                     create_disposition: UInt32(SMB2_FILE_OPEN),
@@ -1070,7 +1070,7 @@ class Bridge {
                 smb2_add_compound_pdu(context.raw, pdu, next_pdu)
 
                 var cl_req = smb2_close_request(
-                    flags: UInt16(SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB),
+                    flags: 0,
                     file_id: FileID.allOnes.raw,
                 )
 
