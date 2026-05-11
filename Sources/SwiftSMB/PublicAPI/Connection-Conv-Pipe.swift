@@ -200,7 +200,7 @@ public extension SMB.Connection {
             }
         }
     }
-
+    
     /// Reads a file from the SMB share into a pipe.
     ///
     /// The method reads from `path` in server-accepted blocks and sends each
@@ -248,7 +248,7 @@ public extension SMB.Connection {
             label: "com.ruinelson.SwiftSMB.SMB.Connection.read.startupError",
         )
 
-        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.read.worker").async {
+        readWorkerQueue.async {
             var didSignalReady = false
             func signalReady(_ error: Swift.Error?) {
                 guard !didSignalReady else { return }
@@ -472,7 +472,7 @@ public extension SMB.Connection {
         // The SMB reader owns the producer side of the pipe; this consumer keeps
         // local file I/O off that path so slow disks naturally apply back-pressure.
         consumer.enter()
-        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.consumer").async {
+        downloaderQueue.async {
             defer { consumer.leave() }
 
             var shouldDrain = true
@@ -737,7 +737,7 @@ public extension SMB.Connection {
         }
 
         producer.enter()
-        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.producer").async {
+        uploadProducerQueue.async {
             var didBreak = false
             defer {
                 // A normal return from the producer is EOF or cancellation, both
