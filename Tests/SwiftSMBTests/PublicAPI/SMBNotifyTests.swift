@@ -50,7 +50,7 @@ struct SMBNotifyIntegrationTests {
             at: root,
             filter: [.fileName, .lastWrite],
             delegate: delegate,
-            callbackQueue: DispatchQueue(label: "SwiftSMBTests.NotifyDelegate"),
+            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyDelegate"),
         )
         defer { watcher.cancel() }
 
@@ -75,7 +75,7 @@ struct SMBNotifyIntegrationTests {
         let watcher = try connection.watchDirectory(
             at: root,
             delegate: delegate,
-            callbackQueue: DispatchQueue(label: "SwiftSMBTests.NotifyCancelDelegate"),
+            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyCancelDelegate"),
         )
 
         #expect(delegate.waitForStart(timeout: 5))

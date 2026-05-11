@@ -15,7 +15,7 @@ public extension SMB {
         private let connection: Connection
         private let protectedHandle = Protected<Bridge.DirectoryHandle?>(
             nil,
-            label: "SwiftSMB.SMB.Directory.handle",
+            label: "com.ruinelson.SwiftSMB.SMB.Directory.handle",
         )
 
         /// The live bridge directory handle, if the directory is still open.

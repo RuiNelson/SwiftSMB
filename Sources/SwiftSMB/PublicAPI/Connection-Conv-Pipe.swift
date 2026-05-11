@@ -243,9 +243,12 @@ public extension SMB.Connection {
         let blockSize = try pipeBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
         let startup = DispatchSemaphore(value: 0)
-        let startupError = Protected<Swift.Error?>(nil, label: "SwiftSMB.SMB.Connection.read.startupError")
+        let startupError = Protected<Swift.Error?>(
+            nil,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.read.startupError",
+        )
 
-        DispatchQueue(label: "SwiftSMB.SMB.Connection.read.worker").async {
+        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.read.worker").async {
             var didSignalReady = false
             func signalReady(_ error: Swift.Error?) {
                 guard !didSignalReady else { return }
@@ -458,15 +461,18 @@ public extension SMB.Connection {
             }
         }
 
-        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMB.SMB.Connection.downloadFile")
+        let pipe = DataPipe(maxPackages: 3, label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile")
         let consumer = DispatchGroup()
-        let consumerError = Protected<Swift.Error?>(nil, label: "SwiftSMB.SMB.Connection.downloadFile.error")
-        let cancelled = Protected(false, label: "SwiftSMB.SMB.Connection.downloadFile.cancelled")
+        let consumerError = Protected<Swift.Error?>(
+            nil,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.error",
+        )
+        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.cancelled")
 
         // The SMB reader owns the producer side of the pipe; this consumer keeps
         // local file I/O off that path so slow disks naturally apply back-pressure.
         consumer.enter()
-        DispatchQueue(label: "SwiftSMB.SMB.Connection.downloadFile.consumer").async {
+        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.consumer").async {
             defer { consumer.leave() }
 
             var shouldDrain = true
@@ -522,8 +528,14 @@ public extension SMB.Connection {
             }
         }
 
-        let reportedBytes = Protected<UInt64>(0, label: "SwiftSMB.SMB.Connection.downloadFile.reportedBytes")
-        let finalAverageSpeed = Protected<Double>(0, label: "SwiftSMB.SMB.Connection.downloadFile.finalAverageSpeed")
+        let reportedBytes = Protected<UInt64>(
+            0,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.reportedBytes",
+        )
+        let finalAverageSpeed = Protected<Double>(
+            0,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.finalAverageSpeed",
+        )
 
         do {
             try read(
@@ -652,10 +664,13 @@ public extension SMB.Connection {
         else {
             remote
         }
-        let cancelled = Protected(false, label: "SwiftSMB.SMB.Connection.uploadFile.cancelled")
-        let producerError = Protected<Swift.Error?>(nil, label: "SwiftSMB.SMB.Connection.uploadFile.error")
+        let cancelled = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.cancelled")
+        let producerError = Protected<Swift.Error?>(
+            nil,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.error",
+        )
         let producer = DispatchGroup()
-        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMB.SMB.Connection.uploadFile")
+        let pipe = DataPipe(maxPackages: 3, label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile")
         var shouldRemoveRemoteTemp = atomic
 
         defer {
@@ -722,7 +737,7 @@ public extension SMB.Connection {
         }
 
         producer.enter()
-        DispatchQueue(label: "SwiftSMB.SMB.Connection.uploadFile.producer").async {
+        DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.producer").async {
             var didBreak = false
             defer {
                 // A normal return from the producer is EOF or cancellation, both
@@ -759,8 +774,14 @@ public extension SMB.Connection {
             }
         }
 
-        let reportedBytes = Protected<UInt64>(0, label: "SwiftSMB.SMB.Connection.uploadFile.reportedBytes")
-        let finalAverageSpeed = Protected<Double>(0, label: "SwiftSMB.SMB.Connection.uploadFile.finalAverageSpeed")
+        let reportedBytes = Protected<UInt64>(
+            0,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.reportedBytes",
+        )
+        let finalAverageSpeed = Protected<Double>(
+            0,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.finalAverageSpeed",
+        )
 
         do {
             let openOptions: SMB.File.OpenOptions = if atomic {

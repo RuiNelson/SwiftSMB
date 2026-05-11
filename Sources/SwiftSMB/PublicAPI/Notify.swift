@@ -279,7 +279,7 @@ public extension SMB {
             self.callbackQueue = callbackQueue
             protectedDelegate = Protected(
                 SMBNotifyWatcherDelegateBox(delegate),
-                label: "SwiftSMB.SMB.NotifyWatcher.delegate.\(state.id)",
+                label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.delegate.\(state.id)",
             )
             callbacks.watcher = self
             state.start()
@@ -534,11 +534,11 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         self.filter = filter
         self.callbacks = callbacks
         self.onFinish = onFinish
-        queue = DispatchQueue(label: "SwiftSMB.SMB.NotifyWatcher.\(id)")
-        protectedState = Protected(State(), label: "SwiftSMB.SMB.NotifyWatcher.state.\(id)")
-        protectedDidFail = Protected(false, label: "SwiftSMB.SMB.NotifyWatcher.didFail.\(id)")
-        protectedDidFinish = Protected(false, label: "SwiftSMB.SMB.NotifyWatcher.didFinish.\(id)")
-        protectedDidCleanUp = Protected(false, label: "SwiftSMB.SMB.NotifyWatcher.didCleanUp.\(id)")
+        queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.\(id)")
+        protectedState = Protected(State(), label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.state.\(id)")
+        protectedDidFail = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didFail.\(id)")
+        protectedDidFinish = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didFinish.\(id)")
+        protectedDidCleanUp = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didCleanUp.\(id)")
     }
 
     /// Starts the serial notification loop.

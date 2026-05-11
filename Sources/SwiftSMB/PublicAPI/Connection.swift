@@ -25,11 +25,14 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
-        private let protectedContext = Protected<Bridge.Context?>(nil, label: "SwiftSMB.SMB.Connection.context")
+        private let protectedContext = Protected<Bridge.Context?>(
+            nil,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.context",
+        )
         /// Active notification watchers that must be cancelled before context teardown.
         let protectedNotifyWatchers = Protected<[UUID: SMBNotifyWatcherState]>(
             [:],
-            label: "SwiftSMB.SMB.Connection.notifyWatchers",
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers",
         )
 
         /// The live bridge context, if the connection is still open.

@@ -19,7 +19,7 @@ class Bridge {
     // Use this synchronization apparatus to avoid MP problems.
     //
 
-    private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.swiftsmb.bridge")
+    private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.bridge")
 
     /// Executes a bridge operation on the bridge queue.
     private static func sync<T>(_ body: () throws -> T) rethrows -> T {
