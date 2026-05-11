@@ -13,7 +13,7 @@ defer { try? connection.disconnect() }
 
 ## Uploading a local file
 
-``SMB.Connection.uploadFile(local:remote:chunkSize:progress:)`` copies a local file to the share. By default it stages the upload through a temporary remote file and renames it into place when the transfer succeeds, so the destination path never contains a partial file:
+``SMB.Connection.uploadFile(local:remote:maxBlockSize:continuation:)`` copies a local file to the share. By default it stages the upload through a temporary remote file and renames it into place when the transfer succeeds, so the destination path never contains a partial file:
 
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/Anna/Desktop/report.pdf")
@@ -36,13 +36,13 @@ You can also pass a preferred block size. Values above the server maximum are cl
 try connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf",
-    chunkSize: 256 * 1024
+    maxBlockSize: UInt64(256 * 1024)
 ) { _, _, _, _ in true }
 ```
 
 ## Downloading a remote file
 
-``SMB.Connection.downloadFile(remote:local:chunkSize:progress:)`` copies a file from the share to local storage. The download is written to a temporary local file first and moved into place after the transfer succeeds:
+``SMB.Connection.downloadFile(remote:local:maxBlockSize:continuation:)`` copies a file from the share to local storage. The download is written to a temporary local file first and moved into place after the transfer succeeds:
 
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/Anna/Downloads/report.pdf")
@@ -89,7 +89,7 @@ try connection.dumpToFile(
 
 ## Choosing a block size
 
-Both upload and download accept an optional `chunkSize`. The library clamps the value to the server's maximum automatically, so you can safely request a large block size:
+Both upload and download accept an optional `maxBlockSize`. The library clamps the value to the server's maximum automatically, so you can safely request a large block size:
 
 ```swift
 let maxRead = try connection.acceptedReadBlockSize(128 * 1024 * 1024)
