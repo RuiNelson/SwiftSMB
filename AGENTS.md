@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB shares from Swift.
+SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB shares from Swift. It is cross-platform and aims to be compatible with Linux and Windows in addition to Apple platforms.
 
 ## Project Tree
 

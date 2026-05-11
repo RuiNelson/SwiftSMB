@@ -6,7 +6,7 @@
 // Copyright its respective authors
 //
 
-import Darwin
+import Foundation
 import SMB2
 
 extension Bridge {
@@ -370,6 +370,69 @@ extension Bridge {
             server = url.server.map(String.init(cString:)) ?? ""
             share = url.share.map(String.init(cString:)) ?? ""
             path = url.path.map(String.init(cString:))
+        }
+    }
+
+    struct PendingRequest {
+        let state: PendingRequestState
+    }
+
+    final class PendingRequestState: @unchecked Sendable {
+        let operation: String
+        let handler: NotifyChangeHandler
+
+        private let lock = NSLock()
+        private var raw: UnsafeMutablePointer<smb2_pdu>?
+        private var callbackData: UnsafeMutableRawPointer?
+        private var isFinished = false
+
+        init(
+            operation: String,
+            handler: @escaping NotifyChangeHandler,
+        ) {
+            self.operation = operation
+            self.handler = handler
+        }
+
+        func didCreateRequest(
+            raw: UnsafeMutablePointer<smb2_pdu>,
+            callbackData: UnsafeMutableRawPointer,
+        ) {
+            lock.lock()
+            defer { lock.unlock() }
+
+            self.raw = raw
+            self.callbackData = callbackData
+        }
+
+        func cancel() -> (raw: UnsafeMutablePointer<smb2_pdu>, callbackData: UnsafeMutableRawPointer)? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard !isFinished, let raw, let callbackData else {
+                return nil
+            }
+
+            isFinished = true
+            self.raw = nil
+            self.callbackData = nil
+
+            return (raw, callbackData)
+        }
+
+        func complete() -> NotifyChangeHandler? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard !isFinished else {
+                return nil
+            }
+
+            isFinished = true
+            raw = nil
+            callbackData = nil
+
+            return handler
         }
     }
 }

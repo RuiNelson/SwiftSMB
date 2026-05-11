@@ -12,6 +12,15 @@ import SMB2.Raw
 
 /// Central bridge class for all libsmb2 operations.
 class Bridge {
+    // MARK: - Synchronization
+    
+    /*
+                                    ⚠️
+      The underlying library, `libsmb2` is not thread-safe for the most part.
+      Use this synchronization apparatus to avoid MP problems.
+     
+     */
+
     private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.swiftsmb.bridge")
 
     /// Executes a bridge operation on the bridge queue.
@@ -719,7 +728,7 @@ class Bridge {
         flags: NotifyChangeFlags = [],
         filter: NotifyChangeFilter = .all,
         handler: @escaping NotifyChangeHandler,
-    ) throws -> SMB2PendingRequest {
+    ) throws -> PendingRequest {
         guard let fileID = smb2_get_file_id(directory.raw) else {
             throw SMB.Error.invalidArgument(
                 cause: .directoryFileHandleMissingFileID,
@@ -733,7 +742,7 @@ class Bridge {
         request.file_id = fileID.pointee
         request.completion_filter = filter.rawValue
 
-        let state = SMB2PendingRequestState(
+        let state = PendingRequestState(
             operation: "smb2_cmd_change_notify_async",
             handler: handler,
         )
@@ -745,14 +754,14 @@ class Bridge {
             notifyChangeCallback,
             callbackData,
         ) else {
-            Unmanaged<SMB2PendingRequestState>.fromOpaque(callbackData).release()
+            Unmanaged<PendingRequestState>.fromOpaque(callbackData).release()
             throw SMB.Error.fromBridge(context, operation: "smb2_cmd_change_notify_async")
         }
 
         state.didCreateRequest(raw: rawPDU, callbackData: callbackData)
         smb2_queue_pdu(context.raw, rawPDU)
 
-        return SMB2PendingRequest(state: state)
+        return PendingRequest(state: state)
     }
 
     /// Starts a one-shot cancellable change notification request for an open directory file handle.
@@ -762,23 +771,23 @@ class Bridge {
         flags: NotifyChangeFlags = [],
         filter: NotifyChangeFilter = .all,
         handler: @escaping NotifyChangeHandler,
-    ) throws -> SMB2PendingRequest {
+    ) throws -> PendingRequest {
         try sync {
             try _notifyChange(context: context, directory: directory, flags: flags, filter: filter, handler: handler)
         }
     }
 
-    private static func _cancel(context: Context, request: SMB2PendingRequest) {
+    private static func _cancel(context: Context, request: PendingRequest) {
         guard let cancellation = request.state.cancel() else {
             return
         }
 
         smb2_free_pdu(context.raw, cancellation.raw)
-        Unmanaged<SMB2PendingRequestState>.fromOpaque(cancellation.callbackData).release()
+        Unmanaged<PendingRequestState>.fromOpaque(cancellation.callbackData).release()
     }
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.
-    static func cancel(context: Context, request: SMB2PendingRequest) {
+    static func cancel(context: Context, request: PendingRequest) {
         sync {
             _cancel(context: context, request: request)
         }
@@ -1246,7 +1255,7 @@ class Bridge {
             return
         }
 
-        let state = Unmanaged<SMB2PendingRequestState>
+        let state = Unmanaged<PendingRequestState>
             .fromOpaque(callbackData)
             .takeRetainedValue()
 
@@ -1379,71 +1388,6 @@ class Bridge {
         }
 
         return .unknownNTStatus(rawValue: rawStatus, posixCode: nil, operation: operation, message: message)
-    }
-}
-
-// MARK: - Supporting Types
-
-struct SMB2PendingRequest {
-    fileprivate let state: SMB2PendingRequestState
-}
-
-private final class SMB2PendingRequestState: @unchecked Sendable {
-    let operation: String
-    let handler: Bridge.NotifyChangeHandler
-
-    private let lock = NSLock()
-    private var raw: UnsafeMutablePointer<smb2_pdu>?
-    private var callbackData: UnsafeMutableRawPointer?
-    private var isFinished = false
-
-    init(
-        operation: String,
-        handler: @escaping Bridge.NotifyChangeHandler,
-    ) {
-        self.operation = operation
-        self.handler = handler
-    }
-
-    func didCreateRequest(
-        raw: UnsafeMutablePointer<smb2_pdu>,
-        callbackData: UnsafeMutableRawPointer,
-    ) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        self.raw = raw
-        self.callbackData = callbackData
-    }
-
-    func cancel() -> (raw: UnsafeMutablePointer<smb2_pdu>, callbackData: UnsafeMutableRawPointer)? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard !isFinished, let raw, let callbackData else {
-            return nil
-        }
-
-        isFinished = true
-        self.raw = nil
-        self.callbackData = nil
-
-        return (raw, callbackData)
-    }
-
-    func complete() -> Bridge.NotifyChangeHandler? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard !isFinished else {
-            return nil
-        }
-
-        isFinished = true
-        raw = nil
-        callbackData = nil
-
-        return handler
     }
 }
 

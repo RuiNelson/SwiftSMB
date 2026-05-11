@@ -471,7 +471,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         var isCancellationRequested = false
 
         /// The currently armed bridge request, if one is pending.
-        var pendingRequest: SMB2PendingRequest?
+        var pendingRequest: Bridge.PendingRequest?
 
         /// The completed bridge result waiting to be handled by the loop.
         var completedResult: Result<[Bridge.NotifyChange], SMB.Error>?
@@ -613,7 +613,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     }
 
     /// Stores a newly armed request unless cancellation already won the race.
-    private func setPendingRequest(_ request: SMB2PendingRequest) -> Bool {
+    private func setPendingRequest(_ request: Bridge.PendingRequest) -> Bool {
         var state = protectedState.current
         guard !state.isCancellationRequested else {
             protectedState.current = state
@@ -653,7 +653,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     }
 
     /// Takes the current pending request so it can be cancelled.
-    private func takePendingRequest() -> SMB2PendingRequest? {
+    private func takePendingRequest() -> Bridge.PendingRequest? {
         var state = protectedState.current
         let request = state.pendingRequest
         state.pendingRequest = nil
