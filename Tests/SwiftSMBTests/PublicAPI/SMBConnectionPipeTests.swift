@@ -465,6 +465,86 @@ struct SMBConnectionPipeTests {
                 }
         }
     }
+
+    @Test("upload 100MB file")
+    func upload100MBFile() throws {
+        let connection = try SMB.connect(
+            server: SMB.Server(host: testServerHost),
+            share: TestShare.public,
+            configuration: SMB.Configuration(),
+        )
+        defer { try? connection.disconnect() }
+
+        let remote = uniquePath("upload-100mb") + ".bin"
+        defer { try? connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let chunk = Data((0 ..< 1024).map { UInt8($0 % 256) })
+        let handle = try FileHandle(forWritingTo: local)
+        for _ in 0 ..< (100 * 1024) {
+            handle.write(chunk)
+        }
+        try handle.close()
+
+        var progress: [UInt64] = []
+        try connection.uploadFile(local: local, remote: remote) { transferred, total, _, _ in
+            progress.append(transferred)
+            #expect(total == 100 * 1024 * 1024)
+            return true
+        }
+
+        let remoteStat = try connection.stat(at: remote)
+        #expect(remoteStat.size == 100 * 1024 * 1024)
+        #expect(progress.last == 100 * 1024 * 1024)
+
+        let file = try connection.openFile(at: remote, accessMode: .readOnly)
+        defer { try? file.close() }
+        let firstChunk = try file.read(upToByteCount: 1024)
+        let lastChunk = try file.read(upToByteCount: 1024, atOffset: UInt64(100 * 1024 * 1024 - 1024))
+        #expect(firstChunk == chunk)
+        #expect(lastChunk == chunk)
+    }
+
+    @Test("download 100MB file")
+    func download100MBFile() throws {
+        let connection = try SMB.connect(
+            server: SMB.Server(host: testServerHost),
+            share: TestShare.public,
+            configuration: SMB.Configuration(),
+        )
+        defer { try? connection.disconnect() }
+
+        let remote = uniquePath("download-100mb") + ".bin"
+        defer { try? connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        try? FileManager.default.removeItem(at: local)
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let data = Data(repeating: 0xCD, count: 100 * 1024 * 1024)
+        try connection.dumpToFile(data, to: remote)
+
+        var progress: [UInt64] = []
+        try connection.downloadFile(remote: remote, local: local) { transferred, total, _, _ in
+            progress.append(transferred)
+            #expect(total == 100 * 1024 * 1024)
+            return true
+        }
+
+        let localSize = try (FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.uint64Value
+        #expect(localSize == 100 * 1024 * 1024)
+        #expect(progress.last == 100 * 1024 * 1024)
+
+        let handle = try FileHandle(forReadingFrom: local)
+        defer { try? handle.close() }
+        let firstChunk = handle.readData(ofLength: 1024)
+        handle.seek(toFileOffset: UInt64(100 * 1024 * 1024 - 1024))
+        let lastChunk = handle.readData(ofLength: 1024)
+        #expect(firstChunk == Data(repeating: 0xCD, count: 1024))
+        #expect(lastChunk == Data(repeating: 0xCD, count: 1024))
+    }
 }
 
 private func publicConnection() throws -> SMB.Connection {

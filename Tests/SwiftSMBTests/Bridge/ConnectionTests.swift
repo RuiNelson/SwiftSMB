@@ -143,13 +143,15 @@ struct ConnectionTests {
 
     @Test("max read size is positive after connect") func maxReadSizeIsPositiveAfterConnect() throws {
         try withPublicShare { ctx in
-            #expect(Bridge.getMaxReadSize(context: ctx) > 0)
+            let mrs = Bridge.getMaxReadSize(context: ctx)
+            #expect(mrs > 0)
         }
     }
 
     @Test("max write size is positive after connect") func maxWriteSizeIsPositiveAfterConnect() throws {
         try withPublicShare { ctx in
-            #expect(Bridge.getMaxWriteSize(context: ctx) > 0)
+            let mws = Bridge.getMaxWriteSize(context: ctx)
+            #expect(mws > 0)
         }
     }
 
