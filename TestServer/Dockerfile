@@ -111,7 +111,7 @@ RUN mkdir -p /shares/public/testdir/subdir && \
     mkdir -p /shares/documents/Backups && \
     mkdir -p /shares/documents/EmptyFolder && \
     echo "Hello, SMB!" > /shares/documents/greeting.txt && \
-    echo "report content" > /shares/documents/report.pdf && \
+    dd if=/dev/zero of=/shares/documents/report.pdf bs=1024 count=2 && \
     echo "draft content" > /shares/documents/draft.txt && \
     echo "log line 1" > /shares/documents/log.txt && \
     echo "app log" > /shares/documents/app.log && \

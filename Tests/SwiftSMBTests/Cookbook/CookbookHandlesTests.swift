@@ -33,7 +33,7 @@ struct CookbookHandlesTests {
             accessMode: .readWrite,
             options: [.create, .append],
         )
-        defer { try? file.close() }
+        do { try? file.close() }
     }
 
     @Test("read upTo compiles and runs")
