@@ -39,7 +39,6 @@ public extension SMB.Error {
         case smb2SetBasicInfo
         case smb2GetMaxReadSize
         case smb2GetMaxWriteSize
-        case smb2DecodeFileNotifyChangeInformation
         case smb2GetFileID
         case smb2ShareEnumSync
         case smbConnectionWriteFromPipeToFile
@@ -82,7 +81,6 @@ public extension SMB.Error {
             case .smb2SetBasicInfo: "smb2_set_basic_info"
             case .smb2GetMaxReadSize: "smb2_get_max_read_size"
             case .smb2GetMaxWriteSize: "smb2_get_max_write_size"
-            case .smb2DecodeFileNotifyChangeInformation: "smb2_decode_filenotifychangeinformation"
             case .smb2GetFileID: "smb2_get_file_id"
             case .smb2ShareEnumSync: "smb2_share_enum_sync"
             case .smbConnectionWriteFromPipeToFile: "SMB.Connection.write(fromPipe:toFile:)"
@@ -106,7 +104,6 @@ public extension SMB.Error {
         case pathMustContainAtLeastOneComponent
         case invalidPathComponent(String)
         case timeoutMustFitInInt32Seconds
-        case byteCountMustBeNonNegative
         case fileAlreadyClosed
         case directoryAlreadyClosed
         case bufferSizeMustBeGreaterThanZero
@@ -124,7 +121,6 @@ public extension SMB.Error {
         case unableToDetermineLocalFileSize
         case byteCountCannotBeRepresentedAsUInt32(Int)
         case directoryFileHandleMissingFileID
-        case failedToAllocateFileNotifyChangeInformation
         case unsupportedShareEnumerationLevel(UInt32)
 
         var description: String {
@@ -135,7 +131,6 @@ public extension SMB.Error {
             case .pathMustContainAtLeastOneComponent: "Path must contain at least one component"
             case let .invalidPathComponent(component): "Invalid path component '\(component)'"
             case .timeoutMustFitInInt32Seconds: "Timeout must fit in Int32 seconds"
-            case .byteCountMustBeNonNegative: "Byte count must be greater than or equal to zero"
             case .fileAlreadyClosed: "File is already closed"
             case .directoryAlreadyClosed: "Directory is already closed"
             case .bufferSizeMustBeGreaterThanZero: "Buffer size must be greater than zero"
@@ -153,7 +148,6 @@ public extension SMB.Error {
             case .unableToDetermineLocalFileSize: "Unable to determine local file size"
             case let .byteCountCannotBeRepresentedAsUInt32(count): "Byte count \(count) cannot be represented as UInt32"
             case .directoryFileHandleMissingFileID: "Directory file handle does not have a file id"
-            case .failedToAllocateFileNotifyChangeInformation: "Failed to allocate file notify change information"
             case let .unsupportedShareEnumerationLevel(level): "Unsupported share enumeration level \(level)"
             }
         }

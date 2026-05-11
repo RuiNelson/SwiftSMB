@@ -1351,9 +1351,3 @@ class Bridge {
 }
 
 // MARK: - String Extensions
-
-private extension String {
-    func withOptionalCString<T>(_ body: (UnsafePointer<CChar>?) throws -> T) rethrows -> T {
-        try withCString { try body($0) }
-    }
-}

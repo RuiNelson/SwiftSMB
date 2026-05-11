@@ -6,8 +6,6 @@
 // Copyright its respective authors
 //
 
-import SMB2
-
 public extension SMB {
     enum SMBStatusSeverity: UInt32, Equatable, CaseIterable, CustomDebugStringConvertible, Sendable {
         case success = 0x0000_0000
