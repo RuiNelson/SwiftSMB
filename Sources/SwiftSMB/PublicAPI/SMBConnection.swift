@@ -53,10 +53,8 @@ public extension SMB {
         deinit {
             cancelNotifyWatchers()
             if let context = takeContext() {
-                try? Bridge.sync {
-                    try? Bridge.disconnectShare(context: context)
-                    Bridge.destroyContext(context)
-                }
+                try? Bridge.disconnectShare(context: context)
+                Bridge.destroyContext(context)
             }
         }
 
@@ -71,9 +69,7 @@ public extension SMB {
         public var negotiatedDialect: UInt16 {
             get throws {
                 let context = try requireContext()
-                return try Bridge.sync {
-                    Bridge.getDialect(on: context)
-                }
+                return Bridge.getDialect(on: context)
             }
         }
 
@@ -84,9 +80,7 @@ public extension SMB {
         public var sessionID: UInt64 {
             get throws {
                 let context = try requireContext()
-                return try Bridge.sync {
-                    try Bridge.getSessionID(context: context)
-                }
+                return try Bridge.getSessionID(context: context)
             }
         }
 
@@ -96,9 +90,7 @@ public extension SMB {
         public var maxReadSize: UInt32 {
             get throws {
                 let context = try requireContext()
-                return try Bridge.sync {
-                    Bridge.getMaxReadSize(context: context)
-                }
+                return Bridge.getMaxReadSize(context: context)
             }
         }
 
@@ -108,9 +100,7 @@ public extension SMB {
         public var maxWriteSize: UInt32 {
             get throws {
                 let context = try requireContext()
-                return try Bridge.sync {
-                    Bridge.getMaxWriteSize(context: context)
-                }
+                return Bridge.getMaxWriteSize(context: context)
             }
         }
 
@@ -126,15 +116,11 @@ public extension SMB {
             guard let context = takeContext() else { return }
 
             do {
-                try Bridge.sync {
-                    try Bridge.disconnectShare(context: context)
-                    Bridge.destroyContext(context)
-                }
+                try Bridge.disconnectShare(context: context)
+                Bridge.destroyContext(context)
             }
             catch {
-                try? Bridge.sync {
-                    Bridge.destroyContext(context)
-                }
+                Bridge.destroyContext(context)
                 throw error
             }
         }
@@ -147,9 +133,7 @@ public extension SMB {
         @discardableResult public func echo() throws -> Double {
             let context = try requireContext()
             let start = DispatchTime.now()
-            try Bridge.sync {
-                try Bridge.echo(context: context)
-            }
+            try Bridge.echo(context: context)
             let end = DispatchTime.now()
             return Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
         }
@@ -170,13 +154,11 @@ public extension SMB {
         ) throws -> File {
             let path = try SMB.validatePath(path, operation: .smb2Open)
             let context = try requireContext()
-            let handle = try Bridge.sync {
-                try Bridge.open(
-                    context: context,
-                    path: path,
-                    flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
-                )
-            }
+            let handle = try Bridge.open(
+                context: context,
+                path: path,
+                flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
+            )
             return File(connection: self, path: path, handle: handle)
         }
 
@@ -188,9 +170,7 @@ public extension SMB {
         public func openDirectory(at path: String = "") throws -> Directory {
             let path = try SMB.validatePath(path, operation: .smb2Opendir, allowRoot: true)
             let context = try requireContext()
-            let handle = try Bridge.sync {
-                try Bridge.openDir(context: context, path: path)
-            }
+            let handle = try Bridge.openDir(context: context, path: path)
             return Directory(connection: self, path: path, handle: handle)
         }
 
@@ -229,9 +209,7 @@ public extension SMB {
             }
             
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.makeDir(context: context, path: path)
-            }
+            try Bridge.makeDir(context: context, path: path)
         }
 
         /// Removes an empty directory.
@@ -241,9 +219,7 @@ public extension SMB {
         public func removeDirectory(at path: String) throws {
             let path = try SMB.validatePath(path, operation: .smb2Rmdir)
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.removeDir(context: context, path: path)
-            }
+            try Bridge.removeDir(context: context, path: path)
         }
 
         /// Removes a file or link.
@@ -253,9 +229,7 @@ public extension SMB {
         public func removeFile(at path: String) throws {
             let path = try SMB.validatePath(path, operation: .smb2Unlink)
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.unlink(context: context, path: path)
-            }
+            try Bridge.unlink(context: context, path: path)
         }
 
         /// Renames or moves a share entry.
@@ -268,9 +242,7 @@ public extension SMB {
             let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
             let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
-            }
+            try Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
         }
 
         /// Truncates a file by path.
@@ -282,9 +254,7 @@ public extension SMB {
         public func truncateFile(at path: String, toLength length: UInt64) throws {
             let path = try SMB.validatePath(path, operation: .smb2Truncate)
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.truncate(context: context, path: path, length: length)
-            }
+            try Bridge.truncate(context: context, path: path, length: length)
         }
 
         /// Reads the destination of a symbolic link.
@@ -297,9 +267,7 @@ public extension SMB {
         public func readLink(at path: String, bufferSize: Int = 4096) throws -> String {
             let path = try SMB.validatePath(path, operation: .smb2Readlink)
             let context = try requireContext()
-            return try Bridge.sync {
-                try Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
-            }
+            return try Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
         }
 
         /// Returns metadata for a path.
@@ -310,9 +278,7 @@ public extension SMB {
         public func stat(at path: String) throws -> Stat {
             let path = try SMB.validatePath(path, operation: .smb2Stat, allowRoot: true)
             let context = try requireContext()
-            return try Bridge.sync {
-                try Stat(Bridge.fileStatistics(context: context, path: path))
-            }
+            return try Stat(Bridge.fileStatistics(context: context, path: path))
         }
         
         /// Changes the timestamps of a file or directory.
@@ -337,16 +303,14 @@ public extension SMB {
         ) throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
-            try Bridge.sync {
-                try Bridge.setStats(
-                    context: context,
-                    path: path,
-                    creationTime: creation,
-                    lastAccessTime: access,
-                    lastWriteTime: write,
-                    changeTime: change,
-                )
-            }
+            try Bridge.setStats(
+                context: context,
+                path: path,
+                creationTime: creation,
+                lastAccessTime: access,
+                lastWriteTime: write,
+                changeTime: change,
+            )
         }
 
         /// Returns the file attributes for a path.
@@ -358,9 +322,7 @@ public extension SMB {
         public func attributes(at path: String) throws -> FileAttributes {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
             let context = try requireContext()
-            let raw = try Bridge.sync {
-                try Bridge.getFileAttributes(context: context, path: path)
-            }
+            let raw = try Bridge.getFileAttributes(context: context, path: path)
             return FileAttributes(rawValue: raw)
         }
 
@@ -383,13 +345,11 @@ public extension SMB {
             let context = try requireContext()
             let current = try attributes(at: path)
             let new = change(current)
-            try Bridge.sync {
-                try Bridge.setStats(
-                    context: context,
-                    path: path,
-                    fileAttributes: new.rawValue,
-                )
-            }
+            try Bridge.setStats(
+                context: context,
+                path: path,
+                fileAttributes: new.rawValue,
+            )
         }
 
         /// Returns filesystem statistics for a path.
@@ -400,9 +360,7 @@ public extension SMB {
         public func statFilesystem(at path: String = "") throws -> FilesystemStat {
             let path = try SMB.validatePath(path, operation: .smb2Statvfs, allowRoot: true)
             let context = try requireContext()
-            return try Bridge.sync {
-                try FilesystemStat(Bridge.statVFS(context: context, path: path))
-            }
+            return try FilesystemStat(Bridge.statVFS(context: context, path: path))
         }
 
         /// Returns the live bridge context or throws if the connection is closed.

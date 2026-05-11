@@ -37,9 +37,7 @@ public extension SMB {
 
         deinit {
             if let handle = takeHandle(), let context = try? connection.requireContext() {
-                try? Bridge.sync {
-                    Bridge.closeDir(context: context, directory: handle)
-                }
+                Bridge.closeDir(context: context, directory: handle)
             }
         }
 
@@ -56,9 +54,7 @@ public extension SMB {
                   let context = try? connection.requireContext() else {
                 return
             }
-            try? Bridge.sync {
-                Bridge.closeDir(context: context, directory: handle)
-            }
+            Bridge.closeDir(context: context, directory: handle)
         }
 
         /// Reads the next directory entry.
@@ -68,9 +64,7 @@ public extension SMB {
         public func readNext() throws -> DirectoryEntry? {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Readdir)
-            return try Bridge.sync {
-                Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
-            }
+            return Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
         }
 
         /// Rewinds the directory stream to the beginning.
@@ -79,9 +73,7 @@ public extension SMB {
         public func rewind() throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Rewinddir)
-            try Bridge.sync {
-                Bridge.rewindDir(context: context, directory: handle)
-            }
+            Bridge.rewindDir(context: context, directory: handle)
         }
 
         /// Returns the current directory stream location.
@@ -91,9 +83,7 @@ public extension SMB {
         public func tell() throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Telldir)
-            return try Bridge.sync {
-                Bridge.tellDir(context: context, directory: handle)
-            }
+            return Bridge.tellDir(context: context, directory: handle)
         }
 
         /// Moves the directory stream to a previous location.
@@ -103,9 +93,7 @@ public extension SMB {
         public func seek(to location: Int) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Seekdir)
-            try Bridge.sync {
-                Bridge.seekDir(context: context, directory: handle, location: location)
-            }
+            Bridge.seekDir(context: context, directory: handle, location: location)
         }
 
         /// Returns the live bridge handle or throws if the directory is closed.

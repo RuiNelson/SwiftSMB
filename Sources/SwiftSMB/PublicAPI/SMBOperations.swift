@@ -29,22 +29,18 @@ public extension SMB {
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false,
     ) throws -> [Share] {
-        let context = try Bridge.sync {
-            try Bridge.createContext()
-        }
+        let context = try Bridge.createContext()
         defer { Bridge.destroyContext(context) }
 
         try configure(context, with: configuration)
         configureCredentials(credentials, server: server, on: context)
 
-        return try Bridge.sync {
-            try Bridge.listShares(
-                context: context,
-                server: server.address,
-                user: credentials?.user,
-                includeHidden: includeHidden,
-            ).map(Share.init)
-        }
+        return try Bridge.listShares(
+            context: context,
+            server: server.address,
+            user: credentials?.user,
+            includeHidden: includeHidden,
+        ).map(Share.init)
     }
 
     /// Connects to an SMB share.
@@ -69,21 +65,17 @@ public extension SMB {
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try Bridge.sync {
-            try Bridge.createContext()
-        }
+        let context = try Bridge.createContext()
 
         do {
             try configure(context, with: configuration)
             configureCredentials(credentials, server: server, on: context)
-            try Bridge.sync {
-                try Bridge.connectShare(
-                    context: context,
-                    server: server.address,
-                    share: share,
-                    user: credentials?.user,
-                )
-            }
+            try Bridge.connectShare(
+                context: context,
+                server: server.address,
+                share: share,
+                user: credentials?.user,
+            )
             return Connection(server: server, share: share, configuration: configuration, context: context)
         }
         catch {
@@ -98,19 +90,15 @@ public extension SMB {
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
     static func parseURL(_ string: String) throws -> ParsedURL {
-        let context = try Bridge.sync {
-            try Bridge.createContext()
-        }
+        let context = try Bridge.createContext()
         defer { Bridge.destroyContext(context) }
 
-        return try Bridge.sync {
-            let parsedURL = try ParsedURL(Bridge.parseURL(string, context: context))
-            try validateShareName(parsedURL.share, operation: .smb2ParseURL)
-            if let path = parsedURL.path {
-                try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
-            }
-            return parsedURL
+        let parsedURL = try ParsedURL(Bridge.parseURL(string, context: context))
+        try validateShareName(parsedURL.share, operation: .smb2ParseURL)
+        if let path = parsedURL.path {
+            try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
         }
+        return parsedURL
     }
 
     /// Applies negotiation options to a context before connection.

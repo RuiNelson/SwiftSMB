@@ -376,13 +376,11 @@ public extension SMB.Connection {
     ) throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
-        let directory = try Bridge.sync {
-            try Bridge.open(
-                context: context,
-                path: path,
-                flags: Bridge.OpenFlags(.readOnly, options: [.directory]),
-            )
-        }
+        let directory = try Bridge.open(
+            context: context,
+            path: path,
+            flags: Bridge.OpenFlags(.readOnly, options: [.directory]),
+        )
         let callbacks = SMBNotifyWatcherCallbacks()
         let state = SMBNotifyWatcherState(
             context: context,
@@ -574,21 +572,17 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
         while !isCancellationRequested {
             do {
-                let request = try Bridge.sync {
-                    try Bridge.notifyChange(
-                        context: context,
-                        directory: directory,
-                        flags: options,
-                        filter: filter,
-                    ) { [weak self] result in
-                        self?.complete(result)
-                    }
+                let request = try Bridge.notifyChange(
+                    context: context,
+                    directory: directory,
+                    flags: options,
+                    filter: filter,
+                ) { [weak self] result in
+                    self?.complete(result)
                 }
 
                 guard setPendingRequest(request) else {
-                    try Bridge.sync {
-                        Bridge.cancel(context: context, request: request)
-                    }
+                    Bridge.cancel(context: context, request: request)
                     return
                 }
 
@@ -600,9 +594,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                         break
                     }
 
-                    try Bridge.sync {
-                        try Bridge.serviceNotifyEvents(context: context)
-                    }
+                    try Bridge.serviceNotifyEvents(context: context)
                 }
             }
             catch {
@@ -685,14 +677,10 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Cancels pending bridge work and closes the watcher directory handle.
     private func cleanUp() {
         if let request = takePendingRequest() {
-            try? Bridge.sync {
-                Bridge.cancel(context: context, request: request)
-            }
+            Bridge.cancel(context: context, request: request)
         }
 
-        try? Bridge.sync {
-            try Bridge.close(context: context, file: directory)
-        }
+        try? Bridge.close(context: context, file: directory)
         finish()
         onFinish(id)
         protectedDidCleanUp.current = true
