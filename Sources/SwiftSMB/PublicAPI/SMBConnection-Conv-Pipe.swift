@@ -53,7 +53,7 @@ public extension SMB.Connection {
     ///   - averageSpeed: The average transfer rate since the operation began,
     ///     in bytes per second.
     /// - Returns: `true` to continue the transfer, or `false` to cancel it.
-    typealias PipeProgress = (UInt64, Double, Double) -> Bool
+    typealias PipeProgress = @Sendable (UInt64, Double, Double) -> Bool
 
     /// Writes data from a pipe to a file on the SMB share.
     ///
@@ -243,7 +243,6 @@ public extension SMB.Connection {
 
         let startup = DispatchSemaphore(value: 0)
         let startupError = Protected<Swift.Error?>(nil, label: "SwiftSMB.SMB.Connection.read.startupError")
-        nonisolated(unsafe) let callback = continuation
 
         DispatchQueue.global().async {
             var didSignalReady = false
@@ -272,7 +271,7 @@ public extension SMB.Connection {
                     guard !data.isEmpty else {
                         // EOF is reported as both final progress and .finish so high-level
                         // file transfers can delay their own final callback until commit.
-                        _ = callback(
+                        _ = continuation(
                             transferred,
                             0,
                             speed(bytes: transferred, from: operationStart, to: .now()),
@@ -289,7 +288,7 @@ public extension SMB.Connection {
                     let end = DispatchTime.now()
                     let latestSpeed = speed(bytes: UInt64(data.count), from: blockStart, to: end)
                     let averageSpeed = speed(bytes: transferred, from: operationStart, to: end)
-                    guard callback(transferred, latestSpeed, averageSpeed) else {
+                    guard continuation(transferred, latestSpeed, averageSpeed) else {
                         // Caller cancellation is a clean stop: sent data remains readable
                         // and the terminal package is .finish, not .broken.
                         try? file.close()
@@ -329,7 +328,7 @@ public extension SMB.Connection {
     ///   - averageSpeed: The average transfer rate since the operation began,
     ///     in bytes per second.
     /// - Returns: `true` to continue the transfer, or `false` to cancel it.
-    typealias FileProgress = (UInt64, UInt64, Double, Double) -> Bool
+    typealias FileProgress = @Sendable (UInt64, UInt64, Double, Double) -> Bool
 
     /// Downloads a file from the SMB share to a local URL.
     ///
@@ -521,8 +520,8 @@ public extension SMB.Connection {
             }
         }
 
-        var reportedBytes: UInt64 = 0
-        var finalAverageSpeed: Double = 0
+        let reportedBytes = Protected<UInt64>(0, label: "SwiftSMB.SMB.Connection.downloadFile.reportedBytes")
+        let finalAverageSpeed = Protected<Double>(0, label: "SwiftSMB.SMB.Connection.downloadFile.finalAverageSpeed")
 
         do {
             try read(
@@ -536,19 +535,19 @@ public extension SMB.Connection {
                 // sends a terminal package instead of filling a pipe nobody wants.
                 if consumerError.current != nil {
                     cancelled.current = true
-                    finalAverageSpeed = averageSpeed
+                    finalAverageSpeed.current = averageSpeed
                     return false
                 }
 
                 // read(fromFile:toPipe:) emits a final progress call with the same
                 // byte count and latestSpeed == 0. Save the final average, but let
                 // downloadFile report completion only after the temp file is moved.
-                if completed == reportedBytes, latestSpeed == 0 {
-                    finalAverageSpeed = averageSpeed
+                if completed == reportedBytes.current, latestSpeed == 0 {
+                    finalAverageSpeed.current = averageSpeed
                     return true
                 }
 
-                reportedBytes = completed
+                reportedBytes.current = completed
                 let shouldContinue = continuation(completed, totalBytes, latestSpeed, averageSpeed)
                 if !shouldContinue {
                     cancelled.current = true
@@ -570,7 +569,7 @@ public extension SMB.Connection {
                 try FileManager.default.moveItem(at: tempFile, to: local)
             }
             shouldRemoveTemp = false
-            _ = continuation(reportedBytes, totalBytes, 0, finalAverageSpeed)
+            _ = continuation(reportedBytes.current, totalBytes, 0, finalAverageSpeed.current)
         }
         catch {
             cancelled.current = true
@@ -756,8 +755,8 @@ public extension SMB.Connection {
             }
         }
 
-        var reportedBytes: UInt64 = 0
-        var finalAverageSpeed: Double = 0
+        let reportedBytes = Protected<UInt64>(0, label: "SwiftSMB.SMB.Connection.uploadFile.reportedBytes")
+        let finalAverageSpeed = Protected<Double>(0, label: "SwiftSMB.SMB.Connection.uploadFile.finalAverageSpeed")
 
         do {
             let openOptions: SMB.File.OpenOptions = if atomic {
@@ -774,12 +773,12 @@ public extension SMB.Connection {
                 options: openOptions,
                 maxBlockSize: maxBlockSize,
             ) { completed, latestSpeed, averageSpeed in
-                if completed == reportedBytes, latestSpeed == 0 {
-                    finalAverageSpeed = averageSpeed
+                if completed == reportedBytes.current, latestSpeed == 0 {
+                    finalAverageSpeed.current = averageSpeed
                     return true
                 }
 
-                reportedBytes = completed
+                reportedBytes.current = completed
                 let shouldContinue = continuation(completed, totalBytes, latestSpeed, averageSpeed)
                 if !shouldContinue {
                     cancelled.current = true
@@ -838,7 +837,7 @@ public extension SMB.Connection {
                 shouldRemoveRemoteTemp = false
             }
 
-            _ = continuation(reportedBytes, totalBytes, 0, finalAverageSpeed)
+            _ = continuation(reportedBytes.current, totalBytes, 0, finalAverageSpeed.current)
         }
         catch {
             cancelled.current = true

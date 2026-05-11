@@ -18,6 +18,41 @@ extension Bridge {
         let raw: OpaquePointer
     }
 
+    struct FileID: Equatable {
+        var raw: smb2_file_id
+
+        static let allOnes = FileID((
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+        ))
+
+        init(_ raw: smb2_file_id) {
+            self.raw = raw
+        }
+
+        static func == (lhs: FileID, rhs: FileID) -> Bool {
+            withUnsafeBytes(of: lhs.raw) { lhsBytes in
+                withUnsafeBytes(of: rhs.raw) { rhsBytes in
+                    lhsBytes.elementsEqual(rhsBytes)
+                }
+            }
+        }
+    }
+
     enum AuthenticationMethod: Equatable {
         case automatic
         case ntlmssp
@@ -339,19 +374,6 @@ extension Bridge {
         init(_ change: smb2_file_notify_change_information) {
             action = NotifyChangeAction(rawValue: change.action)
             name = change.name.map(String.init(cString:)) ?? ""
-        }
-
-        static func changes(from firstChange: UnsafeMutablePointer<smb2_file_notify_change_information>)
-        -> [NotifyChange] {
-            var changes: [NotifyChange] = []
-            var change: UnsafeMutablePointer<smb2_file_notify_change_information>? = firstChange
-
-            while let currentChange = change {
-                changes.append(NotifyChange(currentChange.pointee))
-                change = currentChange.pointee.next
-            }
-
-            return changes
         }
     }
 

@@ -302,8 +302,7 @@ class Bridge {
         into buffer: consuming MutableRawSpan,
         offset: UInt64,
     ) throws -> Int {
-        var buffer = buffer
-        return try sync {
+        try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Pread)
             let status = buffer.withUnsafeMutableBytes { bytes in
                 bytes.bindMemory(to: UInt8.self).baseAddress.map {
@@ -349,8 +348,7 @@ class Bridge {
         file: FileHandle,
         into buffer: consuming MutableRawSpan,
     ) throws -> Int {
-        var buffer = buffer
-        return try sync {
+        try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Read)
             let status = buffer.withUnsafeMutableBytes { bytes in
                 bytes.bindMemory(to: UInt8.self).baseAddress.map {
@@ -631,7 +629,10 @@ class Bridge {
         let status = path.withCString { smb2_readlink(context.raw, $0, &buffer, count) }
         try check(status, context: context, operation: "smb2_readlink")
         return buffer.withUnsafeBufferPointer { pointer in
-            String(cString: pointer.baseAddress!)
+            guard let baseAddress = pointer.baseAddress else {
+                return ""
+            }
+            return String(cString: baseAddress)
         }
     }
 
@@ -1028,37 +1029,17 @@ class Bridge {
         let callbackData = Unmanaged.passRetained(state).toOpaque()
         defer { Unmanaged<SetStatsState>.fromOpaque(callbackData).release() }
 
-        let fileIDAllOnes: (
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-        ) =
-            (0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
-
         try path.withCString { pathPointer in
             try withUnsafeMutablePointer(to: &info) { infoPointer in
                 var cr_req = smb2_create_request(
                     security_flags: 0,
                     requested_oplock_level: 0,
-                    impersonation_level: 2,
+                    impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
                     smb_create_flags: 0,
-                    desired_access: 0x4000_0000,
+                    desired_access: UInt32(SMB2_GENERIC_WRITE),
                     file_attributes: 0,
-                    share_access: 0x0000_0001 | 0x0000_0002,
-                    create_disposition: 1,
+                    share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE),
+                    create_disposition: UInt32(SMB2_FILE_OPEN),
                     create_options: 0,
                     name_offset: 0,
                     name_length: 0,
@@ -1078,7 +1059,7 @@ class Bridge {
                     buffer_length: 0,
                     buffer_offset: 0,
                     additional_information: 0,
-                    file_id: fileIDAllOnes,
+                    file_id: FileID.allOnes.raw,
                     input_data: infoPointer,
                 )
 
@@ -1089,8 +1070,8 @@ class Bridge {
                 smb2_add_compound_pdu(context.raw, pdu, next_pdu)
 
                 var cl_req = smb2_close_request(
-                    flags: 1,
-                    file_id: fileIDAllOnes,
+                    flags: UInt16(SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB),
+                    file_id: FileID.allOnes.raw,
                 )
 
                 guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, setStatsCloseCallback, callbackData) else {
@@ -1139,36 +1120,16 @@ class Bridge {
 
         defer { Unmanaged<QueryAttributesState>.fromOpaque(callbackData).release() }
 
-        let fileIDAllOnes: (
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-            UInt8,
-        ) =
-            (0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
-
         return try path.withCString { pathPointer in
             var cr_req = smb2_create_request(
                 security_flags: 0,
                 requested_oplock_level: 0,
-                impersonation_level: 2,
+                impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
                 smb_create_flags: 0,
-                desired_access: 0x0000_0080,
+                desired_access: UInt32(SMB2_FILE_READ_ATTRIBUTES),
                 file_attributes: 0,
-                share_access: 0x0000_0001 | 0x0000_0002,
-                create_disposition: 1,
+                share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE),
+                create_disposition: UInt32(SMB2_FILE_OPEN),
                 create_options: 0,
                 name_offset: 0,
                 name_length: 0,
@@ -1191,7 +1152,7 @@ class Bridge {
                 input_buffer: nil,
                 additional_information: 0,
                 flags: 0,
-                file_id: fileIDAllOnes,
+                file_id: FileID.allOnes.raw,
                 input: nil,
             )
 
@@ -1208,7 +1169,7 @@ class Bridge {
 
             var cl_req = smb2_close_request(
                 flags: 0,
-                file_id: fileIDAllOnes,
+                file_id: FileID.allOnes.raw,
             )
 
             guard let close_pdu = smb2_cmd_close_async(

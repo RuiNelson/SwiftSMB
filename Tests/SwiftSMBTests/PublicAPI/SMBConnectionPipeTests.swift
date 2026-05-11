@@ -10,6 +10,13 @@ import Foundation
 import SwiftSMB
 import Testing
 
+final class SendableBox<Value>: @unchecked Sendable {
+    var value: Value
+    init(_ value: Value) {
+        self.value = value
+    }
+}
+
 @Suite(.serialized, .tags(.integration))
 struct SMBConnectionPipeTests {
     @Test("write from pipe stores remote file")
@@ -26,14 +33,14 @@ struct SMBConnectionPipeTests {
         pipe.send(.data(Data([0x03, 0x04])))
         pipe.send(.finish)
 
-        var progress: [UInt64] = []
+        let progress = SendableBox<[UInt64]>([])
         try connection.write(fromPipe: pipe, toFile: path) { transferred, _, _ in
-            progress.append(transferred)
+            progress.value.append(transferred)
             return true
         }
 
         #expect(try connection.loadFile(at: path) == Data([0x01, 0x02, 0x03, 0x04]))
-        #expect(progress.last == 4)
+        #expect(progress.value.last == 4)
     }
 
     @Test("write from broken pipe throws")
@@ -95,9 +102,9 @@ struct SMBConnectionPipeTests {
         try connection.dumpToFile(expected, to: path)
 
         let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.read")
-        var progress: [UInt64] = []
+        let progress = SendableBox<[UInt64]>([])
         try connection.read(fromFile: path, toPipe: pipe) { transferred, _, _ in
-            progress.append(transferred)
+            progress.value.append(transferred)
             return true
         }
 
@@ -118,7 +125,7 @@ struct SMBConnectionPipeTests {
         }
 
         #expect(received == expected)
-        #expect(progress.last == UInt64(expected.count))
+        #expect(progress.value.last == UInt64(expected.count))
     }
 
     @Test("read to pipe honors max block size")
@@ -133,9 +140,9 @@ struct SMBConnectionPipeTests {
         try connection.dumpToFile(expected, to: path)
 
         let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.readBlockSize")
-        var progress: [UInt64] = []
+        let progress = SendableBox<[UInt64]>([])
         try connection.read(fromFile: path, toPipe: pipe, maxBlockSize: 2) { transferred, _, _ in
-            progress.append(transferred)
+            progress.value.append(transferred)
             return true
         }
 
@@ -156,7 +163,7 @@ struct SMBConnectionPipeTests {
         }
 
         #expect(received == expected)
-        #expect(progress == [2, 4, 4])
+        #expect(progress.value == [2, 4, 4])
     }
 
     @Test("upload file writes remote file")
@@ -173,18 +180,18 @@ struct SMBConnectionPipeTests {
         let expected = Data((0 ..< 17).map { UInt8($0) })
         try expected.write(to: local)
 
-        var progress: [UInt64] = []
-        var latestSpeeds: [Double] = []
+        let progress = SendableBox<[UInt64]>([])
+        let latestSpeeds = SendableBox<[Double]>([])
         try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, total, latestSpeed, _ in
-            progress.append(transferred)
-            latestSpeeds.append(latestSpeed)
+            progress.value.append(transferred)
+            latestSpeeds.value.append(latestSpeed)
             #expect(total == UInt64(expected.count))
             return true
         }
 
         #expect(try connection.loadFile(at: remote) == expected)
-        #expect(progress.last == UInt64(expected.count))
-        #expect(latestSpeeds.last == 0)
+        #expect(progress.value.last == UInt64(expected.count))
+        #expect(latestSpeeds.value.last == 0)
     }
 
     @Test("atomic upload replaces existing remote file")
@@ -223,19 +230,19 @@ struct SMBConnectionPipeTests {
         let expected = Data((0 ..< 19).map { UInt8(255 - $0) })
         try connection.dumpToFile(expected, to: remote)
 
-        var progress: [UInt64] = []
-        var latestSpeeds: [Double] = []
+        let progress = SendableBox<[UInt64]>([])
+        let latestSpeeds = SendableBox<[Double]>([])
         try connection
             .downloadFile(remote: remote, local: local, maxBlockSize: 5) { transferred, total, latestSpeed, _ in
-                progress.append(transferred)
-                latestSpeeds.append(latestSpeed)
+                progress.value.append(transferred)
+                latestSpeeds.value.append(latestSpeed)
                 #expect(total == UInt64(expected.count))
                 return true
             }
 
         #expect(try Data(contentsOf: local) == expected)
-        #expect(progress.last == UInt64(expected.count))
-        #expect(latestSpeeds.last == 0)
+        #expect(progress.value.last == UInt64(expected.count))
+        #expect(latestSpeeds.value.last == 0)
     }
 
     @Test("download with offset resumes into local file")
@@ -253,7 +260,7 @@ struct SMBConnectionPipeTests {
         try connection.dumpToFile(expected, to: remote)
         try expected.prefix(4).write(to: local)
 
-        var totals: [UInt64] = []
+        let totals = SendableBox<[UInt64]>([])
         try connection
             .downloadFile(
                 remote: remote,
@@ -261,13 +268,13 @@ struct SMBConnectionPipeTests {
                 from: .offset(byte: 4),
                 maxBlockSize: 3,
             ) { transferred, total, _, _ in
-                totals.append(total)
+                totals.value.append(total)
                 #expect(transferred <= total)
                 return true
             }
 
         #expect(try Data(contentsOf: local) == expected)
-        #expect(totals.last == 6)
+        #expect(totals.value.last == 6)
     }
 
     @Test("upload with offset resumes from local file")
@@ -285,7 +292,7 @@ struct SMBConnectionPipeTests {
         try expected.write(to: local)
         try connection.dumpToFile(expected.prefix(4), to: remote)
 
-        var totals: [UInt64] = []
+        let totals = SendableBox<[UInt64]>([])
         try connection
             .uploadFile(
                 local: local,
@@ -293,13 +300,13 @@ struct SMBConnectionPipeTests {
                 from: .offset(byte: 4),
                 maxBlockSize: 3,
             ) { transferred, total, _, _ in
-                totals.append(total)
+                totals.value.append(total)
                 #expect(transferred <= total)
                 return true
             }
 
         #expect(try connection.loadFile(at: remote) == expected)
-        #expect(totals.last == 6)
+        #expect(totals.value.last == 6)
     }
 
     @Test("nonatomic upload writes remote file")
@@ -347,36 +354,36 @@ struct SMBConnectionPipeTests {
             try? FileManager.default.removeItem(at: downloadLocal)
         }
 
-        var uploadProgress: [UInt64] = []
+        let uploadProgress = SendableBox<[UInt64]>([])
         try connection
             .uploadFile(
                 local: uploadLocal,
                 remote: uploadRemote,
                 maxBlockSize: 4,
             ) { transferred, total, latestSpeed, _ in
-                uploadProgress.append(transferred)
+                uploadProgress.value.append(transferred)
                 #expect(total == 0)
                 #expect(latestSpeed == 0)
                 return true
             }
         #expect(try connection.stat(at: uploadRemote).size == 0)
-        #expect(uploadProgress == [0])
+        #expect(uploadProgress.value == [0])
 
         try connection.dumpToFile(Data(), to: downloadRemote)
-        var downloadProgress: [UInt64] = []
+        let downloadProgress = SendableBox<[UInt64]>([])
         try connection
             .downloadFile(
                 remote: downloadRemote,
                 local: downloadLocal,
                 maxBlockSize: 4,
             ) { transferred, total, latestSpeed, _ in
-                downloadProgress.append(transferred)
+                downloadProgress.value.append(transferred)
                 #expect(total == 0)
                 #expect(latestSpeed == 0)
                 return true
             }
         #expect(try Data(contentsOf: downloadLocal).isEmpty)
-        #expect(downloadProgress == [0])
+        #expect(downloadProgress.value == [0])
     }
 
     @Test("download cancellation does not throw")
@@ -488,16 +495,16 @@ struct SMBConnectionPipeTests {
         }
         try handle.close()
 
-        var progress: [UInt64] = []
+        let progress = SendableBox<[UInt64]>([])
         try connection.uploadFile(local: local, remote: remote) { transferred, total, _, _ in
-            progress.append(transferred)
+            progress.value.append(transferred)
             #expect(total == 100 * 1024 * 1024)
             return true
         }
 
         let remoteStat = try connection.stat(at: remote)
         #expect(remoteStat.size == 100 * 1024 * 1024)
-        #expect(progress.last == 100 * 1024 * 1024)
+        #expect(progress.value.last == 100 * 1024 * 1024)
 
         let file = try connection.openFile(at: remote, accessMode: .readOnly)
         defer { try? file.close() }
@@ -526,16 +533,16 @@ struct SMBConnectionPipeTests {
         let data = Data(repeating: 0xCD, count: 100 * 1024 * 1024)
         try connection.dumpToFile(data, to: remote)
 
-        var progress: [UInt64] = []
+        let progress = SendableBox<[UInt64]>([])
         try connection.downloadFile(remote: remote, local: local) { transferred, total, _, _ in
-            progress.append(transferred)
+            progress.value.append(transferred)
             #expect(total == 100 * 1024 * 1024)
             return true
         }
 
         let localSize = try (FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.uint64Value
         #expect(localSize == 100 * 1024 * 1024)
-        #expect(progress.last == 100 * 1024 * 1024)
+        #expect(progress.value.last == 100 * 1024 * 1024)
 
         let handle = try FileHandle(forReadingFrom: local)
         defer { try? handle.close() }
