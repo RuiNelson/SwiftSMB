@@ -232,13 +232,13 @@ public extension SMB {
             try Bridge.unlink(context: context, path: path)
         }
 
-        /// Renames or moves a share entry.
+        /// Moves or renames a share entry.
         ///
         /// - Parameters:
         ///   - oldPath: The current path, relative to the share root.
         ///   - newPath: The destination path, relative to the share root.
-        /// - Throws: ``SMB/Error`` if the rename fails.
-        public func rename(from oldPath: String, to newPath: String) throws {
+        /// - Throws: ``SMB/Error`` if the move fails.
+        public func move(from oldPath: String, to newPath: String) throws {
             let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
             let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
             let context = try requireContext()

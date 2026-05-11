@@ -322,6 +322,16 @@ public extension SMB {
         /// The maximum supported file name length.
         public let maximumNameLength: UInt32
 
+        /// The number of free bytes on the filesystem.
+        public var freeBytes: UInt64 {
+            UInt64(blockSize) * freeBlocks
+        }
+
+        /// The number of bytes available to the current user.
+        public var availableBytes: UInt64 {
+            UInt64(blockSize) * availableBlocks
+        }
+
         /// Creates a public filesystem stat value from a bridge value.
         init(_ bridgeValue: Bridge.VFSStat) {
             blockSize = bridgeValue.blockSize
@@ -338,7 +348,7 @@ public extension SMB {
         }
 
         public var debugDescription: String {
-            "SMB.FilesystemStat(blockSize: \(blockSize), fragmentSize: \(fragmentSize), blocks: \(blocks), freeBlocks: \(freeBlocks), availableBlocks: \(availableBlocks), fileCount: \(fileCount), freeFileCount: \(freeFileCount), availableFileCount: \(availableFileCount), filesystemID: \(filesystemID), flags: \(flags), maximumNameLength: \(maximumNameLength))"
+            "SMB.FilesystemStat(blockSize: \(blockSize), fragmentSize: \(fragmentSize), blocks: \(blocks), freeBlocks: \(freeBlocks), availableBlocks: \(availableBlocks), freeBytes: \(freeBytes), availableBytes: \(availableBytes), fileCount: \(fileCount), freeFileCount: \(freeFileCount), availableFileCount: \(availableFileCount), filesystemID: \(filesystemID), flags: \(flags), maximumNameLength: \(maximumNameLength))"
         }
     }
 

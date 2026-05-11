@@ -811,7 +811,7 @@ public extension SMB.Connection {
                     // aside first. This gives us a chance to restore it if the final rename
                     // fails after the upload itself has completed.
                     let backupPath = try uniqueRemoteTemporaryPath(near: remote, on: self)
-                    try rename(from: remote, to: backupPath)
+                    try move(from: remote, to: backupPath)
                     backup = backupPath
                 case .directory, .other:
                     throw SMB.Error.invalidArgument(
@@ -821,13 +821,13 @@ public extension SMB.Connection {
                 }
 
                 do {
-                    try rename(from: target, to: remote)
+                    try move(from: target, to: remote)
                 }
                 catch {
                     if let backup {
                         // Best-effort rollback: preserving the user's existing file matters
                         // more than surfacing a secondary cleanup failure here.
-                        try? rename(from: backup, to: remote)
+                        try? move(from: backup, to: remote)
                     }
                     throw error
                 }
