@@ -22,8 +22,8 @@ try connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf"
 ) { completed, total, lastBlockSpeed, averageSpeed in
-    let speed = 0.5 * lastBlockSpeed + 0.5 * averageSpeed
-    print("Uploaded \(completed) of \(total) bytes at \(round(speed / 1000.0)) kB/s")
+    let speed = 0.5 * Double(lastBlockSpeed) + 0.5 * Double(averageSpeed)
+    print("Uploaded \(completed) of \(total) bytes at \(round(speed / 1024.0)) kiB/s")
     return true
 }
 ```
@@ -67,7 +67,7 @@ let data = try connection.loadFile(at: "Anna/Inbox/report.pdf")
 print("Loaded \(data.count) bytes")
 ```
 
-## Writing data to a file
+## Writing to a file from memory
 
 ``SMB.Connection.dumpToFile(_:to:options:chunkSize:)`` writes a `Data` value to a share path. By default it creates the file if needed and truncates any existing content:
 
@@ -92,6 +92,6 @@ try connection.dumpToFile(
 Both upload and download accept an optional `chunkSize`. The library clamps the value to the server's maximum automatically, so you can safely request a large block size:
 
 ```swift
-let maxRead = try connection.acceptedReadBlockSize(1024 * 1024)
+let maxRead = try connection.acceptedReadBlockSize(128 * 1024 * 1024)
 let data = try connection.loadFile(at: "big.bin", chunkSize: maxRead)
 ```
