@@ -111,6 +111,10 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
 
+## Concurrency & Dispatch
+
+- **Never use `DispatchQueue.global()`.** The global concurrent queue has a limited thread pool subject to exhaustion under heavy system load. Blocking work dispatched there can hang when all threads are occupied, because a caller waiting on a semaphore or pipe may never see the dispatched block execute. Use dedicated serial dispatch queues (created with `DispatchQueue(label:)`) for all async work, especially producer/consumer patterns that rely on semaphore-based backpressure like `DataPipe`.
+
 ## Code Style & Commits
 
 - **Before committing**, always format the Swift source code with `swiftformat`:
