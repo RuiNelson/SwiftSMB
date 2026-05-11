@@ -199,7 +199,7 @@ public extension SMB {
         /// - Returns: The number of bytes written.
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
-        public func write(_ data: Data) throws -> Int {
+        func _write(_ data: Data) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Write)
             return try data.withUnsafeBytes { rawBuffer in
@@ -215,7 +215,7 @@ public extension SMB {
         /// - Returns: The number of bytes written.
         /// - Throws: ``SMB/Error`` if the write fails.
         @discardableResult
-        public func write(_ data: Data, atOffset offset: UInt64) throws -> Int {
+        func _write(_ data: Data, atOffset offset: UInt64) throws -> Int {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Pwrite)
             return try data.withUnsafeBytes { rawBuffer in

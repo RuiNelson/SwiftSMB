@@ -37,13 +37,13 @@ public extension SMB.File {
     /// - Returns: The total number of bytes written.
     /// - Throws: ``SMB/Error`` if any write fails or no progress is made.
     @discardableResult
-    func writeAll(_ data: Data, chunkSize: Int? = nil) throws -> Int {
+    func write(_ data: Data, chunkSize: Int? = nil) throws -> Int {
         let resolvedChunkSize = try connection.acceptedWriteBlockSize(chunkSize)
         var written = 0
 
         while written < data.count {
             let end = min(written + resolvedChunkSize, data.count)
-            let count = try write(data.subdata(in: written ..< end))
+            let count = try _write(data.subdata(in: written ..< end))
             guard count > 0 else {
                 throw SMB.Error.unknown(
                     operation: "smb2_write",

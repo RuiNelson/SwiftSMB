@@ -70,7 +70,7 @@ let footer = try file.read(upToByteCount: 1024, atOffset: fileSize - 1024)
 
 ## Writing to a file handle
 
-Write at the current offset:
+Write all data in a loop, automatically splitting into accepted block sizes:
 
 ```swift
 let file = try connection.openFile(
@@ -80,19 +80,7 @@ let file = try connection.openFile(
 )
 defer { try? file.close() }
 
-let written = try file.write(someData)
-```
-
-Write at an explicit offset:
-
-```swift
-try file.write(patchData, atOffset: 4096)
-```
-
-Write all data in a loop, automatically splitting into accepted block sizes:
-
-```swift
-try file.writeAll(largeData, chunkSize: 256 * 1024)
+try file.write(largeData)
 ```
 
 ## Seeking
@@ -123,7 +111,7 @@ print("Modified: \(info.modificationTime)")
 ## Truncating a file handle
 
 ```swift
-try file.truncate(toLength: 0)
+try file.truncate(toLength: 1024)
 ```
 
 ## Flushing writes

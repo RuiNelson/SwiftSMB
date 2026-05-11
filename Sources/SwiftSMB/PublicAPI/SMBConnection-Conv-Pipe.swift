@@ -179,7 +179,7 @@ public extension SMB.Connection {
                     let blockEnd = min(dataOffset + blockSize, data.count)
                     let block = data.subdata(in: dataOffset ..< blockEnd)
                     let blockStart = DispatchTime.now()
-                    let written = try file.write(block, atOffset: remoteOffset)
+                    let written = try file._write(block, atOffset: remoteOffset)
                     guard written > 0 else {
                         throw SMB.Error.unknown(
                             operation: "smb2_write",
@@ -694,7 +694,7 @@ public extension SMB.Connection {
                 while dataOffset < data.count {
                     // Continue from dataOffset because SMB writes may accept only a
                     // prefix of the buffer even when the read returned a full chunk.
-                    let written = try output.write(data.subdata(in: dataOffset ..< data.count), atOffset: copied)
+                    let written = try output._write(data.subdata(in: dataOffset ..< data.count), atOffset: copied)
                     guard written > 0 else {
                         throw SMB.Error.unknown(
                             operation: "smb2_write",

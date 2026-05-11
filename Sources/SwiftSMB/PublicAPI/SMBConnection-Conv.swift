@@ -81,7 +81,7 @@ public extension SMB.Connection {
         let path = try SMB.validatePath(path, operation: .smbConnectionWriteFile)
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
         defer { try? file.close() }
-        _ = try file.writeAll(data, chunkSize: chunkSize)
+        _ = try file.write(data, chunkSize: chunkSize)
     }
 
     /// Lists all entries in a directory.
