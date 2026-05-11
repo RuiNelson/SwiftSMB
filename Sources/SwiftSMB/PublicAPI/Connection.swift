@@ -42,22 +42,6 @@ public extension SMB {
             }
         }
 
-        /// Creates a connection around an already connected bridge context.
-        init(server: Server, share: String, configuration: Configuration, context: Bridge.Context) {
-            self.server = server
-            self.share = share
-            self.configuration = configuration
-            self.context = context
-        }
-
-        deinit {
-            cancelNotifyWatchers()
-            if let context = takeContext() {
-                try? Bridge.disconnectShare(context: context)
-                Bridge.destroyContext(context)
-            }
-        }
-
         /// A Boolean value indicating whether the connection still owns an open context.
         public var isConnected: Bool {
             context != nil
@@ -103,6 +87,24 @@ public extension SMB {
                 return Bridge.getMaxWriteSize(context: context)
             }
         }
+        
+        // MARK: Lifecycle
+        
+        /// Creates a connection around an already connected bridge context.
+        init(server: Server, share: String, configuration: Configuration, context: Bridge.Context) {
+            self.server = server
+            self.share = share
+            self.configuration = configuration
+            self.context = context
+        }
+        
+        deinit {
+            cancelNotifyWatchers()
+            if let context = takeContext() {
+                try? Bridge.disconnectShare(context: context)
+                Bridge.destroyContext(context)
+            }
+        }
 
         /// Disconnects from the share and destroys the underlying context.
         ///
@@ -137,6 +139,8 @@ public extension SMB {
             let end = DispatchTime.now()
             return Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
         }
+        
+        // MARK: Handles
 
         /// Opens a file on the connected share.
         ///
@@ -173,6 +177,8 @@ public extension SMB {
             let handle = try Bridge.openDir(context: context, path: path)
             return Directory(connection: self, path: path, handle: handle)
         }
+        
+        // MARK: Management
 
         /// Creates a directory.
         ///
@@ -281,6 +287,37 @@ public extension SMB {
             return try Stat(Bridge.fileStatistics(context: context, path: path))
         }
         
+        /// Returns whether an item exists at a path, and what kind of item it is.
+        ///
+        /// This method returns ``SMB/ItemExistence/false`` when the server reports
+        /// that `path` does not exist. When an item exists, the result describes
+        /// the node kind reported by the server.
+        ///
+        /// A leading `/` in `path` is ignored, so `"/folder"` is treated as
+        /// `"folder"` relative to the connected share root.
+        ///
+        /// - Parameter path: The item path to inspect, relative to the share root.
+        /// - Returns: The existence and kind of the item at `path`.
+        /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be
+        ///   read, or `path` is invalid.
+        public func itemExists(at path: String) throws -> SMB.ItemExistence {
+            do {
+                let stat = try stat(at: path)
+                return SMB.ItemExistence(stat.type)
+            }
+            catch let error as SMB.Error {
+                if error.isPathNotFound {
+                    return .false
+                }
+                else {
+                    throw error
+                }
+            }
+            catch {
+                throw error
+            }
+        }
+        
         /// Changes the timestamps of a file or directory.
         ///
         /// Only the timestamps that are provided are updated; omitted timestamps
@@ -378,37 +415,6 @@ public extension SMB {
 
         public var debugDescription: String {
             "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected))"
-        }
-
-        /// Returns whether an item exists at a path, and what kind of item it is.
-        ///
-        /// This method returns ``SMB/ItemExistence/false`` when the server reports
-        /// that `path` does not exist. When an item exists, the result describes
-        /// the node kind reported by the server.
-        ///
-        /// A leading `/` in `path` is ignored, so `"/folder"` is treated as
-        /// `"folder"` relative to the connected share root.
-        ///
-        /// - Parameter path: The item path to inspect, relative to the share root.
-        /// - Returns: The existence and kind of the item at `path`.
-        /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be
-        ///   read, or `path` is invalid.
-        public func itemExists(at path: String) throws -> SMB.ItemExistence {
-            do {
-                let stat = try stat(at: path)
-                return SMB.ItemExistence(stat.type)
-            }
-            catch let error as SMB.Error {
-                if error.isPathNotFound {
-                    return .false
-                }
-                else {
-                    throw error
-                }
-            }
-            catch {
-                throw error
-            }
         }
     }
 }
