@@ -17,7 +17,7 @@ final class SendableBox<Value>: @unchecked Sendable {
     }
 }
 
-@Suite(.serialized, .tags(.integration))
+@Suite(.tags(.integration))
 struct SMBConnectionPipeTests {
     @Test("write from pipe stores remote file")
     func writeFromPipeStoresRemoteFile() throws {

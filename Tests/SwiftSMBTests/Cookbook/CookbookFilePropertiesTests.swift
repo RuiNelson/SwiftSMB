@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.serialized, .tags(.integration))
+@Suite(.tags(.integration))
 struct CookbookFilePropertiesTests {
     @Test("attributes compiles and runs")
     func attributes() throws {
