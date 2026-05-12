@@ -192,7 +192,7 @@ struct FileReadTests {
 
 // MARK: - File write tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serialized)
 struct FileWriteTests {
     @Test("create write read and delete file") func createWriteReadAndDeleteFile() throws {
         try withPublicShare { ctx in
