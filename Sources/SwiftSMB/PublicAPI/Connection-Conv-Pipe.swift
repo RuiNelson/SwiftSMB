@@ -453,6 +453,7 @@ public extension SMB.Connection {
             if atomic {
                 try commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
                 shouldRemoveRemoteTemp = false
+                try changeAttributes(at: remote) { $0.subtracting(.temporary) }
             }
 
             _ = continuation(reportedBytes.current, totalBytes, 0, finalAverageSpeed.current)
