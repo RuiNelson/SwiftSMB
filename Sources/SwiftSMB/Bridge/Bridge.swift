@@ -22,7 +22,7 @@ class Bridge {
     private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.bridge")
 
     /// Executes a bridge operation on the bridge queue.
-    private static func sync<T>(_ body: () throws -> T) rethrows -> T {
+    static func sync<T>(_ body: () throws -> T) rethrows -> T {
         try bridgeQueue.sync {
             try body()
         }
@@ -146,7 +146,7 @@ class Bridge {
 
     // MARK: - Connection
 
-    private static func _connectShare(
+    static func _connectShare(
         context: Context,
         server: String,
         share: String,
@@ -175,7 +175,7 @@ class Bridge {
         }
     }
 
-    private static func _disconnectShare(context: Context) throws {
+    static func _disconnectShare(context: Context) throws {
         try check(smb2_disconnect_share(context.raw), context: context, operation: "smb2_disconnect_share")
     }
 
@@ -201,26 +201,6 @@ class Bridge {
     static func getSessionID(context: Context) throws -> UInt64 {
         try sync {
             try _getSessionID(context: context)
-        }
-    }
-
-    // MARK: - URL Parsing
-
-    private static func _parseURL(_ url: String, context: Context) throws -> SMB2URL {
-        let rawURL = url.withCString { smb2_parse_url(context.raw, $0) }
-
-        guard let rawURL else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_parse_url")
-        }
-
-        defer { smb2_destroy_url(rawURL) }
-        return SMB2URL(rawURL.pointee)
-    }
-
-    /// Parses an SMB URL into Swift-friendly URL components.
-    static func parseURL(_ url: String, context: Context) throws -> SMB2URL {
-        try sync {
-            try _parseURL(url, context: context)
         }
     }
 
@@ -612,181 +592,6 @@ class Bridge {
         }
     }
 
-    private static func _readLink(
-        context: Context,
-        path: String,
-        bufferSize: Int = 4096,
-    ) throws -> String {
-        guard bufferSize > 0 else {
-            throw SMB.Error.invalidArgument(
-                cause: .bufferSizeMustBeGreaterThanZero,
-                onOperation: .smb2Readlink,
-            )
-        }
-
-        let count = try bufferSize.asUInt32(operation: .smb2Readlink)
-        var buffer = [CChar](repeating: 0, count: bufferSize)
-        let status = path.withCString { smb2_readlink(context.raw, $0, &buffer, count) }
-        try check(status, context: context, operation: "smb2_readlink")
-        return buffer.withUnsafeBufferPointer { pointer in
-            guard let baseAddress = pointer.baseAddress else {
-                return ""
-            }
-            return String(cString: baseAddress)
-        }
-    }
-
-    /// Reads the destination path of a symbolic link.
-    static func readLink(
-        context: Context,
-        path: String,
-        bufferSize: Int = 16384,
-    ) throws -> String {
-        try sync {
-            try _readLink(context: context, path: path, bufferSize: bufferSize)
-        }
-    }
-
-    private final class MakeLinkState: PendingOperationState {
-        var status: Int32 = SMB2_STATUS_SUCCESS
-        var isFinished: Bool = false
-    }
-
-    private static let makeLinkCreateCallback: smb2_command_cb = { _, status, _, callbackData in
-        guard let callbackData else { return }
-        let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-    }
-
-    private static let makeLinkIoctlCallback: smb2_command_cb = { _, status, _, callbackData in
-        guard let callbackData else { return }
-        let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-    }
-
-    private static let makeLinkCloseCallback: smb2_command_cb = { _, status, _, callbackData in
-        guard let callbackData else { return }
-        let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
-    }
-
-    private static func _makeLink(
-        context: Context,
-        path: String,
-        destination: String,
-    ) throws {
-        let destination = destination.replacingOccurrences(of: "/", with: "\\")
-        let substituteNameData = destination.data(using: .utf16LittleEndian) ?? Data()
-        let printNameData = substituteNameData
-
-        var reparseBuffer = [UInt8]()
-        reparseBuffer.reserveCapacity(20 + substituteNameData.count + printNameData.count)
-
-        withUnsafeBytes(of: UInt32(SMB2_REPARSE_TAG_SYMLINK).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(substituteNameData.count + printNameData.count).littleEndian) {
-            reparseBuffer.append(contentsOf: $0)
-        }
-        withUnsafeBytes(of: UInt16(0).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(0).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(substituteNameData.count).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(substituteNameData.count).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(printNameData.count).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt32(1).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        reparseBuffer.append(contentsOf: substituteNameData)
-        reparseBuffer.append(contentsOf: printNameData)
-
-        let state = MakeLinkState()
-        let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { Unmanaged<MakeLinkState>.fromOpaque(callbackData).release() }
-
-        try reparseBuffer.withUnsafeMutableBytes { buffer in
-            try path.withCString { pathPointer in
-                var cr_req = smb2_create_request(
-                    security_flags: 0,
-                    requested_oplock_level: 0,
-                    impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
-                    smb_create_flags: 0,
-                    desired_access: UInt32(SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_ATTRIBUTES | SMB2_SYNCHRONIZE),
-                    file_attributes: 0,
-                    share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE),
-                    create_disposition: UInt32(SMB2_FILE_CREATE),
-                    create_options: UInt32(SMB2_FILE_OPEN_REPARSE_POINT | SMB2_FILE_NON_DIRECTORY_FILE),
-                    name_offset: 0,
-                    name_length: 0,
-                    name: pathPointer,
-                    create_context_offset: 0,
-                    create_context_length: 0,
-                    create_context: nil,
-                )
-
-                guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, makeLinkCreateCallback, callbackData) else {
-                    throw SMB.Error.fromBridge(context, operation: "smb2_cmd_create_async")
-                }
-
-                var ioctl_req = smb2_ioctl_request(
-                    ctl_code: UInt32(SMB2_FSCTL_SET_REPARSE_POINT),
-                    file_id: FileID.allOnes.raw,
-                    input_offset: 0,
-                    input_count: UInt32(buffer.count),
-                    max_input_response: 0,
-                    output_offset: 0,
-                    output_count: 0,
-                    max_output_response: 0,
-                    flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
-                    input: buffer.baseAddress,
-                )
-
-                guard let ioctl_pdu = smb2_cmd_ioctl_async(
-                    context.raw,
-                    &ioctl_req,
-                    makeLinkIoctlCallback,
-                    callbackData,
-                ) else {
-                    smb2_free_pdu(context.raw, pdu)
-                    throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
-                }
-                smb2_add_compound_pdu(context.raw, pdu, ioctl_pdu)
-
-                var cl_req = smb2_close_request(
-                    flags: 0,
-                    file_id: FileID.allOnes.raw,
-                )
-
-                guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, makeLinkCloseCallback, callbackData) else {
-                    smb2_free_pdu(context.raw, pdu)
-                    throw SMB.Error.fromBridge(context, operation: "smb2_cmd_close_async")
-                }
-                smb2_add_compound_pdu(context.raw, pdu, close_pdu)
-
-                smb2_queue_pdu(context.raw, pdu)
-
-                try serviceUntilFinished(context: context, state: state)
-
-                if state.status != SMB2_STATUS_SUCCESS {
-                    throw SMB.Error.fromBridge(context, operation: "FSCTL_SET_REPARSE_POINT", status: state.status)
-                }
-            }
-        }
-    }
-
-    /// Creates a symbolic link at `path` pointing to `destination`.
-    static func makeLink(
-        context: Context,
-        path: String,
-        destination: String,
-    ) throws {
-        try sync {
-            try _makeLink(context: context, path: path, destination: destination)
-        }
-    }
-
     private static func _echo(context: Context) throws {
         try check(smb2_echo(context.raw), context: context, operation: "smb2_echo")
     }
@@ -798,181 +603,10 @@ class Bridge {
         }
     }
 
-    // MARK: - Share Listing
-
-    private static func _listShares(
-        context: Context,
-        server: String,
-        user: String? = nil,
-        includeHidden: Bool = false,
-    ) throws -> [Share] {
-        setSecurityMode(.signingEnabled, on: context)
-        try _connectShare(context: context, server: server, share: "IPC$", user: user)
-
-        do {
-            let shares = try filterForUserVisibleDiskShares(
-                listSharesOnConnectedIPCShare(context: context),
-                includeHidden: includeHidden,
-            )
-            try _disconnectShare(context: context)
-            return shares
-        }
-        catch {
-            try? _disconnectShare(context: context)
-            throw error
-        }
-    }
-
-    /// Connects to IPC$, enumerates user-visible disk shares, and disconnects.
-    static func listShares(
-        context: Context,
-        server: String,
-        user: String? = nil,
-        includeHidden: Bool = false,
-    ) throws -> [Share] {
-        try sync {
-            try _listShares(context: context, server: server, user: user, includeHidden: includeHidden)
-        }
-    }
-
-    /// Enumerates shares using SRVSVC on a context that is already connected to IPC$.
-    static func listSharesOnConnectedIPCShare(
-        context: Context,
-        level: ShareEnumerationLevel = .detailed,
-    ) throws -> [Share] {
-        guard let response = smb2_share_enum_sync(context.raw, level.rawValue) else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_share_enum_sync")
-        }
-
-        defer { smb2_free_data(context.raw, response) }
-
-        switch response.pointee.ses.Level {
-        case UInt32(SHARE_INFO_0.rawValue):
-            return shares(from: response.pointee.ses.ShareInfo.Level0)
-        case UInt32(SHARE_INFO_1.rawValue):
-            return shares(from: response.pointee.ses.ShareInfo.Level1)
-        default:
-            throw SMB.Error.invalidArgument(
-                cause: .unsupportedShareEnumerationLevel(response.pointee.ses.Level),
-                onOperation: .smb2ShareEnumSync,
-            )
-        }
-    }
-
-    // MARK: - Notify Operations
-
-    private static func _notifyChange(
-        context: Context,
-        directory: FileHandle,
-        flags: NotifyChangeFlags = [],
-        filter: NotifyChangeFilter = .all,
-        handler: @escaping NotifyChangeHandler,
-    ) throws -> PendingRequest {
-        guard let fileID = smb2_get_file_id(directory.raw) else {
-            throw SMB.Error.invalidArgument(
-                cause: .directoryFileHandleMissingFileID,
-                onOperation: .smb2GetFileID,
-            )
-        }
-
-        var request = smb2_change_notify_request()
-        request.flags = flags.rawValue
-        request.output_buffer_length = defaultNotifyOutputBufferLength
-        request.file_id = fileID.pointee
-        request.completion_filter = filter.rawValue
-
-        let state = PendingRequestState(
-            operation: "smb2_cmd_change_notify_async",
-            handler: handler,
-        )
-        let callbackData = Unmanaged.passRetained(state).toOpaque()
-
-        guard let rawPDU = smb2_cmd_change_notify_async(
-            context.raw,
-            &request,
-            notifyChangeCallback,
-            callbackData,
-        ) else {
-            Unmanaged<PendingRequestState>.fromOpaque(callbackData).release()
-            throw SMB.Error.fromBridge(context, operation: "smb2_cmd_change_notify_async")
-        }
-
-        state.didCreateRequest(raw: rawPDU, callbackData: callbackData)
-        smb2_queue_pdu(context.raw, rawPDU)
-
-        return PendingRequest(state: state)
-    }
-
-    /// Starts a one-shot cancellable change notification request for an open directory file handle.
-    static func notifyChange(
-        context: Context,
-        directory: FileHandle,
-        flags: NotifyChangeFlags = [],
-        filter: NotifyChangeFilter = .all,
-        handler: @escaping NotifyChangeHandler,
-    ) throws -> PendingRequest {
-        try sync {
-            try _notifyChange(context: context, directory: directory, flags: flags, filter: filter, handler: handler)
-        }
-    }
-
-    private static func _cancel(context: Context, request: PendingRequest) {
-        guard let cancellation = request.state.cancel() else {
-            return
-        }
-
-        smb2_free_pdu(context.raw, cancellation.raw)
-        Unmanaged<PendingRequestState>.fromOpaque(cancellation.callbackData).release()
-    }
-
-    /// Cancels a pending raw SMB2 request if it has not completed yet.
-    static func cancel(context: Context, request: PendingRequest) {
-        sync {
-            _cancel(context: context, request: request)
-        }
-    }
-
-    private static func _serviceNotifyEvents(
-        context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
-    ) throws {
-        var pfd = pollfd()
-        pfd.fd = smb2_get_fd(context.raw)
-        pfd.events = Int16(smb2_which_events(context.raw))
-
-        var rc: Int32 = 0
-        repeat {
-            rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, timeoutMilliseconds) }
-        }
-        while rc < 0 && errno == EINTR
-
-        if rc < 0 {
-            throw SMB.Error.posix(
-                code: errno,
-                operation: "poll",
-                message: "poll failed while waiting for SMB2 notification",
-            )
-        }
-
-        if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
-            throw SMB.Error.fromBridge(context, operation: "smb2_service")
-        }
-    }
-
-    /// Services pending SMB2 events for a notification watcher.
-    static func serviceNotifyEvents(
-        context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
-    ) throws {
-        try sync {
-            try _serviceNotifyEvents(context: context, timeoutMilliseconds: timeoutMilliseconds)
-        }
-    }
-
     // MARK: - Private Helpers
 
     /// Checks an SMB status code and throws if it indicates an error.
-    @discardableResult private static func check(
+    @discardableResult static func check(
         _ status: Int32,
         context: Context,
         operation: String,
@@ -983,58 +617,11 @@ class Bridge {
         return status
     }
 
-    // MARK: - Share Listing Helpers
-
-    private static func shares(_ count: UInt32, _ body: (Int) -> Share) -> [Share] {
-        (0 ..< Int(count)).map(body)
-    }
-
-    private static func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [Share] {
-        guard let buffer = container.Buffer?.pointee.share_info_0 else {
-            return []
-        }
-
-        return shares(container.EntriesRead) { index in
-            Share(
-                name: string(from: buffer[index].netname),
-                kind: nil,
-                attributes: [],
-                remark: nil,
-            )
-        }
-    }
-
-    private static func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [Share] {
-        guard let buffer = container.Buffer?.pointee.share_info_1 else {
-            return []
-        }
-
-        return shares(container.EntriesRead) { index in
-            let info = buffer[index]
-            return Share(
-                name: string(from: info.netname),
-                kind: ShareKind(rawValue: info.type),
-                attributes: ShareAttributes(rawShareType: info.type),
-                remark: string(from: info.remark),
-            )
-        }
-    }
-
-    private static func string(from string: dcerpc_utf16) -> String {
-        string.utf8.map(String.init(cString:)) ?? ""
-    }
-
-    private static func filterForUserVisibleDiskShares(_ shares: [Share], includeHidden: Bool) -> [Share] {
-        shares.filter { share in
-            share.kind == .diskTree && (includeHidden || !share.isHidden)
-        }
-    }
-
     // MARK: - File Stats Helpers
 
     private static let fileBasicInformationWireLength = 40
 
-    private protocol PendingOperationState: AnyObject {
+    protocol PendingOperationState: AnyObject {
         var status: Int32 { get set }
         var isFinished: Bool { get set }
     }
@@ -1112,7 +699,7 @@ class Bridge {
         state.isFinished = true
     }
 
-    private static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
+    static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
         var pfd = pollfd()
         pfd.fd = smb2_get_fd(context.raw)
 
@@ -1619,153 +1206,6 @@ class Bridge {
                 chunkSize: chunkSize,
             )
         }
-    }
-
-    // MARK: - Notify Helpers
-
-    private static let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF
-    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 50
-    private static let notifyChangeEntryHeaderLength = 12
-    private static let maximumNotifyChangeEntryCount = 4096
-
-    private static let notifyChangeCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
-        guard let callbackData else {
-            return
-        }
-
-        let state = Unmanaged<PendingRequestState>
-            .fromOpaque(callbackData)
-            .takeRetainedValue()
-
-        guard let handler = state.complete() else {
-            return
-        }
-
-        guard let rawContext else {
-            handler(.failure(.unknown(
-                operation: state.operation,
-                message: "Missing SMB2 context in callback",
-            )))
-            return
-        }
-
-        let context = Context(raw: rawContext)
-
-        guard status == 0 else {
-            handler(.failure(notifyChangeError(context: context, status: status, operation: state.operation)))
-            return
-        }
-
-        guard let commandData else {
-            handler(.success([]))
-            return
-        }
-
-        handler(decodeNotifyChanges(context: context, commandData: commandData))
-    }
-
-    private static func decodeNotifyChanges(
-        context: Context,
-        commandData: UnsafeMutableRawPointer,
-    ) -> Result<[NotifyChange], SMB.Error> {
-        let reply = commandData.assumingMemoryBound(to: smb2_change_notify_reply.self).pointee
-
-        guard reply.output_buffer_length > 0, let output = reply.output else {
-            return .success([])
-        }
-
-        let buffer = UnsafeRawBufferPointer(
-            start: output,
-            count: Int(reply.output_buffer_length),
-        )
-        return decodeNotifyChanges(buffer)
-    }
-
-    private static func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[NotifyChange], SMB.Error> {
-        var changes: [NotifyChange] = []
-        var offset = 0
-
-        for _ in 0 ..< maximumNotifyChangeEntryCount {
-            guard offset + notifyChangeEntryHeaderLength <= buffer.count else {
-                return .failure(malformedNotifyChangeResponse("Entry header exceeds output buffer length"))
-            }
-
-            let nextEntryOffset = readLittleEndianUInt32(from: buffer, at: offset)
-            let action = readLittleEndianUInt32(from: buffer, at: offset + 4)
-            let nameLength = Int(readLittleEndianUInt32(from: buffer, at: offset + 8))
-            let nameOffset = offset + notifyChangeEntryHeaderLength
-
-            guard nameLength % 2 == 0,
-                  nameLength <= buffer.count - nameOffset else {
-                return .failure(malformedNotifyChangeResponse("Entry name exceeds output buffer length"))
-            }
-
-            changes.append(NotifyChange(
-                action: NotifyChangeAction(rawValue: action),
-                name: decodeNotifyChangeName(from: buffer, offset: nameOffset, byteCount: nameLength),
-            ))
-
-            guard nextEntryOffset != 0 else {
-                return .success(changes)
-            }
-
-            let nextOffsetDelta = Int(nextEntryOffset)
-            guard nextOffsetDelta >= notifyChangeEntryHeaderLength,
-                  nextOffsetDelta <= buffer.count - offset else {
-                return .failure(malformedNotifyChangeResponse("Entry offset is not monotonic within output buffer"))
-            }
-
-            offset += nextOffsetDelta
-        }
-
-        return .failure(malformedNotifyChangeResponse("Entry count exceeded defensive limit"))
-    }
-
-    private static func readLittleEndianUInt32(from buffer: UnsafeRawBufferPointer, at offset: Int) -> UInt32 {
-        UInt32(buffer[offset])
-            | (UInt32(buffer[offset + 1]) << 8)
-            | (UInt32(buffer[offset + 2]) << 16)
-            | (UInt32(buffer[offset + 3]) << 24)
-    }
-
-    private static func decodeNotifyChangeName(
-        from buffer: UnsafeRawBufferPointer,
-        offset: Int,
-        byteCount: Int,
-    ) -> String {
-        var codeUnits: [UInt16] = []
-        codeUnits.reserveCapacity(byteCount / 2)
-
-        var index = offset
-        let end = offset + byteCount
-        while index < end {
-            codeUnits.append(UInt16(buffer[index]) | (UInt16(buffer[index + 1]) << 8))
-            index += 2
-        }
-
-        return String(decoding: codeUnits, as: UTF16.self)
-    }
-
-    private static func malformedNotifyChangeResponse(_ message: String) -> SMB.Error {
-        .unknown(
-            operation: "smb2_decode_filenotifychangeinformation",
-            message: message,
-        )
-    }
-
-    private static func notifyChangeError(
-        context: Context,
-        status: Int32,
-        operation: String,
-    ) -> SMB.Error {
-        let rawStatus = UInt32(bitPattern: status)
-        let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""
-
-        if let knownStatus = SMB.SMBStatus(rawValue: rawStatus) {
-            return .ntStatus(knownStatus, posixCode: nil, operation: operation, message: message)
-        }
-
-        return .unknownNTStatus(rawValue: rawStatus, posixCode: nil, operation: operation, message: message)
     }
 }
 
