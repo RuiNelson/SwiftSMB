@@ -108,6 +108,8 @@ public extension SMB.Connection {
 
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
         defer { try? file.close() }
+        try file.lock(.exclusive, nonBlocking: false)
+        defer { try? file.unlock() }
 
         _ = try transferPipeToFile(
             pipe: pipe,
@@ -981,6 +983,11 @@ private func prepareAtomicUploadTarget(
     defer { try? input.close() }
     let output = try connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
     defer { try? output.close() }
+    try output.lock(.exclusive, nonBlocking: false)
+    defer { try? output.unlock() }
+
+    let context = try connection.requireContext()
+    try Bridge.setStats(context: context, path: target, fileAttributes: 0x0000_0100)
 
     var copied: UInt64 = 0
     while copied < offset {
