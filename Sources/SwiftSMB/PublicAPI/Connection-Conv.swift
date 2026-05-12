@@ -120,6 +120,46 @@ public extension SMB.Connection {
         try removeDirectory(at: path)
     }
 
+    /// Copies a file from one path to another on the connected share using
+    /// server-side copy.
+    ///
+    /// Data is copied directly on the server without transferring through the
+    /// client. The source file must exist. If the destination file already
+    /// exists, an error is thrown.
+    ///
+    /// - Parameters:
+    ///   - sourcePath: The source file path, relative to the share root.
+    ///   - destinationPath: The destination file path, relative to the share root.
+    /// - Throws: ``SMB/Error`` if the source cannot be opened, the destination
+    ///   already exists, or the server does not support server-side copy.
+    func copyFile(from sourcePath: String, to destinationPath: String) throws {
+        let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
+        let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
+        let context = try requireContext()
+
+        switch try itemExists(at: destinationPath) {
+        case .false:
+            break
+        case .file, .link:
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EEXIST.rawValue,
+                operation: "SMB.Connection.copyFile",
+                message: "Destination file already exists",
+            )
+        case .directory, .other:
+            throw SMB.Error.invalidArgument(
+                cause: .remoteDestinationIsNotAFile,
+                onOperation: .smbConnectionCopyFile,
+            )
+        }
+
+        try Bridge.serverSideCopy(
+            context: context,
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+        )
+    }
+
     /// Returns a read block size accepted by the server.
     ///
     /// - Parameter preferredBlockSize: A preferred block size, or `nil` to

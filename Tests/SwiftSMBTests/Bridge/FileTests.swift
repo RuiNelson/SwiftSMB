@@ -704,3 +704,83 @@ struct SetBasicInfoTests {
         }
     }
 }
+
+// MARK: - Server-side copy tests
+
+@Suite(.tags(.integration))
+struct ServerSideCopyTests {
+    @Test("serverSideCopy copies known file") func serverSideCopyCopiesKnownFile() throws {
+        try withPublicShare { ctx in
+            let destPath = uniquePath("copy") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: destPath) }
+
+            try Bridge.serverSideCopy(context: ctx, sourcePath: TestContent.helloPath, destinationPath: destPath)
+
+            let rh = try Bridge.open(context: ctx, path: destPath)
+            defer { try? Bridge.close(context: ctx, file: rh) }
+            let bytes = try readAllBytes(context: ctx, file: rh)
+            #expect(bytes == TestContent.helloBytes)
+        }
+    }
+
+    @Test("serverSideCopy overwrites existing file") func serverSideCopyOverwritesExistingFile() throws {
+        try withPublicShare { ctx in
+            let destPath = uniquePath("copy") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: destPath) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: destPath,
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            _ = try writeAllBytes(context: ctx, file: wh, data: Array("WRONG CONTENT".utf8))
+            try Bridge.close(context: ctx, file: wh)
+
+            try Bridge.serverSideCopy(context: ctx, sourcePath: TestContent.helloPath, destinationPath: destPath)
+
+            let rh = try Bridge.open(context: ctx, path: destPath)
+            defer { try? Bridge.close(context: ctx, file: rh) }
+            let bytes = try readAllBytes(context: ctx, file: rh)
+            #expect(bytes == TestContent.helloBytes)
+        }
+    }
+
+    @Test("serverSideCopy copies empty file") func serverSideCopyCopiesEmptyFile() throws {
+        try withPublicShare { ctx in
+            let sourcePath = uniquePath("empty_source") + ".txt"
+            let destPath = uniquePath("empty_dest") + ".txt"
+            defer {
+                try? Bridge.unlink(context: ctx, path: sourcePath)
+                try? Bridge.unlink(context: ctx, path: destPath)
+            }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: sourcePath,
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            try Bridge.close(context: ctx, file: wh)
+
+            try Bridge.serverSideCopy(context: ctx, sourcePath: sourcePath, destinationPath: destPath)
+
+            let stat = try Bridge.fileStatistics(context: ctx, path: destPath)
+            #expect(stat.type == .file)
+            #expect(stat.size == 0)
+        }
+    }
+
+    @Test("serverSideCopy throws for nonexistent source") func serverSideCopyThrowsForNonexistentSource() throws {
+        try withPublicShare { ctx in
+            let destPath = uniquePath("copy") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: destPath) }
+
+            #expect(throws: SMB.Error.self) {
+                try Bridge.serverSideCopy(
+                    context: ctx,
+                    sourcePath: "nonexistent_\(uniquePath()).txt",
+                    destinationPath: destPath,
+                )
+            }
+        }
+    }
+}

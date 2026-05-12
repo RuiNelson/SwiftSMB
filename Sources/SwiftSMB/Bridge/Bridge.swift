@@ -1202,6 +1202,285 @@ class Bridge {
         }
     }
 
+    // MARK: - Server-Side Copy Helpers
+
+    private static let resumeKeyLength = 24
+
+    private final class ResumeKeyState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished: Bool = false
+        var resumeKey: Data?
+    }
+
+    private final class CopyChunkState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished: Bool = false
+    }
+
+    private static let resumeKeyCreateCallback: smb2_command_cb = { _, status, _, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
+        if state.status == SMB2_STATUS_SUCCESS {
+            state.status = status
+        }
+    }
+
+    private static let resumeKeyIoctlCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
+        if state.status == SMB2_STATUS_SUCCESS {
+            state.status = status
+        }
+        if status == SMB2_STATUS_SUCCESS, let commandData, let rawContext {
+            let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
+            if reply.output_count > 0, let output = reply.output {
+                state.resumeKey = Data(bytes: output, count: Int(reply.output_count))
+                smb2_free_data(rawContext, output)
+            }
+        }
+    }
+
+    private static let resumeKeyCloseCallback: smb2_command_cb = { _, status, _, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
+        if state.status == SMB2_STATUS_SUCCESS {
+            state.status = status
+        }
+        state.isFinished = true
+    }
+
+    private static let copyChunkCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<CopyChunkState>.fromOpaque(callbackData).takeUnretainedValue()
+        if state.status == SMB2_STATUS_SUCCESS {
+            state.status = status
+        }
+        if let commandData, let rawContext {
+            let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
+            if let output = reply.output {
+                smb2_free_data(rawContext, output)
+            }
+        }
+        state.isFinished = true
+    }
+
+    private static func _requestResumeKey(
+        context: Context,
+        sourcePath: String,
+    ) throws -> Data {
+        let state = ResumeKeyState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { Unmanaged<ResumeKeyState>.fromOpaque(callbackData).release() }
+
+        return try sourcePath.withCString { pathPointer in
+            var cr_req = smb2_create_request(
+                security_flags: 0,
+                requested_oplock_level: 0,
+                impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
+                smb_create_flags: 0,
+                desired_access: UInt32(SMB2_FILE_READ_DATA),
+                file_attributes: 0,
+                share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE),
+                create_disposition: UInt32(SMB2_FILE_OPEN),
+                create_options: 0,
+                name_offset: 0,
+                name_length: 0,
+                name: pathPointer,
+                create_context_offset: 0,
+                create_context_length: 0,
+                create_context: nil,
+            )
+
+            guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, resumeKeyCreateCallback, callbackData) else {
+                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_create_async")
+            }
+
+            var ioctl_req = smb2_ioctl_request(
+                ctl_code: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY),
+                file_id: FileID.allOnes.raw,
+                input_offset: 0,
+                input_count: 0,
+                max_input_response: 0,
+                output_offset: 0,
+                output_count: 0,
+                max_output_response: 64,
+                flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
+                input: nil,
+            )
+
+            guard let ioctl_pdu = smb2_cmd_ioctl_async(
+                context.raw,
+                &ioctl_req,
+                resumeKeyIoctlCallback,
+                callbackData,
+            ) else {
+                smb2_free_pdu(context.raw, pdu)
+                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
+            }
+            smb2_add_compound_pdu(context.raw, pdu, ioctl_pdu)
+
+            var cl_req = smb2_close_request(
+                flags: 0,
+                file_id: FileID.allOnes.raw,
+            )
+
+            guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, resumeKeyCloseCallback, callbackData) else {
+                smb2_free_pdu(context.raw, pdu)
+                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_close_async")
+            }
+            smb2_add_compound_pdu(context.raw, pdu, close_pdu)
+
+            smb2_queue_pdu(context.raw, pdu)
+
+            try serviceUntilFinished(context: context, state: state)
+
+            if state.status != SMB2_STATUS_SUCCESS {
+                throw SMB.Error.fromBridge(context, operation: "FSCTL_SRV_REQUEST_RESUME_KEY", status: state.status)
+            }
+
+            guard let key = state.resumeKey, key.count >= resumeKeyLength else {
+                throw SMB.Error.unknown(
+                    operation: "FSCTL_SRV_REQUEST_RESUME_KEY",
+                    message: "Server returned an invalid resume key",
+                )
+            }
+
+            return key.prefix(resumeKeyLength)
+        }
+    }
+
+    private static func _copyChunk(
+        context: Context,
+        fileID: smb2_file_id,
+        resumeKey: Data,
+        sourceOffset: UInt64,
+        targetOffset: UInt64,
+        length: UInt32,
+    ) throws {
+        var input = [UInt8]()
+        input.reserveCapacity(56)
+
+        input.append(contentsOf: resumeKey.prefix(resumeKeyLength))
+        withUnsafeBytes(of: UInt32(1).littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: sourceOffset.littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: targetOffset.littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: length.littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { input.append(contentsOf: $0) }
+
+        let state = CopyChunkState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { Unmanaged<CopyChunkState>.fromOpaque(callbackData).release() }
+
+        try input.withUnsafeMutableBytes { buffer in
+            var req = smb2_ioctl_request(
+                ctl_code: UInt32(SMB2_FSCTL_SRV_COPYCHUNK),
+                file_id: fileID,
+                input_offset: 0,
+                input_count: UInt32(buffer.count),
+                max_input_response: 0,
+                output_offset: 0,
+                output_count: 0,
+                max_output_response: 16,
+                flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
+                input: buffer.baseAddress,
+            )
+
+            guard let pdu = smb2_cmd_ioctl_async(context.raw, &req, copyChunkCallback, callbackData) else {
+                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
+            }
+
+            smb2_queue_pdu(context.raw, pdu)
+
+            try serviceUntilFinished(context: context, state: state)
+        }
+
+        if state.status != SMB2_STATUS_SUCCESS {
+            throw SMB.Error.fromBridge(context, operation: "FSCTL_SRV_COPYCHUNK", status: state.status)
+        }
+    }
+
+    private static func _serverSideCopy(
+        context: Context,
+        sourcePath: String,
+        destinationPath: String,
+        chunkSize: UInt32,
+    ) throws {
+        var stat = smb2_stat_64()
+        try check(
+            sourcePath.withCString { smb2_stat(context.raw, $0, &stat) },
+            context: context,
+            operation: "smb2_stat",
+        )
+        let fileSize = stat.smb2_size
+
+        guard fileSize > 0 else {
+            let rawHandle = destinationPath.withCString {
+                smb2_open(context.raw, $0, O_WRONLY | O_CREAT | O_TRUNC)
+            }
+            guard let rawHandle else {
+                throw SMB.Error.fromBridge(context, operation: "smb2_open")
+            }
+            try check(smb2_close(context.raw, rawHandle), context: context, operation: "smb2_close")
+            return
+        }
+
+        let resumeKey = try _requestResumeKey(context: context, sourcePath: sourcePath)
+
+        let rawDestHandle = destinationPath.withCString {
+            smb2_open(context.raw, $0, O_RDWR | O_CREAT | O_TRUNC)
+        }
+        guard let rawDestHandle else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_open")
+        }
+
+        guard let fileIDPtr = smb2_get_file_id(rawDestHandle) else {
+            _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+            throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
+        }
+        let destFileID = fileIDPtr.pointee
+
+        do {
+            var offset: UInt64 = 0
+            while offset < fileSize {
+                let remaining = fileSize - offset
+                let length = min(UInt64(chunkSize), remaining)
+                try _copyChunk(
+                    context: context,
+                    fileID: destFileID,
+                    resumeKey: resumeKey,
+                    sourceOffset: offset,
+                    targetOffset: offset,
+                    length: UInt32(length),
+                )
+                offset += length
+            }
+        }
+        catch {
+            _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+            throw error
+        }
+
+        try check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+    }
+
+    /// Copies a file from source to destination using SMB2 server-side copy.
+    static func serverSideCopy(
+        context: Context,
+        sourcePath: String,
+        destinationPath: String,
+    ) throws {
+        try sync {
+            let chunkSize = smb2_get_max_write_size(context.raw)
+            try _serverSideCopy(
+                context: context,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                chunkSize: chunkSize,
+            )
+        }
+    }
+
     // MARK: - Notify Helpers
 
     private static let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF

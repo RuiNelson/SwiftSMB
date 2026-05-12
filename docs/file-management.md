@@ -1,6 +1,6 @@
 # File Management
 
-This cookbook covers creating, deleting, renaming, and inspecting files and directories on an SMB share.
+This cookbook covers creating, copying, deleting, renaming, and inspecting files and directories on an SMB share.
 
 All examples assume you already have an open ``SMB.Connection``:
 
@@ -58,6 +58,20 @@ try connection.move(from: "draft.txt", to: "final.txt")
 // Move a file into a different folder
 try connection.move(from: "draft.txt", to: "Archive/draft.txt")
 ```
+
+## Copying files server-side
+
+``SMB.Connection.copyFile(from:to:)`` copies a file directly on the server without sending the data through the client. This is efficient for large files and works when the server supports the SMB2 server-side copy extension.
+
+```swift
+// Duplicate a file within the same share
+try connection.copyFile(from: "Photos/vacation.jpg", to: "Photos/vacation_backup.jpg")
+
+// Copy into a different folder
+try connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
+```
+
+If the destination file already exists, an error is thrown. The source file must exist and the server must support the SMB2 server-side copy extension.
 
 ## Checking whether a path exists
 

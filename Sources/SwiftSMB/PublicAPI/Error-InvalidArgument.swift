@@ -50,6 +50,7 @@ public extension SMB.Error {
         case smbConnectionListDirectory
         case smbConnectionReadFile
         case smbConnectionWriteFile
+        case smbConnectionCopyFile
 
         var description: String {
             switch self {
@@ -92,6 +93,7 @@ public extension SMB.Error {
             case .smbConnectionListDirectory: "SMB.Connection.listDirectory"
             case .smbConnectionReadFile: "SMB.Connection.readFile"
             case .smbConnectionWriteFile: "SMB.Connection.writeFile"
+            case .smbConnectionCopyFile: "SMB.Connection.copyFile"
             }
         }
     }
