@@ -987,8 +987,7 @@ private func prepareAtomicUploadTarget(
     try output.lock(.exclusive, nonBlocking: false)
     defer { try? output.unlock() }
 
-    let context = try connection.requireContext()
-    try Bridge.setStats(context: context, path: target, fileAttributes: 0x0000_0100)
+    try connection.changeAttributes(at: target) { $0.union(.temporary) }
 
     var copied: UInt64 = 0
     while copied < offset {
