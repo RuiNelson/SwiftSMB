@@ -419,6 +419,22 @@ struct SymlinkTests {
             #expect(readTarget == targetPath)
         }
     }
+
+    @Test("create nested symlink") func makeLinkNestedPath() throws {
+        try withPrivateShare { ctx in
+            let dirPath = uniquePath("nested_dir")
+            let targetPath = "target.txt"
+            let linkPath = "\(dirPath)/nested_link"
+            defer {
+                try? Bridge.unlink(context: ctx, path: linkPath)
+                try? Bridge.removeDir(context: ctx, path: dirPath)
+            }
+            try Bridge.makeDir(context: ctx, path: dirPath)
+            try Bridge.makeLink(context: ctx, path: linkPath, destination: targetPath)
+            let readTarget = try Bridge.readLink(context: ctx, path: linkPath)
+            #expect(readTarget == targetPath)
+        }
+    }
 }
 
 // MARK: - Read-only share tests

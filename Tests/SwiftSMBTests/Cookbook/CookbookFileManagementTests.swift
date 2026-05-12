@@ -134,6 +134,22 @@ struct CookbookFileManagementTests {
         #expect(target == "hello.txt")
     }
 
+    @Test("makeLink with nested path compiles and runs")
+    func makeLinkNestedPath() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let dirPath = uniquePath("cookbook-nested-dir")
+        let linkPath = "\(dirPath)/nested_link"
+        defer {
+            try? connection.removeFile(at: linkPath)
+            try? connection.removeDirectory(at: dirPath)
+        }
+        try connection.makeDirectory(at: dirPath)
+        try connection.makeLink(at: linkPath, pointingTo: "greeting.txt")
+        let target = try connection.readLink(at: linkPath)
+        #expect(target == "greeting.txt")
+    }
+
     @Test("statFilesystem compiles and runs")
     func statFilesystem() throws {
         let connection = try cookbookConnection()
