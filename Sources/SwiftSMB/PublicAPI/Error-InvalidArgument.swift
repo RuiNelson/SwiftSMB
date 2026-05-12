@@ -52,6 +52,7 @@ public extension SMB.Error {
         case smbConnectionReadFile
         case smbConnectionWriteFile
         case smbConnectionCopyFile
+        case smb2Flock
 
         var description: String {
             switch self {
@@ -96,6 +97,7 @@ public extension SMB.Error {
             case .smbConnectionReadFile: "SMB.Connection.readFile"
             case .smbConnectionWriteFile: "SMB.Connection.writeFile"
             case .smbConnectionCopyFile: "SMB.Connection.copyFile"
+            case .smb2Flock: "smb2_flock"
             }
         }
     }
@@ -126,6 +128,7 @@ public extension SMB.Error {
         case byteCountCannotBeRepresentedAsUInt32(Int)
         case directoryFileHandleMissingFileID
         case unsupportedShareEnumerationLevel(UInt32)
+        case invalidLockRange(String)
 
         var description: String {
             switch self {
@@ -153,6 +156,7 @@ public extension SMB.Error {
             case let .byteCountCannotBeRepresentedAsUInt32(count): "Byte count \(count) cannot be represented as UInt32"
             case .directoryFileHandleMissingFileID: "Directory file handle does not have a file id"
             case let .unsupportedShareEnumerationLevel(level): "Unsupported share enumeration level \(level)"
+            case let .invalidLockRange(reason): "Invalid lock range: \(reason)"
             }
         }
     }

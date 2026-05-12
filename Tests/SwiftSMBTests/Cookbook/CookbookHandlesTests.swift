@@ -178,4 +178,64 @@ struct CookbookHandlesTests {
         let directory = try connection.openDirectory(at: "Anna/Inbox")
         directory.close()
     }
+
+    @Test("lock exclusive compiles and runs")
+    func lockExclusive() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let remote = uniquePath("cookbook-lock") + ".txt"
+        defer { try? connection.removeFile(at: remote) }
+        try connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try connection.openFile(
+            at: remote,
+            accessMode: .readWrite,
+        )
+        defer { try? file.close() }
+        try file.lock(.exclusive, nonBlocking: false)
+        try file.unlock()
+    }
+
+    @Test("lock shared compiles and runs")
+    func lockShared() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let file = try connection.openFile(at: "report.pdf")
+        defer { try? file.close() }
+        try file.lock(.shared, nonBlocking: false)
+        let data = try file.read()
+        _ = data.count
+        try file.unlock()
+    }
+
+    @Test("lock nonBlocking compiles and runs")
+    func lockNonBlocking() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let remote = uniquePath("cookbook-lock-nb") + ".txt"
+        defer { try? connection.removeFile(at: remote) }
+        try connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try connection.openFile(
+            at: remote,
+            accessMode: .readWrite,
+        )
+        defer { try? file.close() }
+        try file.lock(.exclusive, nonBlocking: true)
+        try file.unlock()
+    }
+
+    @Test("lock with range compiles and runs")
+    func lockWithRange() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let remote = uniquePath("cookbook-lock-range") + ".txt"
+        defer { try? connection.removeFile(at: remote) }
+        try connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try connection.openFile(
+            at: remote,
+            accessMode: .readWrite,
+        )
+        defer { try? file.close() }
+        try file.lock(.exclusive, nonBlocking: false, range: 1024 ..< 2048)
+        try file.unlock(range: 1024 ..< 2048)
+    }
 }

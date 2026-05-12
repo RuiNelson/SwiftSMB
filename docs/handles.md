@@ -190,4 +190,61 @@ Close a directory handle:
 directory.close()
 ```
 
+## Locking a file handle
+
+Acquire an exclusive (write) lock on the entire file:
+
+```swift
+let file = try connection.openFile(
+    at: "Anna/Inbox/draft.txt",
+    accessMode: .readWrite,
+)
+defer { try? file.close() }
+
+try file.lock(.exclusive, nonBlocking: false)
+// ... perform exclusive writes ...
+try file.unlock()
+```
+
+Acquire a shared (read) lock that allows concurrent readers:
+
+```swift
+let file = try connection.openFile(at: "report.pdf")
+defer { try? file.close() }
+
+try file.lock(.shared, nonBlocking: false)
+let data = try file.read()
+try file.unlock()
+```
+
+Set `nonBlocking` to `true` to fail immediately when the lock conflicts with an existing one, instead of waiting:
+
+```swift
+try file.lock(.exclusive, nonBlocking: true)
+```
+
+Lock a specific byte range instead of the entire file:
+
+```swift
+try file.lock(.exclusive, nonBlocking: false, range: 1024..<2048)
+// ... work within the locked range ...
+try file.unlock(range: 1024..<2048)
+```
+
+Only one mode can be active at a time—shared and exclusive are mutually exclusive. The lock is associated with the open handle and is automatically released when the file is closed.
+
+## Closing handles
+
+Close a file handle when you are done:
+
+```swift
+try file.close()
+```
+
+Close a directory handle:
+
+```swift
+directory.close()
+```
+
 Both handles close automatically when they go out of scope, but explicit close is recommended in tight loops or when you open many handles.

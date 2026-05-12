@@ -297,6 +297,81 @@ public extension SMB {
             let handle = try requireHandle(operation: .smb2Fstat)
             return try Stat(Bridge.fileStatistics(context: context, file: handle))
         }
+        
+        /// Releases a byte-range lock previously acquired on the file.
+        ///
+        /// The unlock range must match the lock range exactly. Sub-ranges cannot be
+        /// unlocked independently.
+        ///
+        /// - Parameter range: The byte range to unlock, or `nil` to unlock the entire
+        ///   file (matching a lock acquired without a range).
+        /// - Throws: ``SMB/Error`` if the file is closed or the server reports an error.
+        public func unlock(range: Range<Int64>? = nil) throws {
+            let context = try connection.requireContext()
+            let handle = try requireHandle(operation: .smb2Flock)
+            let (offset, length) = try Self.validateLockRange(range)
+            try Bridge.unlock(context: context, file: handle, offset: offset, length: length)
+        }
+
+        /// The type of byte-range lock to acquire.
+        public enum LockMode: Sendable {
+            /// A shared (read) lock that allows other opens to read or take shared
+            /// locks on the same range, but blocks writes.
+            case shared
+
+            /// An exclusive (write) lock that blocks other opens from reading,
+            /// writing, or locking the same range.
+            case exclusive
+        }
+
+        /// Acquires a byte-range lock on the file.
+        ///
+        /// When `range` is `nil`, the lock covers the whole file. Only one mode can
+        /// be specified at a time—shared and exclusive are mutually exclusive.
+        ///
+        /// - Parameters:
+        ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.
+        ///   - nonBlocking: When `true`, the operation fails immediately if the lock
+        ///     conflicts with an existing lock instead of waiting.
+        ///   - range: The byte range to lock, or `nil` to lock the entire file.
+        /// - Throws: ``SMB/Error`` if the file is closed, the lock range is invalid,
+        ///   the lock conflicts with an existing lock, or the server reports an error.
+        public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Int64>? = nil) throws {
+            let context = try connection.requireContext()
+            let handle = try requireHandle(operation: .smb2Flock)
+            var flags: Bridge.LockFlags = switch mode {
+            case .shared:
+                .shared
+            case .exclusive:
+                .exclusive
+            }
+            if nonBlocking {
+                flags = Bridge.LockFlags(rawValue: flags.rawValue | Bridge.LockFlags.failImmediately.rawValue)
+            }
+            let (offset, length) = try Self.validateLockRange(range)
+            try Bridge.lock(context: context, file: handle, flags: flags, offset: offset, length: length)
+        }
+
+        private static func validateLockRange(_ range: Range<Int64>?) throws -> (offset: UInt64, length: UInt64) {
+            guard let range else {
+                return (0, UInt64.max)
+            }
+            guard range.lowerBound >= 0 else {
+                throw SMB.Error.invalidArgument(
+                    cause: .invalidLockRange("lowerBound must be non-negative"),
+                    onOperation: .smb2Flock,
+                )
+            }
+            guard !range.isEmpty else {
+                throw SMB.Error.invalidArgument(
+                    cause: .invalidLockRange("range must not be empty"),
+                    onOperation: .smb2Flock,
+                )
+            }
+            let offset = UInt64(range.lowerBound)
+            let length = UInt64(range.upperBound - range.lowerBound)
+            return (offset, length)
+        }
 
         /// Returns the live bridge handle or throws if the file is closed.
         private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.FileHandle {

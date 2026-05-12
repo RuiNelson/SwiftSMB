@@ -820,3 +820,89 @@ struct ServerSideCopyTests {
         }
     }
 }
+
+// MARK: - File lock tests
+
+@Suite(.tags(.integration))
+struct FileLockTests {
+    @Test("lock shared succeeds") func lockSharedSucceeds() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("lock") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: path) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: path,
+                flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
+            )
+            defer { try? Bridge.close(context: ctx, file: wh) }
+            try Bridge.lock(context: ctx, file: wh, flags: .shared)
+        }
+    }
+
+    @Test("lock exclusive succeeds") func lockExclusiveSucceeds() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("lock") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: path) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: path,
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            defer { try? Bridge.close(context: ctx, file: wh) }
+            try Bridge.lock(context: ctx, file: wh, flags: .exclusive)
+        }
+    }
+
+    @Test("unlock after lock succeeds") func unlockAfterLockSucceeds() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("lock") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: path) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: path,
+                flags: Bridge.OpenFlags(.writeOnly, options: [.create, .exclusive]),
+            )
+            defer { try? Bridge.close(context: ctx, file: wh) }
+            try Bridge.lock(context: ctx, file: wh, flags: .exclusive)
+            try Bridge.unlock(context: ctx, file: wh)
+        }
+    }
+
+    @Test("lock shared then exclusive on same handle succeeds") func lockSharedThenExclusiveOnSameHandleSucceeds(
+    ) throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("lock") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: path) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: path,
+                flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
+            )
+            defer { try? Bridge.close(context: ctx, file: wh) }
+            try Bridge.lock(context: ctx, file: wh, flags: .shared)
+            try Bridge.unlock(context: ctx, file: wh)
+            try Bridge.lock(context: ctx, file: wh, flags: .exclusive)
+            try Bridge.unlock(context: ctx, file: wh)
+        }
+    }
+
+    @Test("lock with offset and length succeeds") func lockWithOffsetAndLengthSucceeds() throws {
+        try withPublicShare { ctx in
+            let path = uniquePath("lock") + ".txt"
+            defer { try? Bridge.unlink(context: ctx, path: path) }
+
+            let wh = try Bridge.open(
+                context: ctx,
+                path: path,
+                flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
+            )
+            defer { try? Bridge.close(context: ctx, file: wh) }
+            try Bridge.lock(context: ctx, file: wh, flags: .exclusive, offset: 10, length: 100)
+            try Bridge.unlock(context: ctx, file: wh, offset: 10, length: 100)
+        }
+    }
+}
