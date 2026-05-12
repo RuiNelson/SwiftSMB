@@ -83,7 +83,7 @@ extension Bridge {
         path: String,
         destination: String,
     ) throws {
-        let destination = destination.replacingOccurrences(of: "/", with: "\\")
+        let destination = destination.pathComponents.backslashPath
         let substituteNameData = destination.data(using: .utf16LittleEndian) ?? Data()
         let printNameData = substituteNameData
 
