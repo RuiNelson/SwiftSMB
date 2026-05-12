@@ -965,6 +965,7 @@ class Bridge {
                 smb2_free_data(rawContext, output)
             }
         }
+        state.isFinished = true
     }
 
     private static let resumeKeyCloseCallback: smb2_command_cb = { _, status, _, callbackData in
@@ -993,87 +994,55 @@ class Bridge {
 
     private static func _requestResumeKey(
         context: Context,
-        sourcePath: String,
+        sourceHandle: OpaquePointer,
     ) throws -> Data {
+        guard let fileIDPtr = smb2_get_file_id(sourceHandle) else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
+        }
+        let sourceFileID = fileIDPtr.pointee
+
         let state = ResumeKeyState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
         defer { Unmanaged<ResumeKeyState>.fromOpaque(callbackData).release() }
 
-        return try sourcePath.withCString { pathPointer in
-            var cr_req = smb2_create_request(
-                security_flags: 0,
-                requested_oplock_level: 0,
-                impersonation_level: UInt32(SMB2_IMPERSONATION_IMPERSONATION),
-                smb_create_flags: 0,
-                desired_access: UInt32(SMB2_FILE_READ_DATA),
-                file_attributes: 0,
-                share_access: UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE),
-                create_disposition: UInt32(SMB2_FILE_OPEN),
-                create_options: 0,
-                name_offset: 0,
-                name_length: 0,
-                name: pathPointer,
-                create_context_offset: 0,
-                create_context_length: 0,
-                create_context: nil,
-            )
+        var ioctl_req = smb2_ioctl_request(
+            ctl_code: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY),
+            file_id: sourceFileID,
+            input_offset: 0,
+            input_count: 0,
+            max_input_response: 0,
+            output_offset: 0,
+            output_count: 0,
+            max_output_response: 64,
+            flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
+            input: nil,
+        )
 
-            guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, resumeKeyCreateCallback, callbackData) else {
-                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_create_async")
-            }
-
-            var ioctl_req = smb2_ioctl_request(
-                ctl_code: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY),
-                file_id: FileID.allOnes.raw,
-                input_offset: 0,
-                input_count: 0,
-                max_input_response: 0,
-                output_offset: 0,
-                output_count: 0,
-                max_output_response: 64,
-                flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
-                input: nil,
-            )
-
-            guard let ioctl_pdu = smb2_cmd_ioctl_async(
-                context.raw,
-                &ioctl_req,
-                resumeKeyIoctlCallback,
-                callbackData,
-            ) else {
-                smb2_free_pdu(context.raw, pdu)
-                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
-            }
-            smb2_add_compound_pdu(context.raw, pdu, ioctl_pdu)
-
-            var cl_req = smb2_close_request(
-                flags: 0,
-                file_id: FileID.allOnes.raw,
-            )
-
-            guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, resumeKeyCloseCallback, callbackData) else {
-                smb2_free_pdu(context.raw, pdu)
-                throw SMB.Error.fromBridge(context, operation: "smb2_cmd_close_async")
-            }
-            smb2_add_compound_pdu(context.raw, pdu, close_pdu)
-
-            smb2_queue_pdu(context.raw, pdu)
-
-            try serviceUntilFinished(context: context, state: state)
-
-            if state.status != SMB2_STATUS_SUCCESS {
-                throw SMB.Error.fromBridge(context, operation: "FSCTL_SRV_REQUEST_RESUME_KEY", status: state.status)
-            }
-
-            guard let key = state.resumeKey, key.count >= resumeKeyLength else {
-                throw SMB.Error.unknown(
-                    operation: "FSCTL_SRV_REQUEST_RESUME_KEY",
-                    message: "Server returned an invalid resume key",
-                )
-            }
-
-            return key.prefix(resumeKeyLength)
+        guard let pdu = smb2_cmd_ioctl_async(
+            context.raw,
+            &ioctl_req,
+            resumeKeyIoctlCallback,
+            callbackData,
+        ) else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
         }
+
+        smb2_queue_pdu(context.raw, pdu)
+
+        try serviceUntilFinished(context: context, state: state)
+
+        if state.status != SMB2_STATUS_SUCCESS {
+            throw SMB.Error.fromBridge(context, operation: "FSCTL_SRV_REQUEST_RESUME_KEY", status: state.status)
+        }
+
+        guard let key = state.resumeKey, key.count >= resumeKeyLength else {
+            throw SMB.Error.unknown(
+                operation: "FSCTL_SRV_REQUEST_RESUME_KEY",
+                message: "Server returned an invalid resume key",
+            )
+        }
+
+        return key.prefix(resumeKeyLength)
     }
 
     private static func _copyChunk(
@@ -1152,17 +1121,33 @@ class Bridge {
             return
         }
 
-        let resumeKey = try _requestResumeKey(context: context, sourcePath: sourcePath)
+        let rawSourceHandle = sourcePath.withCString {
+            smb2_open(context.raw, $0, O_RDONLY)
+        }
+        guard let rawSourceHandle else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_open")
+        }
+
+        let resumeKey: Data
+        do {
+            resumeKey = try _requestResumeKey(context: context, sourceHandle: rawSourceHandle)
+        }
+        catch {
+            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
+            throw error
+        }
 
         let rawDestHandle = destinationPath.withCString {
             smb2_open(context.raw, $0, O_RDWR | O_CREAT | O_TRUNC)
         }
         guard let rawDestHandle else {
+            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
             throw SMB.Error.fromBridge(context, operation: "smb2_open")
         }
 
         guard let fileIDPtr = smb2_get_file_id(rawDestHandle) else {
             _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
         }
         let destFileID = fileIDPtr.pointee
@@ -1185,10 +1170,12 @@ class Bridge {
         }
         catch {
             _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
             throw error
         }
 
         try check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
+        try check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
     }
 
     /// Copies a file from source to destination using SMB2 server-side copy.
