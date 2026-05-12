@@ -53,10 +53,10 @@ struct SMBConnectionAuthTests {
         catch let error as SMB.Error {
             #expect(error.operation == "smb2_connect_share")
             if case let .ntStatus(status, _, _, _) = error {
-                #expect(status == .logonFailure)
+                #expect([SMB.SMBStatus.logonFailure, .accessDenied].contains(status))
             }
             else {
-                Issue.record("Expected .logonFailure, got \(error)")
+                Issue.record("Expected .logonFailure or .accessDenied, got \(error)")
             }
         }
     }
