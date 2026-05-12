@@ -30,6 +30,7 @@ public extension SMB.Error {
         case smb2Rename
         case smb2Truncate
         case smb2Readlink
+        case smb2MakeLink
         case smb2Readdir
         case smb2Rewinddir
         case smb2Telldir
@@ -73,6 +74,7 @@ public extension SMB.Error {
             case .smb2Rename: "smb2_rename"
             case .smb2Truncate: "smb2_truncate"
             case .smb2Readlink: "smb2_readlink"
+            case .smb2MakeLink: "smb2_make_link"
             case .smb2Readdir: "smb2_readdir"
             case .smb2Rewinddir: "smb2_rewinddir"
             case .smb2Telldir: "smb2_telldir"

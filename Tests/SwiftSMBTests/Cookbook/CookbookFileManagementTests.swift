@@ -123,6 +123,17 @@ struct CookbookFileManagementTests {
         _ = target
     }
 
+    @Test("makeLink compiles and runs")
+    func makeLink() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let linkPath = uniquePath("cookbook-link")
+        defer { try? connection.removeFile(at: linkPath) }
+        try connection.makeLink(at: linkPath, pointingTo: "hello.txt")
+        let target = try connection.readLink(at: linkPath)
+        #expect(target == "hello.txt")
+    }
+
     @Test("statFilesystem compiles and runs")
     func statFilesystem() throws {
         let connection = try cookbookConnection()

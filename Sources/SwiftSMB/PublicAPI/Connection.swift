@@ -280,12 +280,27 @@ public extension SMB {
         ///   - bufferSize: The maximum number of bytes to read for the target.
         /// - Returns: The link target path.
         /// - Throws: ``SMB/Error`` if the link cannot be read.
-        public func readLink(at path: String, bufferSize: Int = 4096) throws -> String {
+        public func readLink(at path: String, bufferSize: Int = 16384) throws -> String {
             let path = try SMB.validatePath(path, operation: .smb2Readlink)
             let context = try requireContext()
             return try Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
         }
-
+        
+        /// Creates a symbolic link at the given path.
+        ///
+        /// - Parameters:
+        ///   - path: The link path, relative to the share root.
+        ///   - pointingTo: The target path that the link will point to.
+        /// - Throws: ``SMB/Error`` if the link cannot be created.
+        public func makeLink(at path: String, pointingTo: String) throws {
+            let path = try SMB.validatePath(path, operation: .smb2MakeLink)
+            guard !pointingTo.isEmpty else {
+                throw SMB.Error.invalidArgument(cause: .pathMustNotBeEmpty, onOperation: .smb2MakeLink)
+            }
+            let context = try requireContext()
+            try Bridge.makeLink(context: context, path: path, destination: pointingTo)
+        }
+        
         /// Returns metadata for a path.
         ///
         /// - Parameter path: The path to inspect, relative to the share root.

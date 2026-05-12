@@ -399,6 +399,17 @@ struct SymlinkTests {
             #expect(target.contains("hello.txt"))
         }
     }
+
+    @Test("create and read symlink") func makeLinkAndReadLink() throws {
+        try withPublicShare { ctx in
+            let linkPath = "testdir/\(uniquePath("link"))"
+            let target = "hello.txt"
+            defer { try? Bridge.unlink(context: ctx, path: linkPath) }
+            try Bridge.makeLink(context: ctx, path: linkPath, destination: target)
+            let readTarget = try Bridge.readLink(context: ctx, path: linkPath)
+            #expect(readTarget == target)
+        }
+    }
 }
 
 // MARK: - Read-only share tests

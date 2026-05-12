@@ -118,6 +118,14 @@ if info.type == .directory {
 try connection.truncateFile(at: "log.txt", toLength: 0)
 ```
 
+## Creating a symbolic link
+
+``SMB.Connection.makeLink(at:pointingTo:)`` creates a symbolic link at the given path:
+
+```swift
+try connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
+```
+
 ## Reading a symbolic link
 
 ``SMB.Connection.readLink(at:bufferSize:)`` returns the target of a symbolic link:
