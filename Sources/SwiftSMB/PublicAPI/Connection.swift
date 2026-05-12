@@ -109,6 +109,7 @@ public extension SMB {
             cancelNotifyWatchers()
             if let context = takeContext() {
                 try? Bridge.disconnectShare(context: context)
+                Bridge.closeContext(context)
                 Bridge.destroyContext(context)
             }
         }
@@ -126,12 +127,14 @@ public extension SMB {
 
             do {
                 try Bridge.disconnectShare(context: context)
-                Bridge.destroyContext(context)
             }
             catch {
+                Bridge.closeContext(context)
                 Bridge.destroyContext(context)
                 throw error
             }
+            Bridge.closeContext(context)
+            Bridge.destroyContext(context)
         }
 
         /// Sends an SMB echo request and returns the round-trip latency.
