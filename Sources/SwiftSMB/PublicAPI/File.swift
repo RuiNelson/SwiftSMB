@@ -324,6 +324,64 @@ public extension SMB {
             case exclusive
         }
 
+        /// Opportunistic lock levels that can be requested when opening a file.
+        ///
+        /// OpLocks allow the client to cache data locally, reducing network round
+        /// trips. The server may grant a lower level than requested.
+        public enum OpLock: Sendable, Equatable {
+            /// No oplock requested.
+            case none
+
+            /// Level II (shared) oplock — multiple readers can cache.
+            case levelII
+
+            /// Exclusive oplock — only one client may have the file open.
+            case exclusive
+
+            /// Batch oplock — like exclusive but also allows the client to
+            /// pretend-closed the file without actually closing it.
+            case batch
+
+            /// Lease — SMB3 leasing with fine-grained caching states.
+            case lease(LeaseState)
+        }
+
+        /// Caching states for an SMB3 lease.
+        ///
+        /// These flags control which data the client may cache locally when a
+        /// lease is granted.
+        public struct LeaseState: OptionSet, Sendable, Equatable, CustomDebugStringConvertible {
+            /// The raw lease state bitfield.
+            public let rawValue: UInt32
+
+            /// The client may cache reads.
+            public static let readCaching = LeaseState(rawValue: 0x01)
+
+            /// The client may cache handles (keeps the file open on the server).
+            public static let handleCaching = LeaseState(rawValue: 0x02)
+
+            /// The client may cache writes.
+            public static let writeCaching = LeaseState(rawValue: 0x04)
+
+            /// Creates a lease state from a raw bitfield.
+            public init(rawValue: UInt32) {
+                self.rawValue = rawValue
+            }
+
+            public var debugDescription: String {
+                describeFlags([
+                    (.readCaching, "readCaching"),
+                    (.handleCaching, "handleCaching"),
+                    (.writeCaching, "writeCaching"),
+                ], typeName: "SMB.File.LeaseState")
+            }
+
+            /// The bridge representation for this lease state.
+            var bridgeValue: Bridge.LeaseState {
+                Bridge.LeaseState(rawValue: rawValue)
+            }
+        }
+
         /// Acquires a byte-range lock on the file.
         ///
         /// When `range` is `nil`, the lock covers the whole file. Only one mode can

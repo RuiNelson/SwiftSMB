@@ -231,6 +231,116 @@ class Bridge {
         }
     }
 
+    // MARK: - Open with OpLock/Lease
+
+    private final class OpenState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished: Bool = false
+        var fileHandle: OpaquePointer?
+    }
+
+    private static let openCallback: smb2_command_cb = { _, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<OpenState>.fromOpaque(callbackData).takeUnretainedValue()
+        if status == 0, let commandData {
+            state.fileHandle = OpaquePointer(commandData)
+        }
+        else {
+            state.status = status
+        }
+        state.isFinished = true
+    }
+
+    private static func _open(
+        context: Context,
+        path: String,
+        flags: OpenFlags = OpenFlags(),
+        opLockLevel: OpLockLevel = .none,
+        leaseState: LeaseState = [],
+        leaseKey: Data? = nil,
+    ) throws -> FileHandle {
+        let state = OpenState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { Unmanaged<OpenState>.fromOpaque(callbackData).release() }
+
+        let status: Int32
+        if opLockLevel == .lease, let leaseKey, !leaseState.isEmpty {
+            var mutableKey = leaseKey
+            status = mutableKey.withUnsafeMutableBytes { keyBuffer in
+                path.withCString { pathPointer in
+                    smb2_open_async_with_oplock_or_lease(
+                        context.raw,
+                        pathPointer,
+                        flags.rawValue,
+                        opLockLevel.rawValue,
+                        leaseState.rawValue,
+                        keyBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        openCallback,
+                        callbackData,
+                    )
+                }
+            }
+        }
+        else {
+            status = path.withCString { pathPointer in
+                smb2_open_async_with_oplock_or_lease(
+                    context.raw,
+                    pathPointer,
+                    flags.rawValue,
+                    opLockLevel.rawValue,
+                    0,
+                    nil,
+                    openCallback,
+                    callbackData,
+                )
+            }
+        }
+
+        guard status == 0 else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_open_async_with_oplock_or_lease")
+        }
+
+        try serviceUntilFinished(context: context, state: state)
+
+        if state.status != 0 {
+            throw SMB.Error.fromBridge(
+                context,
+                operation: "smb2_open_async_with_oplock_or_lease",
+                status: state.status,
+            )
+        }
+
+        guard let handle = state.fileHandle else {
+            throw SMB.Error.unknown(
+                operation: "smb2_open_async_with_oplock_or_lease",
+                message: "File handle was nil after successful open",
+            )
+        }
+
+        return FileHandle(raw: handle)
+    }
+
+    /// Opens or creates a file with an oplock or lease request.
+    static func open(
+        context: Context,
+        path: String,
+        flags: OpenFlags = OpenFlags(),
+        opLockLevel: OpLockLevel = .none,
+        leaseState: LeaseState = [],
+        leaseKey: Data? = nil,
+    ) throws -> FileHandle {
+        try sync {
+            try _open(
+                context: context,
+                path: path,
+                flags: flags,
+                opLockLevel: opLockLevel,
+                leaseState: leaseState,
+                leaseKey: leaseKey,
+            )
+        }
+    }
+
     private static func _close(context: Context, file: FileHandle) throws {
         try check(smb2_close(context.raw, file.raw), context: context, operation: "smb2_close")
     }

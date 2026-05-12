@@ -455,3 +455,123 @@ struct SMBPathValidationTests {
         }
     }
 }
+
+// MARK: - Bridge.OpLockLevel
+
+struct SMB2OpLockLevelTests {
+    @Test("none raw value is 0x00") func noneRawValueIsZero() {
+        #expect(Bridge.OpLockLevel.none.rawValue == 0x00)
+    }
+
+    @Test("levelII raw value is 0x01") func levelIIRawValueIsOne() {
+        #expect(Bridge.OpLockLevel.levelII.rawValue == 0x01)
+    }
+
+    @Test("exclusive raw value is 0x08") func exclusiveRawValueIsEight() {
+        #expect(Bridge.OpLockLevel.exclusive.rawValue == 0x08)
+    }
+
+    @Test("batch raw value is 0x09") func batchRawValueIsNine() {
+        #expect(Bridge.OpLockLevel.batch.rawValue == 0x09)
+    }
+
+    @Test("lease raw value is 0xFF") func leaseRawValueIsFF() {
+        #expect(Bridge.OpLockLevel.lease.rawValue == 0xFF)
+    }
+}
+
+// MARK: - Bridge.LeaseState
+
+struct SMB2LeaseStateTests {
+    @Test("readCaching raw value is 0x01") func readCachingRawValue() {
+        #expect(Bridge.LeaseState.readCaching.rawValue == 0x01)
+    }
+
+    @Test("handleCaching raw value is 0x02") func handleCachingRawValue() {
+        #expect(Bridge.LeaseState.handleCaching.rawValue == 0x02)
+    }
+
+    @Test("writeCaching raw value is 0x04") func writeCachingRawValue() {
+        #expect(Bridge.LeaseState.writeCaching.rawValue == 0x04)
+    }
+
+    @Test("combined lease state") func combinedLeaseState() {
+        let state: Bridge.LeaseState = [.readCaching, .handleCaching, .writeCaching]
+        #expect(state.rawValue == 0x07)
+        #expect(state.contains(.readCaching))
+        #expect(state.contains(.handleCaching))
+        #expect(state.contains(.writeCaching))
+    }
+
+    @Test("empty lease state") func emptyLeaseState() {
+        let state = Bridge.LeaseState()
+        #expect(state.rawValue == 0)
+        #expect(state.isEmpty)
+    }
+}
+
+// MARK: - SMB.File.OpLock
+
+struct SMBFileOpLockTests {
+    @Test("none case equality") func noneCaseEquality() {
+        #expect(SMB.File.OpLock.none == .none)
+    }
+
+    @Test("levelII case equality") func levelIICaseEquality() {
+        #expect(SMB.File.OpLock.levelII == .levelII)
+    }
+
+    @Test("exclusive case equality") func exclusiveCaseEquality() {
+        #expect(SMB.File.OpLock.exclusive == .exclusive)
+    }
+
+    @Test("batch case equality") func batchCaseEquality() {
+        #expect(SMB.File.OpLock.batch == .batch)
+    }
+
+    @Test("lease with state equality") func leaseWithStateEquality() {
+        #expect(SMB.File.OpLock.lease(.readCaching) == .lease(.readCaching))
+    }
+
+    @Test("lease with different states are not equal") func leaseWithDifferentStatesAreNotEqual() {
+        #expect(SMB.File.OpLock.lease(.readCaching) != .lease(.writeCaching))
+    }
+
+    @Test("different oplock levels are not equal") func differentOpLockLevelsAreNotEqual() {
+        #expect(SMB.File.OpLock.none != .levelII)
+        #expect(SMB.File.OpLock.exclusive != .batch)
+        #expect(SMB.File.OpLock.none != .lease(.readCaching))
+    }
+}
+
+// MARK: - SMB.File.LeaseState
+
+struct SMBFileLeaseStateTests {
+    @Test("public lease state readCaching raw value") func publicLeaseStateReadCaching() {
+        #expect(SMB.File.LeaseState.readCaching.rawValue == 0x01)
+    }
+
+    @Test("public lease state handleCaching raw value") func publicLeaseStateHandleCaching() {
+        #expect(SMB.File.LeaseState.handleCaching.rawValue == 0x02)
+    }
+
+    @Test("public lease state writeCaching raw value") func publicLeaseStateWriteCaching() {
+        #expect(SMB.File.LeaseState.writeCaching.rawValue == 0x04)
+    }
+
+    @Test("public lease state combines") func publicLeaseStateCombines() {
+        let state: SMB.File.LeaseState = [.readCaching, .writeCaching]
+        #expect(state.rawValue == 0x05)
+        #expect(state.contains(.readCaching))
+        #expect(state.contains(.writeCaching))
+        #expect(!state.contains(.handleCaching))
+    }
+
+    @Test("bridge value maps correctly") func bridgeValueMapsCorrectly() {
+        let state: SMB.File.LeaseState = [.readCaching, .handleCaching]
+        let bridge = state.bridgeValue
+        #expect(bridge.rawValue == 0x03)
+        #expect(bridge.contains(.readCaching))
+        #expect(bridge.contains(.handleCaching))
+    }
+}

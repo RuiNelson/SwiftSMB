@@ -122,6 +122,22 @@ extension Bridge {
         }
     }
 
+    enum OpLockLevel: UInt8, Equatable {
+        case none = 0x00
+        case levelII = 0x01
+        case exclusive = 0x08
+        case batch = 0x09
+        case lease = 0xFF
+    }
+
+    struct LeaseState: OptionSet, Equatable {
+        let rawValue: UInt32
+
+        static let readCaching = LeaseState(rawValue: 0x01)
+        static let handleCaching = LeaseState(rawValue: 0x02)
+        static let writeCaching = LeaseState(rawValue: 0x04)
+    }
+
     struct DirectoryHandle {
         let raw: UnsafeMutablePointer<smb2dir>
     }

@@ -158,6 +158,8 @@ public extension SMB {
         ///   - path: The path to the file, relative to the share root.
         ///   - accessMode: The access mode to request.
         ///   - options: Additional open options.
+        ///   - opLock: The opportunistic lock level to request, or ``File/OpLock/none``
+        ///     for no oplock.
         /// - Returns: An open file handle.
         /// - Throws: ``SMB/Error`` if the connection is closed or the file
         ///   cannot be opened.
@@ -165,15 +167,53 @@ public extension SMB {
             at path: String,
             accessMode: File.AccessMode = .readOnly,
             options: File.OpenOptions = [],
+            opLock: File.OpLock = .none,
         ) throws -> File {
             let path = try SMB.validatePath(path, operation: .smb2Open)
             let context = try requireContext()
+
+            let bridgeLevel: Bridge.OpLockLevel
+            let bridgeLeaseState: Bridge.LeaseState
+            let leaseKey: Data?
+
+            switch opLock {
+            case .none:
+                bridgeLevel = .none
+                bridgeLeaseState = []
+                leaseKey = nil
+            case .levelII:
+                bridgeLevel = .levelII
+                bridgeLeaseState = []
+                leaseKey = nil
+            case .exclusive:
+                bridgeLevel = .exclusive
+                bridgeLeaseState = []
+                leaseKey = nil
+            case .batch:
+                bridgeLevel = .batch
+                bridgeLeaseState = []
+                leaseKey = nil
+            case let .lease(state):
+                bridgeLevel = .lease
+                bridgeLeaseState = state.bridgeValue
+                leaseKey = Self.generateLeaseKey()
+            }
+
             let handle = try Bridge.open(
                 context: context,
                 path: path,
                 flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
+                opLockLevel: bridgeLevel,
+                leaseState: bridgeLeaseState,
+                leaseKey: leaseKey,
             )
             return File(connection: self, path: path, handle: handle)
+        }
+
+        /// Generates a random 16-byte lease key.
+        private static func generateLeaseKey() -> Data {
+            withUnsafeBytes(of: UUID().uuid) { Data($0)
+            }
         }
 
         /// Opens a directory on the connected share.
