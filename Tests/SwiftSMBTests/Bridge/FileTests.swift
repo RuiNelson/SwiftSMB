@@ -401,13 +401,22 @@ struct SymlinkTests {
     }
 
     @Test("create and read symlink") func makeLinkAndReadLink() throws {
-        try withPublicShare { ctx in
-            let linkPath = "testdir/\(uniquePath("link"))"
-            let target = "hello.txt"
-            defer { try? Bridge.unlink(context: ctx, path: linkPath) }
-            try Bridge.makeLink(context: ctx, path: linkPath, destination: target)
+        try withPrivateShare { ctx in
+            let targetPath = uniquePath("target") + ".txt"
+            let linkPath = uniquePath("link")
+            defer {
+                try? Bridge.unlink(context: ctx, path: linkPath)
+                try? Bridge.unlink(context: ctx, path: targetPath)
+            }
+            let handle = try Bridge.open(context: ctx, path: targetPath, flags: .init(.writeOnly, options: .create))
+            defer { try? Bridge.close(context: ctx, file: handle) }
+            let data = Array("target content".utf8)
+            _ = try data.withUnsafeBytes { rawBuf in
+                try Bridge.write(context: ctx, file: handle, bytes: RawSpan(_unsafeBytes: rawBuf))
+            }
+            try Bridge.makeLink(context: ctx, path: linkPath, destination: targetPath)
             let readTarget = try Bridge.readLink(context: ctx, path: linkPath)
-            #expect(readTarget == target)
+            #expect(readTarget == targetPath)
         }
     }
 }

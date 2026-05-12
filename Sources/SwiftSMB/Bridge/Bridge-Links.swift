@@ -91,7 +91,7 @@ extension Bridge {
         reparseBuffer.reserveCapacity(20 + substituteNameData.count + printNameData.count)
 
         withUnsafeBytes(of: UInt32(SMB2_REPARSE_TAG_SYMLINK).littleEndian) { reparseBuffer.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(substituteNameData.count + printNameData.count).littleEndian) {
+        withUnsafeBytes(of: UInt16(12 + substituteNameData.count + printNameData.count).littleEndian) {
             reparseBuffer.append(contentsOf: $0)
         }
         withUnsafeBytes(of: UInt16(0).littleEndian) { reparseBuffer.append(contentsOf: $0) }
