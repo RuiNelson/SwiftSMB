@@ -1,4 +1,5 @@
 //
+// Part of SwiftSMB
 // OpLockTests.swift
 //
 // Licensed under LGPL v2.1
@@ -15,108 +16,122 @@ import Testing
 struct OpLockBridgeTests {
     @Test("open with none oplock level succeeds") func openWithNoneOpLockLevelSucceeds() throws {
         try withPublicShare { ctx in
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .none,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "oplock-none") { path, content in
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .none,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with levelII oplock succeeds") func openWithLevelIIOpLockSucceeds() throws {
         try withPublicShare { ctx in
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .levelII,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "oplock-levelII") { path, content in
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .levelII,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with batch oplock succeeds") func openWithBatchOpLockSucceeds() throws {
         try withPublicShare { ctx in
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .batch,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "oplock-batch") { path, content in
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .batch,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with exclusive oplock succeeds") func openWithExclusiveOpLockSucceeds() throws {
         try withPublicShare { ctx in
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .exclusive,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "oplock-exclusive") { path, content in
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .exclusive,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with lease read caching succeeds") func openWithLeaseReadCachingSucceeds() throws {
         try withPublicShare { ctx in
-            let leaseKey = Data((0 ..< 16).map { UInt8($0) })
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .lease,
-                leaseState: .readCaching,
-                leaseKey: leaseKey,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "lease-read") { path, content in
+                let leaseKey = Data((0 ..< 16).map { UInt8($0) })
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .lease,
+                    leaseState: .readCaching,
+                    leaseKey: leaseKey,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with lease read and handle caching succeeds") func openWithLeaseReadHandleCachingSucceeds() throws {
         try withPublicShare { ctx in
-            let leaseKey = Data((0 ..< 16).map { UInt8($0) })
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .lease,
-                leaseState: [.readCaching, .handleCaching],
-                leaseKey: leaseKey,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "lease-handle") { path, content in
+                let leaseKey = Data((0 ..< 16).map { UInt8($0) })
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .lease,
+                    leaseState: [.readCaching, .handleCaching],
+                    leaseKey: leaseKey,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
     @Test("open with lease full state succeeds") func openWithLeaseFullStateSucceeds() throws {
         try withPublicShare { ctx in
-            let leaseKey = Data((0 ..< 16).map { UInt8($0) })
-            let handle = try Bridge.open(
-                context: ctx,
-                path: TestContent.helloPath,
-                flags: Bridge.OpenFlags(.readOnly),
-                opLockLevel: .lease,
-                leaseState: [.readCaching, .handleCaching, .writeCaching],
-                leaseKey: leaseKey,
-            )
-            defer { try? Bridge.close(context: ctx, file: handle) }
-            let bytes = try readAllBytes(context: ctx, file: handle)
-            #expect(bytes == TestContent.helloBytes)
+            try withBridgeFixtureFile(context: ctx, prefix: "lease-full") { path, content in
+                let leaseKey = Data((0 ..< 16).map { UInt8($0) })
+                let handle = try Bridge.open(
+                    context: ctx,
+                    path: path,
+                    flags: Bridge.OpenFlags(.readOnly),
+                    opLockLevel: .lease,
+                    leaseState: [.readCaching, .handleCaching, .writeCaching],
+                    leaseKey: leaseKey,
+                )
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let bytes = try readAllBytes(context: ctx, file: handle)
+                #expect(bytes == content)
+            }
         }
     }
 
@@ -185,4 +200,22 @@ struct OpLockBridgeTests {
             #expect(bytes == TestContent.helloBytes)
         }
     }
+}
+
+private func withBridgeFixtureFile<T>(
+    context: Bridge.Context,
+    prefix: String,
+    body: (String, [UInt8]) throws -> T,
+) throws -> T {
+    let path = uniquePath(prefix) + ".txt"
+    let content = TestContent.helloBytes
+    let writer = try Bridge.open(
+        context: context,
+        path: path,
+        flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
+    )
+    _ = try writeAllBytes(context: context, file: writer, data: content)
+    try Bridge.close(context: context, file: writer)
+    defer { try? Bridge.unlink(context: context, path: path) }
+    return try body(path, content)
 }

@@ -719,11 +719,11 @@ private func consumePipePackages(
     operation: SMB.Error.InvalidArgumentOperation,
 ) throws {
     // Ignore any noise before .start.
-    try expectStartPackage(from: pipe, operation: operation)
+    try expectStartPackage(from: pipe, operation: operation, timeout: nil)
 
     var isFinished = false
     while !isFinished {
-        let package = try receivePackage(from: pipe, operation: operation)
+        let package = try receivePackage(from: pipe, operation: operation, timeout: nil)
         switch package {
         case .start:
             continue
@@ -1100,9 +1100,10 @@ private func expectStartPackage(
     from pipe: DataPipe,
     operation: SMB.Error.InvalidArgumentOperation,
     strict: Bool = false,
+    timeout: TimeInterval? = pipePackageTimeout,
 ) throws {
     while true {
-        let package = try receivePackage(from: pipe, operation: operation)
+        let package = try receivePackage(from: pipe, operation: operation, timeout: timeout)
         switch package {
         case .start:
             return
@@ -1135,8 +1136,9 @@ private func sendPackage(
 private func receivePackage(
     from pipe: DataPipe,
     operation: SMB.Error.InvalidArgumentOperation,
+    timeout: TimeInterval? = pipePackageTimeout,
 ) throws -> DataPipe.Package {
-    guard let package = pipe.receive(timeout: pipePackageTimeout) else {
+    guard let package = pipe.receive(timeout: timeout) else {
         throw pipeTimeoutError(operation: operation)
     }
     return package
