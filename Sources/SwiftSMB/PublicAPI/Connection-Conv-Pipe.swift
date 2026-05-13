@@ -108,8 +108,6 @@ public extension SMB.Connection {
 
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
         defer { try? file.close() }
-        try file.lock(.exclusive, nonBlocking: false)
-        defer { try? file.unlock() }
 
         _ = try transferPipeToFile(
             pipe: pipe,
@@ -984,8 +982,6 @@ private func prepareAtomicUploadTarget(
     defer { try? input.close() }
     let output = try connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
     defer { try? output.close() }
-    try output.lock(.exclusive, nonBlocking: false)
-    defer { try? output.unlock() }
 
     try connection.changeAttributes(at: target) { $0.union(.temporary) }
 
