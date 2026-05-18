@@ -10,7 +10,7 @@ import SMB2
 
 public extension SMB {
     /// Identifies an SMB server.
-    struct Server: CustomDebugStringConvertible, Sendable {
+    struct Server: Codable, Hashable, Equatable, CustomDebugStringConvertible, Sendable {
         /// The server host name or IP address.
         public var host: String
 
@@ -88,7 +88,7 @@ public extension SMB {
     }
 
     /// Connection options that affect SMB negotiation and transfer behavior.
-    struct Configuration: CustomDebugStringConvertible, Sendable {
+    struct Configuration: Codable, CustomDebugStringConvertible, Equatable, Hashable, Sendable {
         /// The command timeout, in seconds.
         public var timeout: Int?
 
@@ -148,30 +148,30 @@ public extension SMB {
     }
 
     /// SMB dialect negotiation preferences.
-    enum Dialect: Equatable, Sendable {
+    enum Dialect: Int, Codable, Equatable, Sendable {
         /// Negotiate any supported SMB2 or SMB3 dialect.
-        case any
+        case any = 0
 
         /// Negotiate any supported SMB2 dialect.
-        case anySMB2
+        case anySMB2 = 2
 
         /// Negotiate any supported SMB3 dialect.
-        case anySMB3
+        case anySMB3 = 3
 
         /// Require SMB 2.0.2.
-        case smb2_02
+        case smb2_02 = 202
 
         /// Require SMB 2.1.
-        case smb2_10
+        case smb2_10 = 210
 
         /// Require SMB 3.0.
-        case smb3_00
+        case smb3_00 = 300
 
         /// Require SMB 3.0.2.
-        case smb3_02
+        case smb3_02 = 302
 
         /// Require SMB 3.1.1.
-        case smb3_11
+        case smb3_11 = 311
 
         /// The bridge representation for this dialect.
         var bridgeValue: smb2_negotiate_version {
@@ -197,15 +197,15 @@ public extension SMB {
     }
 
     /// Authentication mechanisms supported by `libsmb2`.
-    enum AuthenticationMethod: Equatable, Sendable {
+    enum AuthenticationMethod: Int, Codable, Equatable, Hashable, Sendable {
         /// Let `libsmb2` choose the authentication mechanism.
-        case automatic
+        case automatic = 0
 
         /// Use NTLMSSP authentication.
-        case ntlmssp
+        case ntlmssp = 1
 
         /// Use Kerberos authentication.
-        case kerberos
+        case kerberos = 2
 
         /// The bridge representation for this authentication method.
         var bridgeValue: Bridge.AuthenticationMethod {
@@ -221,7 +221,7 @@ public extension SMB {
     }
 
     /// SMB signing negotiation flags.
-    struct SecurityMode: OptionSet, Equatable, CustomDebugStringConvertible, Sendable {
+    struct SecurityMode: OptionSet, Equatable, Hashable, CustomDebugStringConvertible, Codable, Sendable {
         /// The raw SMB security mode bitfield.
         public let rawValue: UInt16
 
