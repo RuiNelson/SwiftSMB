@@ -27,6 +27,12 @@ class Bridge {
             try body()
         }
     }
+    
+    @discardableResult static func waitForAllOperationsToEnd() -> Int {
+        return bridgeQueue.sync {
+            return 0
+        }
+    }
 
     // MARK: - Context Management
 

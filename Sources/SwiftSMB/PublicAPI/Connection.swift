@@ -137,6 +137,21 @@ public extension SMB {
             Bridge.destroyContext(context)
         }
 
+        /// Disconnects from the share after waiting for all in-flight operations
+        /// to complete.
+        ///
+        /// This method blocks the calling thread until all bridge operations
+        /// (file reads, writes, directory listings, metadata queries, etc.)
+        /// have finished, then disconnects.
+        ///
+        /// Calling this method more than once is allowed.
+        ///
+        /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
+        public func disconnectGracefully() throws {
+            Bridge.waitForAllOperationsToEnd()
+            try disconnect()
+        }
+
         /// Sends an SMB echo request and returns the round-trip latency.
         ///
         /// - Returns: The elapsed time, in seconds.
