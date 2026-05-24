@@ -1,5 +1,10 @@
 # SwiftSMB
 
+[![](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](https://swift.org)
+[![](https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgrey)](#)
+[![](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](LICENSE)
+[![](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB?label=release)](https://github.com/RuiNelson/SwiftSMB/releases)
+
 SwiftSMB is a Swift Package Manager library for talking to SMB2 and SMB3 file shares from Swift. It wraps the proven [`libsmb2`](https://github.com/sahlberg/libsmb2) client library in a Swift-first API with typed configuration, friendly path handling, file and directory handles, share discovery, metadata operations, and convenience helpers for common upload and download workflows.
 
 Use it when your app or service needs to browse Windows, Samba, NAS, or other SMB-compatible shares without shelling out to system tools.
@@ -111,7 +116,7 @@ Add SwiftSMB to your package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "0.1.0"),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "1.0.0"),
 ]
 ```
 

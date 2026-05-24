@@ -29,8 +29,8 @@ class Bridge {
     }
     
     @discardableResult static func waitForAllOperationsToEnd() -> Int {
-        return bridgeQueue.sync {
-            return 0
+        bridgeQueue.sync {
+            0
         }
     }
 
