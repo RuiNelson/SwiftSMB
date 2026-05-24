@@ -122,3 +122,10 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   swiftformat .
   ```
 - SwiftFormat may rewrite nearby numeric literals or trailing commas. That is expected; keep formatter output unless it causes a functional problem.
+
+## Versioning & Releases
+
+- This project follows **Semantic Versioning** (`MAJOR.MINOR.PATCH`).
+- Use the Conventional Commits specification for all commit messages.
+- Use the release notes template at `etc/Release Template.md` for all GitHub releases.
+- Omit sections that have no content (e.g., skip "Migration Guide" if there are no breaking changes).

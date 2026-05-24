@@ -50,7 +50,7 @@ public extension SMB {
     }
 
     /// Credentials used to authenticate with an SMB server.
-    struct Credentials: CustomDebugStringConvertible, Sendable {
+    struct Credentials: Codable, CustomDebugStringConvertible, Equatable, Hashable, Sendable {
         /// The user name to authenticate as.
         public var user: String?
 
