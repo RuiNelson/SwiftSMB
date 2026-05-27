@@ -33,8 +33,8 @@ struct ShareTests {
     }
 
     @Test("hidden share is not enumerated by default") func hiddenShareIsNotEnumeratedByDefault() throws {
-        // Samba excludes browseable=no shares from NetShareEnum entirely;
-        // the listShares filter sees them as absent, not as SHARE_TYPE_HIDDEN.
+        // Samba excludes browseable=no shares from NetShareEnum entirely; the listShares filter sees them as absent,
+        // not as SHARE_TYPE_HIDDEN.
         try withFreshContext { ctx in
             let shares = try Bridge.listShares(context: ctx, server: testServerHost)
             #expect(!shares.contains { $0.name == TestShare.hidden })

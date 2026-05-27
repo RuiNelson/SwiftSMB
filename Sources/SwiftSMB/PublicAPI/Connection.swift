@@ -13,8 +13,8 @@ import PathWorks
 public extension SMB {
     /// An open connection to an SMB share.
     ///
-    /// A connection owns the underlying `libsmb2` context and provides methods
-    /// for file, directory, and metadata operations on a single connected share.
+    /// A connection owns the underlying `libsmb2` context and provides methods for file, directory, and metadata
+    /// operations on a single connected share.
     final class Connection: CustomDebugStringConvertible, Sendable {
         /// The server this connection is attached to.
         public let server: Server
@@ -66,8 +66,7 @@ public extension SMB {
 
         /// The SMB session identifier.
         ///
-        /// - Throws: ``SMB/Error`` if the connection is closed or the session ID
-        ///   cannot be retrieved.
+        /// - Throws: ``SMB/Error`` if the connection is closed or the session ID cannot be retrieved.
         public var sessionID: UInt64 {
             get throws {
                 let context = try requireContext()
@@ -116,9 +115,8 @@ public extension SMB {
 
         /// Disconnects from the share and destroys the underlying context.
         ///
-        /// Calling this method more than once is allowed. After disconnection,
-        /// operations on this connection or handles created from it throw
-        /// ``SMB/Error/invalidArgument(operation:message:)``.
+        /// Calling this method more than once is allowed. After disconnection, operations on this connection or handles
+        /// created from it throw ``SMB/Error/invalidArgument(operation:message:)``.
         ///
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
         public func disconnect() throws {
@@ -137,12 +135,10 @@ public extension SMB {
             Bridge.destroyContext(context)
         }
 
-        /// Disconnects from the share after waiting for all in-flight operations
-        /// to complete.
+        /// Disconnects from the share after waiting for all in-flight operations to complete.
         ///
-        /// This method blocks the calling thread until all bridge operations
-        /// (file reads, writes, directory listings, metadata queries, etc.)
-        /// have finished, then disconnects.
+        /// This method blocks the calling thread until all bridge operations (file reads, writes, directory listings,
+        /// metadata queries, etc.) have finished, then disconnects.
         ///
         /// Calling this method more than once is allowed.
         ///
@@ -155,8 +151,7 @@ public extension SMB {
         /// Sends an SMB echo request and returns the round-trip latency.
         ///
         /// - Returns: The elapsed time, in seconds.
-        /// - Throws: ``SMB/Error`` if the connection is closed or the echo
-        ///   request fails.
+        /// - Throws: ``SMB/Error`` if the connection is closed or the echo request fails.
         @discardableResult public func echo() throws -> Double {
             let context = try requireContext()
             let start = DispatchTime.now()
@@ -173,11 +168,9 @@ public extension SMB {
         ///   - path: The path to the file, relative to the share root.
         ///   - accessMode: The access mode to request.
         ///   - options: Additional open options.
-        ///   - opLock: The opportunistic lock level to request, or ``File/OpLock/none``
-        ///     for no oplock.
+        ///   - opLock: The opportunistic lock level to request, or ``File/OpLock/none`` for no oplock.
         /// - Returns: An open file handle.
-        /// - Throws: ``SMB/Error`` if the connection is closed or the file
-        ///   cannot be opened.
+        /// - Throws: ``SMB/Error`` if the connection is closed or the file cannot be opened.
         public func openFile(
             at path: String,
             accessMode: File.AccessMode = .readOnly,
@@ -249,8 +242,8 @@ public extension SMB {
         ///
         /// - Parameters:
         ///   - path: The directory path, relative to the share root.
-        ///   - makePath: A Boolean value indicating whether to create missing
-        ///     ancestor directories before creating `path`.
+        ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before creating
+        /// `path`.
         /// - Throws: ``SMB/Error`` if the directory cannot be created.
         public func makeDirectory(at path: String, makePath: Bool = false) throws {
             let path = try SMB.validatePath(path, operation: .smb2Mkdir)
@@ -369,17 +362,15 @@ public extension SMB {
         
         /// Returns whether an item exists at a path, and what kind of item it is.
         ///
-        /// This method returns ``SMB/ItemExistence/false`` when the server reports
-        /// that `path` does not exist. When an item exists, the result describes
-        /// the node kind reported by the server.
+        /// This method returns ``SMB/ItemExistence/false`` when the server reports that `path` does not exist. When an
+        /// item exists, the result describes the node kind reported by the server.
         ///
-        /// A leading `/` in `path` is ignored, so `"/folder"` is treated as
-        /// `"folder"` relative to the connected share root.
+        /// A leading `/` in `path` is ignored, so `"/folder"` is treated as `"folder"` relative to the connected share
+        /// root.
         ///
         /// - Parameter path: The item path to inspect, relative to the share root.
         /// - Returns: The existence and kind of the item at `path`.
-        /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be
-        ///   read, or `path` is invalid.
+        /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be read, or `path` is invalid.
         public func itemExists(at path: String) throws -> SMB.ItemExistence {
             do {
                 let stat = try stat(at: path)
@@ -400,8 +391,7 @@ public extension SMB {
         
         /// Changes the timestamps of a file or directory.
         ///
-        /// Only the timestamps that are provided are updated; omitted timestamps
-        /// are left unchanged on the server.
+        /// Only the timestamps that are provided are updated; omitted timestamps are left unchanged on the server.
         ///
         /// - Parameters:
         ///   - path: The path to the file or directory, relative to the share root.
@@ -409,8 +399,7 @@ public extension SMB {
         ///   - change: The new metadata-change time, or `nil` to leave it unchanged.
         ///   - write: The new last-write time, or `nil` to leave it unchanged.
         ///   - access: The new last-access time, or `nil` to leave it unchanged.
-        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
-        ///   or the server rejects the update.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the update.
         public func changeDate(
             at path: String,
             creation: Date? = nil,
@@ -434,8 +423,7 @@ public extension SMB {
         ///
         /// - Parameter path: The path to the file or directory, relative to the share root.
         /// - Returns: The current file attributes.
-        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
-        ///   or the server rejects the query.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the query.
         public func attributes(at path: String) throws -> FileAttributes {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
             let context = try requireContext()
@@ -445,15 +433,13 @@ public extension SMB {
 
         /// Changes the attributes of a file or directory.
         ///
-        /// The closure receives the current attributes and returns the new ones,
-        /// making it easy to mutate individual flags while leaving others intact.
+        /// The closure receives the current attributes and returns the new ones, making it easy to mutate individual
+        /// flags while leaving others intact.
         ///
         /// - Parameters:
         ///   - path: The path to the file or directory, relative to the share root.
-        ///   - change: A closure that receives the current attributes and returns
-        ///     the updated attributes.
-        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid,
-        ///   or the server rejects the update.
+        ///   - change: A closure that receives the current attributes and returns the updated attributes.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the update.
         public func changeAttributes(
             at path: String,
             _ change: (FileAttributes) -> FileAttributes,

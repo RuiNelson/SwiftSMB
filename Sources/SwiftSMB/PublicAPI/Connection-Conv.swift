@@ -12,11 +12,9 @@ import PathWorks
 public extension SMB.Connection {
     /// The default read block size accepted by the server.
     ///
-    /// This value is the configured transfer block size, or the library
-    /// default, clamped to ``maxReadSize``.
+    /// This value is the configured transfer block size, or the library default, clamped to ``maxReadSize``.
     ///
-    /// - Throws: ``SMB/Error`` if the connection is closed or no valid block
-    ///   size can be determined.
+    /// - Throws: ``SMB/Error`` if the connection is closed or no valid block size can be determined.
     var acceptedReadBlockSize: Int {
         get throws {
             try acceptedReadBlockSize()
@@ -25,11 +23,9 @@ public extension SMB.Connection {
 
     /// The default write block size accepted by the server.
     ///
-    /// This value is the configured transfer block size, or the library
-    /// default, clamped to ``maxWriteSize``.
+    /// This value is the configured transfer block size, or the library default, clamped to ``maxWriteSize``.
     ///
-    /// - Throws: ``SMB/Error`` if the connection is closed or no valid block
-    ///   size can be determined.
+    /// - Throws: ``SMB/Error`` if the connection is closed or no valid block size can be determined.
     var acceptedWriteBlockSize: Int {
         get throws {
             try acceptedWriteBlockSize()
@@ -49,8 +45,7 @@ public extension SMB.Connection {
     ///
     /// - Parameters:
     ///   - path: The path to the file, relative to the share root.
-    ///   - chunkSize: The preferred read block size. Values above the
-    ///     server maximum are clamped automatically.
+    ///   - chunkSize: The preferred read block size. Values above the server maximum are clamped automatically.
     /// - Returns: The file contents.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
     func loadFile(at path: String, chunkSize: Int? = nil) throws -> Data {
@@ -62,15 +57,13 @@ public extension SMB.Connection {
 
     /// Writes data to a file.
     ///
-    /// By default, this creates the file if needed and truncates any
-    /// existing file at `path`.
+    /// By default, this creates the file if needed and truncates any existing file at `path`.
     ///
     /// - Parameters:
     ///   - data: The bytes to write.
     ///   - path: The path to write, relative to the share root.
     ///   - options: File open options.
-    ///   - chunkSize: The preferred write block size. Values above the
-    ///     server maximum are clamped automatically.
+    ///   - chunkSize: The preferred write block size. Values above the server maximum are clamped automatically.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or written.
     func dumpToFile(
         _ data: Data,
@@ -98,9 +91,8 @@ public extension SMB.Connection {
 
     /// Removes a file, link, or directory.
     ///
-    /// Directories are removed recursively: all children are removed first,
-    /// then the directory itself. The share root cannot be removed through
-    /// this convenience method.
+    /// Directories are removed recursively: all children are removed first, then the directory itself. The share root
+    /// cannot be removed through this convenience method.
     ///
     /// - Parameter path: The path to remove, relative to the share root.
     /// - Throws: ``SMB/Error`` if the path cannot be inspected or removed.
@@ -120,18 +112,16 @@ public extension SMB.Connection {
         try removeDirectory(at: path)
     }
 
-    /// Copies a file from one path to another on the connected share using
-    /// server-side copy.
+    /// Copies a file from one path to another on the connected share using server-side copy.
     ///
-    /// Data is copied directly on the server without transferring through the
-    /// client. The source file must exist. If the destination file already
-    /// exists, an error is thrown.
+    /// Data is copied directly on the server without transferring through the client. The source file must exist. If
+    /// the destination file already exists, an error is thrown.
     ///
     /// - Parameters:
     ///   - sourcePath: The source file path, relative to the share root.
     ///   - destinationPath: The destination file path, relative to the share root.
-    /// - Throws: ``SMB/Error`` if the source cannot be opened, the destination
-    ///   already exists, or the server does not support server-side copy.
+    /// - Throws: ``SMB/Error`` if the source cannot be opened, the destination already exists, or the server does not
+    /// support server-side copy.
     func copyFile(from sourcePath: String, to destinationPath: String) throws {
         let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
         let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
@@ -162,8 +152,7 @@ public extension SMB.Connection {
 
     /// Returns a read block size accepted by the server.
     ///
-    /// - Parameter preferredBlockSize: A preferred block size, or `nil` to
-    ///   use the connection configuration/default.
+    /// - Parameter preferredBlockSize: A preferred block size, or `nil` to use the connection configuration/default.
     /// - Returns: The smaller of the preferred size and server maximum.
     /// - Throws: ``SMB/Error`` if no valid block size can be determined.
     func acceptedReadBlockSize(_ preferredBlockSize: Int? = nil) throws -> Int {
@@ -176,8 +165,7 @@ public extension SMB.Connection {
 
     /// Returns a write block size accepted by the server.
     ///
-    /// - Parameter preferredBlockSize: A preferred block size, or `nil` to
-    ///   use the connection configuration/default.
+    /// - Parameter preferredBlockSize: A preferred block size, or `nil` to use the connection configuration/default.
     /// - Returns: The smaller of the preferred size and server maximum.
     /// - Throws: ``SMB/Error`` if no valid block size can be determined.
     func acceptedWriteBlockSize(_ preferredBlockSize: Int? = nil) throws -> Int {

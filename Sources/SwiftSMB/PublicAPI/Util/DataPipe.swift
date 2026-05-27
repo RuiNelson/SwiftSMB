@@ -11,15 +11,12 @@ import Foundation
 
 /// A bounded pipe that synchronises a single producer with a single consumer.
 ///
-/// `DataPipe` implements a producer–consumer queue with back-pressure: when the
-/// internal buffer is full, calls to ``send(_:)`` block the caller until the
-/// consumer removes a package or the timeout expires, and when the buffer is
-/// empty, calls to ``receive(timeout:)`` block until a package arrives or the
-/// timeout expires.
+/// `DataPipe` implements a producer–consumer queue with back-pressure: when the internal buffer is full, calls to
+/// ``send(_:)`` block the caller until the consumer removes a package or the timeout expires, and when the buffer is
+/// empty, calls to ``receive(timeout:)`` block until a package arrives or the timeout expires.
 ///
-/// Thread safety is provided by a serial ``DispatchQueue`` for queue access and
-/// two ``DispatchSemaphore`` instances — one that counts available packages and
-/// one that counts free slots.
+/// Thread safety is provided by a serial ``DispatchQueue`` for queue access and two ``DispatchSemaphore`` instances —
+/// one that counts available packages and one that counts free slots.
 public final class DataPipe: @unchecked Sendable {
     /// A package exchanged between the producer and the consumer.
     public enum Package: Equatable, Sendable {
@@ -46,8 +43,7 @@ public final class DataPipe: @unchecked Sendable {
     /// Creates a new data pipe.
     ///
     /// - Parameters:
-    ///   - maxPackages: The maximum number of packages the pipe can hold before
-    ///     ``send(_:)`` blocks. Defaults to `3`.
+    ///   - maxPackages: The maximum number of packages the pipe can hold before ``send(_:)`` blocks. Defaults to `3`.
     ///   - label: A label used to name the internal serial dispatch queue.
     public init(maxPackages: Int = 3, label: String) {
         precondition(maxPackages > 0, "maxPackages must be positive")
@@ -58,9 +54,8 @@ public final class DataPipe: @unchecked Sendable {
     }
 
     deinit {
-        // Balance semaphores when a consumer stops early and packages remain
-        // queued. libdispatch traps if a semaphore is deallocated below its
-        // original value, even though the queue itself is going away.
+        // Balance semaphores when a consumer stops early and packages remain queued. libdispatch traps if a semaphore
+        // is deallocated below its original value, even though the queue itself is going away.
         let pendingPackages = queueSync.sync {
             let count = queue.count
             queue.removeAll(keepingCapacity: false)
@@ -89,16 +84,14 @@ public final class DataPipe: @unchecked Sendable {
 
     /// Sends a package to the pipe, blocking the caller when the pipe is full.
     ///
-    /// When the internal buffer has reached ``init(maxPackages:label:)``, this
-    /// method blocks the calling thread until the consumer removes a package
-    /// and frees a slot, or until `timeout` expires.
+    /// When the internal buffer has reached ``init(maxPackages:label:)``, this method blocks the calling thread until
+    /// the consumer removes a package and frees a slot, or until `timeout` expires.
     ///
     /// - Parameters:
     ///   - package: The ``Package`` to enqueue.
-    ///   - timeout: The maximum number of seconds to wait for a free slot.
-    ///     Defaults to `nil`, which waits indefinitely.
-    /// - Returns: `true` if the package was queued, or `false` if the timeout
-    ///   expired before a free slot became available.
+    ///   - timeout: The maximum number of seconds to wait for a free slot. Defaults to `nil`, which waits indefinitely.
+    /// - Returns: `true` if the package was queued, or `false` if the timeout expired before a free slot became
+    /// available.
     @discardableResult
     public func send(_ package: Package, timeout: TimeInterval? = nil) -> Bool {
         // Wait until a free slot is available in the queue.
@@ -121,14 +114,12 @@ public final class DataPipe: @unchecked Sendable {
 
     /// Receives the next package from the pipe, blocking when the pipe is empty.
     ///
-    /// When the internal buffer is empty, this method blocks the calling thread
-    /// until a package arrives or the timeout expires. Passing `nil` for
-    /// `timeout` waits indefinitely.
+    /// When the internal buffer is empty, this method blocks the calling thread until a package arrives or the timeout
+    /// expires. Passing `nil` for `timeout` waits indefinitely.
     ///
-    /// - Parameter timeout: The maximum number of seconds to wait for a
-    ///   package. Defaults to five seconds. Pass `nil` to wait indefinitely.
-    /// - Returns: The next ``Package``, or `nil` if the timeout expired before
-    ///   a package became available.
+    /// - Parameter timeout: The maximum number of seconds to wait for a package. Defaults to five seconds. Pass `nil`
+    /// to wait indefinitely.
+    /// - Returns: The next ``Package``, or `nil` if the timeout expired before a package became available.
     public func receive(timeout: TimeInterval? = 5) -> Package? {
         waitForPackage(deadline: timeout.map(Self.deadline(after:)))
     }

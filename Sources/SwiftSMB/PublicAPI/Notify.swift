@@ -255,8 +255,8 @@ public extension SMB {
 
         /// The object that receives watcher callbacks.
         ///
-        /// The watcher keeps a weak reference to its delegate. Assign a new
-        /// delegate if ownership changes while the watcher is running.
+        /// The watcher keeps a weak reference to its delegate. Assign a new delegate if ownership changes while the
+        /// watcher is running.
         public var delegate: (any NotifyWatcherDelegate)? {
             get {
                 protectedDelegate.current.delegate
@@ -291,9 +291,8 @@ public extension SMB {
 
         /// Cancels the watcher.
         ///
-        /// Cancellation is idempotent. The watcher stops after any pending
-        /// SMB notify request has been cancelled and the internal directory
-        /// handle has been closed.
+        /// Cancellation is idempotent. The watcher stops after any pending SMB notify request has been cancelled and
+        /// the internal directory handle has been closed.
         public func cancel() {
             state.cancel()
         }
@@ -354,9 +353,8 @@ public extension SMB.NotifyWatcherDelegate {
 public extension SMB.Connection {
     /// Watches a directory for SMB change notifications.
     ///
-    /// Keep the returned watcher alive for as long as you want notifications
-    /// and call ``SMB/NotifyWatcher/cancel()`` when you are done. Delegate
-    /// callbacks are delivered on `callbackQueue`.
+    /// Keep the returned watcher alive for as long as you want notifications and call ``SMB/NotifyWatcher/cancel()``
+    /// when you are done. Delegate callbacks are delivered on `callbackQueue`.
     ///
     /// - Parameters:
     ///   - path: The directory path, relative to the share root.
@@ -365,8 +363,8 @@ public extension SMB.Connection {
     ///   - delegate: The object that receives notification callbacks.
     ///   - callbackQueue: The queue used to deliver delegate callbacks.
     /// - Returns: A cancellable directory watcher.
-    /// - Throws: ``SMB/Error`` if the connection is closed, `path` is invalid,
-    ///   or the directory cannot be opened for notifications.
+    /// - Throws: ``SMB/Error`` if the connection is closed, `path` is invalid, or the directory cannot be opened for
+    /// notifications.
     func watchDirectory(
         at path: String = "",
         options: SMB.NotifyOptions = [],

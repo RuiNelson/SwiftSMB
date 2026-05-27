@@ -11,9 +11,8 @@ import Foundation
 public extension SMB {
     /// Lists disk shares advertised by a server.
     ///
-    /// The method connects to the server's `IPC$` share, enumerates shares
-    /// through SRVSVC, filters the result to disk shares, and disconnects before
-    /// returning.
+    /// The method connects to the server's `IPC$` share, enumerates shares through SRVSVC, filters the result to disk
+    /// shares, and disconnects before returning.
     ///
     /// - Parameters:
     ///   - server: The server to query.
@@ -21,8 +20,7 @@ public extension SMB {
     ///   - configuration: SMB negotiation and connection options.
     ///   - includeHidden: Whether to include shares marked as hidden.
     /// - Returns: The server's visible disk shares.
-    /// - Throws: ``SMB/Error`` when context creation, authentication,
-    ///   connection, enumeration, or disconnection fails.
+    /// - Throws: ``SMB/Error`` when context creation, authentication, connection, enumeration, or disconnection fails.
     static func listShares(
         server: Server,
         credentials: Credentials? = nil,
@@ -45,9 +43,8 @@ public extension SMB {
 
     /// Connects to an SMB share.
     ///
-    /// The returned ``SMB/Connection`` owns the underlying SMB context and
-    /// disconnects automatically when deallocated. Call
-    /// ``SMB/Connection/disconnect()`` to close the connection explicitly.
+    /// The returned ``SMB/Connection`` owns the underlying SMB context and disconnects automatically when deallocated.
+    /// Call ``SMB/Connection/disconnect()`` to close the connection explicitly.
     ///
     /// - Parameters:
     ///   - server: The server hosting the share.
@@ -55,8 +52,7 @@ public extension SMB {
     ///   - share: The share name to connect to.
     ///   - configuration: SMB negotiation and transfer options.
     /// - Returns: An open connection to `share`.
-    /// - Throws: ``SMB/Error`` when the context cannot be created or the share
-    ///   connection fails.
+    /// - Throws: ``SMB/Error`` when the context cannot be created or the share connection fails.
     static func connect(
         server: Server,
         credentials: Credentials? = nil,

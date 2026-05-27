@@ -12,19 +12,16 @@ import PathWorks
 public extension SMB.Connection {
     /// The starting position for a file transfer.
     ///
-    /// Use this value to start a pipe, upload, or download operation at the
-    /// beginning of the file or at a specific byte offset. Offset-based
-    /// transfers are useful for resuming an interrupted operation when the
-    /// caller has already verified that the source and destination share the
-    /// same prefix.
+    /// Use this value to start a pipe, upload, or download operation at the beginning of the file or at a specific byte
+    /// offset. Offset-based transfers are useful for resuming an interrupted operation when the caller has already
+    /// verified that the source and destination share the same prefix.
     enum FromArgument {
         /// Start the transfer at byte offset zero.
         case beginning
 
         /// Start the transfer at an explicit byte offset.
         ///
-        /// - Parameter byte: The zero-based byte offset at which transfer
-        ///   should begin.
+        /// - Parameter byte: The zero-based byte offset at which transfer should begin.
         case offset(byte: UInt64)
 
         var offsetValue: UInt64 {
@@ -39,48 +36,40 @@ public extension SMB.Connection {
 
     /// Reports progress for a pipe-backed SMB transfer.
     ///
-    /// The closure is called after each SMB block is transferred and once more
-    /// when the transfer completes successfully. The completion call reports a
-    /// latest speed of `0`. Return `true` to continue, or `false` to cancel
-    /// the operation. Cancellation is treated as a successful early return and
-    /// does not throw.
+    /// The closure is called after each SMB block is transferred and once more when the transfer completes
+    /// successfully. The completion call reports a latest speed of `0`. Return `true` to continue, or `false` to cancel
+    /// the operation. Cancellation is treated as a successful early return and does not throw.
     ///
     /// - Parameters:
-    ///   - bytesTransferred: The cumulative number of bytes transferred since
-    ///     the operation began, excluding any resume offset.
-    ///   - latestSpeed: The transfer rate for the most recent block, in bytes
-    ///     per second, or `0` for the completion call.
-    ///   - averageSpeed: The average transfer rate since the operation began,
-    ///     in bytes per second.
+    ///   - bytesTransferred: The cumulative number of bytes transferred since the operation began, excluding any resume
+    /// offset.
+    ///   - latestSpeed: The transfer rate for the most recent block, in bytes per second, or `0` for the completion
+    /// call.
+    ///   - averageSpeed: The average transfer rate since the operation began, in bytes per second.
     /// - Returns: `true` to continue the transfer, or `false` to cancel it.
     typealias PipeProgress = @Sendable (UInt64, Double, Double) -> Bool
 
     /// Writes data from a pipe to a file on the SMB share.
     ///
-    /// This method consumes a started `pipe` until the producer finishes it,
-    /// breaks it, or the progress closure returns `false`. Each data package
-    /// may be split into multiple SMB writes when the slot is larger than the
-    /// server's accepted write block size.
+    /// This method consumes a started `pipe` until the producer finishes it, breaks it, or the progress closure returns
+    /// `false`. Each data package may be split into multiple SMB writes when the slot is larger than the server's
+    /// accepted write block size.
     ///
-    /// If `continuation` returns `false`, the method stops transferring and
-    /// returns normally. Data already written to the remote file is left in
-    /// place.
+    /// If `continuation` returns `false`, the method stops transferring and returns normally. Data already written to
+    /// the remote file is left in place.
     ///
     /// - Parameters:
     ///   - pipe: The data pipe to consume.
     ///   - path: The share-relative destination file path.
     ///   - from: The remote file offset at which writing should begin.
     ///   - options: Options used when opening the destination file.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values
-    ///     larger than the server's maximum write size are clamped.
-    ///   - makePath: A Boolean value indicating whether to create missing
-    ///     ancestor directories before writing the file. When `false`, the
-    ///     method throws if the parent directory does not exist.
-    ///   - continuation: A progress closure called after each SMB write block
-    ///     and once after the pipe is finished.
-    /// - Throws: ``SMB/Error`` if the connection is closed, the file cannot be
-    ///   opened, a write fails, or the server reports that a write made no
-    ///   progress.
+    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum write size
+    /// are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
+    /// When `false`, the method throws if the parent directory does not exist.
+    ///   - continuation: A progress closure called after each SMB write block and once after the pipe is finished.
+    /// - Throws: ``SMB/Error`` if the connection is closed, the file cannot be opened, a write fails, or the server
+    /// reports that a write made no progress.
     func write(
         fromPipe pipe: DataPipe,
         toFile path: String,
@@ -121,27 +110,23 @@ public extension SMB.Connection {
 
     /// Reads a file from the SMB share into a pipe.
     ///
-    /// The method reads from `path` in server-accepted blocks and sends each
-    /// block into `pipe`. The method sends ``DataPipe/Package/start`` before
-    /// reading, then ``DataPipe/Package/finish`` on successful completion or
-    /// caller cancellation. It sends ``DataPipe/Package/broken`` when the
-    /// transfer fails after startup.
+    /// The method reads from `path` in server-accepted blocks and sends each block into `pipe`. The method sends
+    /// ``DataPipe/Package/start`` before reading, then ``DataPipe/Package/finish`` on successful completion or caller
+    /// cancellation. It sends ``DataPipe/Package/broken`` when the transfer fails after startup.
     ///
-    /// If `continuation` returns `false`, the method stops transferring and
-    /// returns normally. The pipe remains readable until any already-sent data
-    /// has been drained.
+    /// If `continuation` returns `false`, the method stops transferring and returns normally. The pipe remains readable
+    /// until any already-sent data has been drained.
     ///
     /// - Parameters:
     ///   - path: The share-relative source file path.
     ///   - pipe: The data pipe that receives file contents.
     ///   - from: The remote file offset at which reading should begin.
     ///   - options: Options used when opening the source file.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values
-    ///     larger than the server's maximum read size are clamped.
-    ///   - continuation: A progress closure called after each SMB read block
-    ///     and once after the remote file reaches end-of-file.
-    /// - Throws: ``SMB/Error`` if the connection is closed, the file cannot be
-    ///   opened, or a read fails.
+    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum read size
+    /// are clamped.
+    ///   - continuation: A progress closure called after each SMB read block and once after the remote file reaches
+    /// end-of-file.
+    /// - Throws: ``SMB/Error`` if the connection is closed, the file cannot be opened, or a read fails.
     func read(
         fromFile path: String,
         toPipe pipe: DataPipe,
@@ -176,54 +161,44 @@ public extension SMB.Connection {
 
     /// Reports progress for a local file transfer.
     ///
-    /// The closure is called after each block is transferred between local
-    /// storage and the SMB share and once more when the transfer completes
-    /// successfully. The completion call reports a latest speed of `0`.
-    /// Return `true` to continue, or `false` to cancel the operation.
-    /// Cancellation is treated as a successful early return and does not
+    /// The closure is called after each block is transferred between local storage and the SMB share and once more when
+    /// the transfer completes successfully. The completion call reports a latest speed of `0`. Return `true` to
+    /// continue, or `false` to cancel the operation. Cancellation is treated as a successful early return and does not
     /// throw.
     ///
     /// - Parameters:
-    ///   - bytesTransferred: The cumulative number of bytes transferred since
-    ///     the operation began, excluding any resume offset.
-    ///   - totalBytes: The total number of bytes expected to be transferred,
-    ///     excluding any resume offset.
-    ///   - latestSpeed: The transfer rate for the most recent block, in bytes
-    ///     per second, or `0` for the completion call.
-    ///   - averageSpeed: The average transfer rate since the operation began,
-    ///     in bytes per second.
+    ///   - bytesTransferred: The cumulative number of bytes transferred since the operation began, excluding any resume
+    /// offset.
+    ///   - totalBytes: The total number of bytes expected to be transferred, excluding any resume offset.
+    ///   - latestSpeed: The transfer rate for the most recent block, in bytes per second, or `0` for the completion
+    /// call.
+    ///   - averageSpeed: The average transfer rate since the operation began, in bytes per second.
     /// - Returns: `true` to continue the transfer, or `false` to cancel it.
     typealias FileProgress = @Sendable (UInt64, UInt64, Double, Double) -> Bool
 
     /// Downloads a file from the SMB share to a local URL.
     ///
-    /// The download is written to a temporary file first. When the transfer
-    /// completes successfully, the temporary file replaces `local`
-    /// atomically where the platform supports it, or is moved into place when
-    /// no destination exists. If the transfer fails or is cancelled, the
-    /// temporary file is removed and any existing file at `local` is left
+    /// The download is written to a temporary file first. When the transfer completes successfully, the temporary file
+    /// replaces `local` atomically where the platform supports it, or is moved into place when no destination exists.
+    /// If the transfer fails or is cancelled, the temporary file is removed and any existing file at `local` is left
     /// untouched.
     ///
-    /// To resume a partial download, pass an offset with
-    /// ``FromArgument/offset(byte:)``. The existing local file must contain at
-    /// least that many bytes; those bytes are copied into the temporary file
-    /// before new data is appended.
+    /// To resume a partial download, pass an offset with ``FromArgument/offset(byte:)``. The existing local file must
+    /// contain at least that many bytes; those bytes are copied into the temporary file before new data is appended.
     ///
-    /// If `continuation` returns `false`, the method cancels the download and
-    /// returns normally.
+    /// If `continuation` returns `false`, the method cancels the download and returns normally.
     ///
     /// - Parameters:
     ///   - remote: The share-relative source file path.
     ///   - local: The destination file URL on local storage.
     ///   - from: The byte offset at which downloading should begin.
     ///   - options: Options used when opening the remote source file.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values
-    ///     larger than the server's maximum read size are clamped.
-    ///   - continuation: A progress closure called after each block is written
-    ///     locally and once after the completed download is moved into place.
-    /// - Throws: ``SMB/Error`` if the connection is closed, the remote file
-    ///   cannot be inspected or read, the resume offset is invalid, or a local
-    ///   file operation fails.
+    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum read size
+    /// are clamped.
+    ///   - continuation: A progress closure called after each block is written locally and once after the completed
+    /// download is moved into place.
+    /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
+    /// offset is invalid, or a local file operation fails.
     func downloadFile(
         remote: String,
         local: URL,
@@ -307,39 +282,32 @@ public extension SMB.Connection {
 
     /// Uploads a local file to the SMB share.
     ///
-    /// When `atomic` is `true`, the upload is written to a temporary path in
-    /// the destination directory and renamed to `remote` only after the
-    /// transfer completes successfully. If the transfer fails or is cancelled,
-    /// the temporary remote file is removed. When `atomic` is `false`, bytes
-    /// are written directly to `remote` using `options`; cancellation or
-    /// failure may leave a partially written remote file.
+    /// When `atomic` is `true`, the upload is written to a temporary path in the destination directory and renamed to
+    /// `remote` only after the transfer completes successfully. If the transfer fails or is cancelled, the temporary
+    /// remote file is removed. When `atomic` is `false`, bytes are written directly to `remote` using `options`;
+    /// cancellation or failure may leave a partially written remote file.
     ///
-    /// To resume a partial upload, pass an offset with
-    /// ``FromArgument/offset(byte:)``. For atomic resumed uploads, the existing
-    /// remote file must contain at least that many bytes; that prefix is copied
-    /// into the temporary remote file before the remaining local bytes are
-    /// uploaded.
+    /// To resume a partial upload, pass an offset with ``FromArgument/offset(byte:)``. For atomic resumed uploads, the
+    /// existing remote file must contain at least that many bytes; that prefix is copied into the temporary remote file
+    /// before the remaining local bytes are uploaded.
     ///
-    /// If `continuation` returns `false`, the method cancels the upload and
-    /// returns normally.
+    /// If `continuation` returns `false`, the method cancels the upload and returns normally.
     ///
     /// - Parameters:
     ///   - local: The source file URL on local storage.
     ///   - remote: The share-relative destination file path.
     ///   - from: The byte offset at which uploading should begin.
-    ///   - options: Options used when opening `remote` for a non-atomic
-    ///     upload.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values
-    ///     larger than the server's maximum write size are clamped.
-    ///   - makePath: A Boolean value indicating whether to create missing
-    ///     ancestor directories before writing the file. When `false`, the
-    ///     method throws if the parent directory does not exist.
-    ///   - atomic: A Boolean value indicating whether to upload through a
-    ///     temporary remote file before renaming it into place.
-    ///   - continuation: A progress closure called after each SMB write block
-    ///     and once after the completed upload is in place.
-    /// - Throws: ``SMB/Error`` if the connection is closed, a remote operation
-    ///   fails, the resume offset is invalid, or a local file operation fails.
+    ///   - options: Options used when opening `remote` for a non-atomic upload.
+    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum write size
+    /// are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
+    /// When `false`, the method throws if the parent directory does not exist.
+    ///   - atomic: A Boolean value indicating whether to upload through a temporary remote file before renaming it into
+    /// place.
+    ///   - continuation: A progress closure called after each SMB write block and once after the completed upload is in
+    /// place.
+    /// - Throws: ``SMB/Error`` if the connection is closed, a remote operation fails, the resume offset is invalid, or
+    /// a local file operation fails.
     func uploadFile(
         local: URL,
         remote: String,
@@ -467,8 +435,8 @@ public extension SMB.Connection {
 
 // MARK: - Pipe Transfer Engine
 
-/// Transfers all data from a pipe into an already-open remote file.
-/// Returns the total number of bytes transferred (excluding the resume offset).
+/// Transfers all data from a pipe into an already-open remote file. Returns the total number of bytes transferred
+/// (excluding the resume offset).
 private func transferPipeToFile(
     pipe: DataPipe,
     file: SMB.File,
@@ -510,10 +478,8 @@ private func transferPipeToFile(
     }
 }
 
-/// Writes a single pipe data package to the remote file, splitting it into
-/// server-sized blocks and reporting progress for each block.
-/// Returns `true` if the entire package was written; `false` if cancellation
-/// was requested mid-block.
+/// Writes a single pipe data package to the remote file, splitting it into server-sized blocks and reporting progress
+/// for each block. Returns `true` if the entire package was written; `false` if cancellation was requested mid-block.
 private func writeDataBlock(
     _ data: Data,
     to file: SMB.File,
@@ -556,9 +522,8 @@ private func writeDataBlock(
 
 // MARK: - Pipe Read Worker
 
-/// Starts an asynchronous worker that reads a remote file into a pipe.
-/// Blocks until the file is successfully opened, propagating startup errors
-/// to the caller synchronously.
+/// Starts an asynchronous worker that reads a remote file into a pipe. Blocks until the file is successfully opened,
+/// propagating startup errors to the caller synchronously.
 private func startPipeReadWorker(
     on connection: SMB.Connection,
     path: String,
@@ -613,8 +578,8 @@ private func startPipeReadWorker(
     }
 }
 
-/// Reads blocks from an open remote file and pushes them into a pipe.
-/// Returns the total bytes transferred and the final average speed.
+/// Reads blocks from an open remote file and pushes them into a pipe. Returns the total bytes transferred and the final
+/// average speed.
 private func transferFileToPipe(
     file: SMB.File,
     pipe: DataPipe,
@@ -802,8 +767,8 @@ private func startLocalFileProducer(
 
 // MARK: - Validation & Preparation
 
-/// Validates the remote destination before writing, creating parent directories
-/// if requested, and checking preconditions based on the resume offset.
+/// Validates the remote destination before writing, creating parent directories if requested, and checking
+/// preconditions based on the resume offset.
 private func prepareRemoteDestination(
     on connection: SMB.Connection,
     path: String,
@@ -869,8 +834,7 @@ private func validateRemoteDestinationForNewFile(
     }
 }
 
-/// Ensures the local destination URL is inside an existing directory and is
-/// not itself a directory.
+/// Ensures the local destination URL is inside an existing directory and is not itself a directory.
 private func assertValidLocalDestination(_ url: URL, operation: SMB.Error.InvalidArgumentOperation) throws {
     let parent = url.deletingLastPathComponent()
     var isDirectory = ObjCBool(false)
@@ -949,8 +913,7 @@ private func copyLocalPrefix(
     }
 }
 
-/// Seeds the temporary remote file for an atomic resumed upload by copying the
-/// trusted remote prefix.
+/// Seeds the temporary remote file for an atomic resumed upload by copying the trusted remote prefix.
 private func prepareAtomicUploadTarget(
     on connection: SMB.Connection,
     remote: String,
@@ -1001,8 +964,7 @@ private func prepareAtomicUploadTarget(
     }
 }
 
-/// Writes a complete data buffer to a remote file, retrying internally if the
-/// server accepts only a prefix.
+/// Writes a complete data buffer to a remote file, retrying internally if the server accepts only a prefix.
 private func writeEntireData(
     _ data: Data,
     to file: SMB.File,
@@ -1027,8 +989,7 @@ private func writeEntireData(
 
 // MARK: - Atomic Commit
 
-/// Renames the temporary upload file into place, preserving the old destination
-/// via a backup path when necessary.
+/// Renames the temporary upload file into place, preserving the old destination via a backup path when necessary.
 private func commitAtomicUpload(
     from target: String,
     to remote: String,
@@ -1067,9 +1028,8 @@ private func commitAtomicUpload(
 
 // MARK: - Progress Adaptation
 
-/// Adapts a ``SMB.Connection.FileProgress`` closure to the shape expected by
-/// pipe operations, deduplicating the final zero-speed call and caching the
-/// last average speed for the explicit completion call.
+/// Adapts a ``SMB.Connection.FileProgress`` closure to the shape expected by pipe operations, deduplicating the final
+/// zero-speed call and caching the last average speed for the explicit completion call.
 private func adaptPipeProgressToFileProgress(
     pipeProgress: @escaping SMB.Connection.FileProgress,
     reportedBytes: Protected<UInt64>,
@@ -1089,9 +1049,8 @@ private func adaptPipeProgressToFileProgress(
 
 // MARK: - Pipe Protocol Primitives
 
-/// Expects and consumes a `.start` package from the pipe.
-/// When `strict` is `true`, receiving `.data` or `.finish` before `.start`
-/// is treated as an invalid-argument error rather than ignored.
+/// Expects and consumes a `.start` package from the pipe. When `strict` is `true`, receiving `.data` or `.finish`
+/// before `.start` is treated as an invalid-argument error rather than ignored.
 private func expectStartPackage(
     from pipe: DataPipe,
     operation: SMB.Error.InvalidArgumentOperation,

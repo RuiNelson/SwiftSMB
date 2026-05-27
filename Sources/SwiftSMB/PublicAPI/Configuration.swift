@@ -109,9 +109,8 @@ public extension SMB {
 
         /// The preferred read/write block size.
         ///
-        /// Values larger than the connected server supports are clamped by
-        /// ``SMB/Connection/acceptedReadBlockSize(_:)`` and
-        /// ``SMB/Connection/acceptedWriteBlockSize(_:)``.
+        /// Values larger than the connected server supports are clamped by ``SMB/Connection/acceptedReadBlockSize(_:)``
+        /// and ``SMB/Connection/acceptedWriteBlockSize(_:)``.
         public var transferBlockSize: Int?
 
         /// Creates an SMB connection configuration.

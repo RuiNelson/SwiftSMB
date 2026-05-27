@@ -171,13 +171,12 @@ public extension SMB {
         
         /// Reads bytes from the file.
         ///
-        /// When `upTo` is `nil`, reads until end of file. Reading to end of file
-        /// may consume unbounded memory for large files.
+        /// When `upTo` is `nil`, reads until end of file. Reading to end of file may consume unbounded memory for large
+        /// files.
         ///
         /// - Parameters:
         ///   - upTo: The maximum number of bytes to read, or `nil` to read to EOF.
-        ///   - transferChunkSize: The preferred transfer block size, or `nil` to
-        ///     use the server's maximum read size.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum read size.
         /// - Returns: The bytes read. An empty value indicates end of file.
         /// - Throws: ``SMB/Error`` if the read fails.
         public func read(
@@ -214,13 +213,11 @@ public extension SMB {
 
         /// Writes bytes to the file.
         ///
-        /// Data larger than the transfer chunk size is automatically split into
-        /// accepted block sizes.
+        /// Data larger than the transfer chunk size is automatically split into accepted block sizes.
         ///
         /// - Parameters:
         ///   - data: The bytes to write.
-        ///   - transferChunkSize: The preferred transfer block size, or `nil` to
-        ///     use the server's maximum write size.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum write size.
         /// - Returns: The total number of bytes written.
         /// - Throws: ``SMB/Error`` if the write fails or no progress is made.
         @discardableResult
@@ -300,11 +297,10 @@ public extension SMB {
         
         /// Releases a byte-range lock previously acquired on the file.
         ///
-        /// The unlock range must match the lock range exactly. Sub-ranges cannot be
-        /// unlocked independently.
+        /// The unlock range must match the lock range exactly. Sub-ranges cannot be unlocked independently.
         ///
-        /// - Parameter range: The byte range to unlock, or `nil` to unlock the entire
-        ///   file (matching a lock acquired without a range).
+        /// - Parameter range: The byte range to unlock, or `nil` to unlock the entire file (matching a lock acquired
+        /// without a range).
         /// - Throws: ``SMB/Error`` if the file is closed or the server reports an error.
         public func unlock(range: Range<Int64>? = nil) throws {
             let context = try connection.requireContext()
@@ -315,19 +311,18 @@ public extension SMB {
 
         /// The type of byte-range lock to acquire.
         public enum LockMode: Sendable {
-            /// A shared (read) lock that allows other opens to read or take shared
-            /// locks on the same range, but blocks writes.
+            /// A shared (read) lock that allows other opens to read or take shared locks on the same range, but blocks
+            /// writes.
             case shared
 
-            /// An exclusive (write) lock that blocks other opens from reading,
-            /// writing, or locking the same range.
+            /// An exclusive (write) lock that blocks other opens from reading, writing, or locking the same range.
             case exclusive
         }
 
         /// Opportunistic lock levels that can be requested when opening a file.
         ///
-        /// OpLocks allow the client to cache data locally, reducing network round
-        /// trips. The server may grant a lower level than requested.
+        /// OpLocks allow the client to cache data locally, reducing network round trips. The server may grant a lower
+        /// level than requested.
         public enum OpLock: Sendable, Equatable {
             /// No oplock requested.
             case none
@@ -338,8 +333,8 @@ public extension SMB {
             /// Exclusive oplock — only one client may have the file open.
             case exclusive
 
-            /// Batch oplock — like exclusive but also allows the client to
-            /// pretend-closed the file without actually closing it.
+            /// Batch oplock — like exclusive but also allows the client to pretend-closed the file without actually
+            /// closing it.
             case batch
 
             /// Lease — SMB3 leasing with fine-grained caching states.
@@ -348,8 +343,7 @@ public extension SMB {
 
         /// Caching states for an SMB3 lease.
         ///
-        /// These flags control which data the client may cache locally when a
-        /// lease is granted.
+        /// These flags control which data the client may cache locally when a lease is granted.
         public struct LeaseState: OptionSet, Sendable, Equatable, CustomDebugStringConvertible {
             /// The raw lease state bitfield.
             public let rawValue: UInt32
@@ -384,16 +378,16 @@ public extension SMB {
 
         /// Acquires a byte-range lock on the file.
         ///
-        /// When `range` is `nil`, the lock covers the whole file. Only one mode can
-        /// be specified at a time—shared and exclusive are mutually exclusive.
+        /// When `range` is `nil`, the lock covers the whole file. Only one mode can be specified at a time—shared and
+        /// exclusive are mutually exclusive.
         ///
         /// - Parameters:
         ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.
-        ///   - nonBlocking: When `true`, the operation fails immediately if the lock
-        ///     conflicts with an existing lock instead of waiting.
+        ///   - nonBlocking: When `true`, the operation fails immediately if the lock conflicts with an existing lock
+        /// instead of waiting.
         ///   - range: The byte range to lock, or `nil` to lock the entire file.
-        /// - Throws: ``SMB/Error`` if the file is closed, the lock range is invalid,
-        ///   the lock conflicts with an existing lock, or the server reports an error.
+        /// - Throws: ``SMB/Error`` if the file is closed, the lock range is invalid, the lock conflicts with an
+        /// existing lock, or the server reports an error.
         public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Int64>? = nil) throws {
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Flock)

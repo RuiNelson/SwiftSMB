@@ -14,10 +14,10 @@ import SMB2.Raw
 class Bridge {
     // MARK: - Synchronization
     
-    //                               ⚠️
-    // The underlying library, `libsmb2` is not thread-safe for the most part.
-    // Use this synchronization apparatus to avoid MP problems.
+    // ⚠️
     //
+    // The underlying library, `libsmb2` is not thread-safe for the most part. Use this synchronization apparatus to
+    // avoid MP problems.
 
     private static let bridgeQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.bridge")
 

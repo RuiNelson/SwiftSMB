@@ -567,8 +567,8 @@ struct LargeFileTests {
     }
 
     @Test("largefile xor hash matches expected") func largefileXorHashMatchesExpected() throws {
-        // File is generated in the Docker image as bytes i%251 for i in 0..<5*1024*1024.
-        // Pre-computed XOR of that sequence: 0x08.
+        // File is generated in the Docker image as bytes i%251 for i in 0..<5*1024*1024. Pre-computed XOR of that
+        // sequence: 0x08.
         try withPrivateShare { ctx in
             let fh = try Bridge.open(context: ctx, path: "largefile.bin")
             defer { try? Bridge.close(context: ctx, file: fh) }
