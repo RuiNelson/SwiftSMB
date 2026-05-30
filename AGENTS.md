@@ -117,9 +117,9 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ## Code Style & Commits
 
-- **Before committing**, always format the Swift source code with `swiftformat`:
+- **Before committing**, always format the code with:
   ```bash
-  swiftformat .
+  format.sh
   ```
 - SwiftFormat may rewrite nearby numeric literals or trailing commas. That is expected; keep formatter output unless it causes a functional problem.
 
