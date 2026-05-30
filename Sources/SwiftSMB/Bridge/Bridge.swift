@@ -865,7 +865,7 @@ class Bridge {
             last_access_time: smb2Timeval(from: lastAccessTime),
             last_write_time: smb2Timeval(from: lastWriteTime),
             change_time: smb2Timeval(from: changeTime),
-            file_attributes: fileAttributes ?? 0xFFFF_FFFF,
+            file_attributes: fileAttributes ?? 0,
         )
 
         let state = SetStatsState()
