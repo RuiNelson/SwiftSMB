@@ -21,7 +21,7 @@ struct OpLockBridgeTests {
                     context: ctx,
                     path: path,
                     flags: Bridge.OpenFlags(.readOnly),
-                    opLockLevel: .none,
+                    opLockLevel: .none
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -37,7 +37,7 @@ struct OpLockBridgeTests {
                     context: ctx,
                     path: path,
                     flags: Bridge.OpenFlags(.readOnly),
-                    opLockLevel: .levelII,
+                    opLockLevel: .levelII
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -53,7 +53,7 @@ struct OpLockBridgeTests {
                     context: ctx,
                     path: path,
                     flags: Bridge.OpenFlags(.readOnly),
-                    opLockLevel: .batch,
+                    opLockLevel: .batch
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -69,7 +69,7 @@ struct OpLockBridgeTests {
                     context: ctx,
                     path: path,
                     flags: Bridge.OpenFlags(.readOnly),
-                    opLockLevel: .exclusive,
+                    opLockLevel: .exclusive
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -88,7 +88,7 @@ struct OpLockBridgeTests {
                     flags: Bridge.OpenFlags(.readOnly),
                     opLockLevel: .lease,
                     leaseState: .readCaching,
-                    leaseKey: leaseKey,
+                    leaseKey: leaseKey
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -107,7 +107,7 @@ struct OpLockBridgeTests {
                     flags: Bridge.OpenFlags(.readOnly),
                     opLockLevel: .lease,
                     leaseState: [.readCaching, .handleCaching],
-                    leaseKey: leaseKey,
+                    leaseKey: leaseKey
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -126,7 +126,7 @@ struct OpLockBridgeTests {
                     flags: Bridge.OpenFlags(.readOnly),
                     opLockLevel: .lease,
                     leaseState: [.readCaching, .handleCaching, .writeCaching],
-                    leaseKey: leaseKey,
+                    leaseKey: leaseKey
                 )
                 defer { try? Bridge.close(context: ctx, file: handle) }
                 let bytes = try readAllBytes(context: ctx, file: handle)
@@ -146,7 +146,7 @@ struct OpLockBridgeTests {
                 context: ctx,
                 path: path,
                 flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
-                opLockLevel: .batch,
+                opLockLevel: .batch
             )
             _ = try writeAllBytes(context: ctx, file: wh, data: content)
             try Bridge.close(context: ctx, file: wh)
@@ -172,7 +172,7 @@ struct OpLockBridgeTests {
                 flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
                 opLockLevel: .lease,
                 leaseState: [.readCaching, .handleCaching, .writeCaching],
-                leaseKey: leaseKey,
+                leaseKey: leaseKey
             )
             _ = try writeAllBytes(context: ctx, file: wh, data: content)
             try Bridge.close(context: ctx, file: wh)
@@ -193,7 +193,7 @@ struct OpLockBridgeTests {
                 flags: Bridge.OpenFlags(.readOnly),
                 opLockLevel: .lease,
                 leaseState: .readCaching,
-                leaseKey: nil,
+                leaseKey: nil
             )
             defer { try? Bridge.close(context: ctx, file: handle) }
             let bytes = try readAllBytes(context: ctx, file: handle)
@@ -205,14 +205,14 @@ struct OpLockBridgeTests {
 private func withBridgeFixtureFile<T>(
     context: Bridge.Context,
     prefix: String,
-    body: (String, [UInt8]) throws -> T,
+    body: (String, [UInt8]) throws -> T
 ) throws -> T {
     let path = uniquePath(prefix) + ".txt"
     let content = TestContent.helloBytes
     let writer = try Bridge.open(
         context: context,
         path: path,
-        flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive]),
+        flags: Bridge.OpenFlags(.readWrite, options: [.create, .exclusive])
     )
     _ = try writeAllBytes(context: context, file: writer, data: content)
     try Bridge.close(context: context, file: writer)

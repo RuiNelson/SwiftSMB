@@ -99,13 +99,13 @@
 --throw-capturing
 --timezone system
 --trailing-closures
---trailing-commas always
+--trailing-commas collections-only
 --trim-whitespace nonblank-lines
 --type-attributes preserve
 --type-blank-lines remove
 --type-body-marks preserve
 --type-delimiter space-after
---type-mark "MARK: - %t"
+--type-mark "MARK: %t"
 --type-marks
 --type-order
 --url-macro none

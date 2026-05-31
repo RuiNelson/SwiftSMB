@@ -388,7 +388,7 @@ struct SMBErrorTests {
     @Test("invalidArgument has operation and message") func invalidargumentHasOperationAndMessage() {
         let error = SMB.Error.invalidArgument(
             cause: .invalidShareName("bad input"),
-            onOperation: .smb2ConnectShare,
+            onOperation: .smb2ConnectShare
         )
         #expect(error.operation == "smb2_connect_share")
         #expect(error.message == "Invalid share name 'bad input'")

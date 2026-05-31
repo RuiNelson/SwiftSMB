@@ -16,12 +16,12 @@ extension Bridge {
     private static func _readLink(
         context: Context,
         path: String,
-        bufferSize: Int = 4096,
+        bufferSize: Int = 4096
     ) throws -> String {
         guard bufferSize > 0 else {
             throw SMB.Error.invalidArgument(
                 cause: .bufferSizeMustBeGreaterThanZero,
-                onOperation: .smb2Readlink,
+                onOperation: .smb2Readlink
             )
         }
 
@@ -41,7 +41,7 @@ extension Bridge {
     static func readLink(
         context: Context,
         path: String,
-        bufferSize: Int = 16384,
+        bufferSize: Int = 16384
     ) throws -> String {
         try Bridge.sync {
             try _readLink(context: context, path: path, bufferSize: bufferSize)
@@ -81,7 +81,7 @@ extension Bridge {
     private static func _makeLink(
         context: Context,
         path: String,
-        destination: String,
+        destination: String
     ) throws {
         let destination = destination.pathComponents.backslashPath
         let substituteNameData = destination.data(using: .utf16LittleEndian) ?? Data()
@@ -124,7 +124,7 @@ extension Bridge {
                     name: pathPointer,
                     create_context_offset: 0,
                     create_context_length: 0,
-                    create_context: nil,
+                    create_context: nil
                 )
 
                 guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, makeLinkCreateCallback, callbackData) else {
@@ -141,14 +141,14 @@ extension Bridge {
                     output_count: 0,
                     max_output_response: 0,
                     flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
-                    input: buffer.baseAddress,
+                    input: buffer.baseAddress
                 )
 
                 guard let ioctl_pdu = smb2_cmd_ioctl_async(
                     context.raw,
                     &ioctl_req,
                     makeLinkIoctlCallback,
-                    callbackData,
+                    callbackData
                 ) else {
                     smb2_free_pdu(context.raw, pdu)
                     throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
@@ -157,7 +157,7 @@ extension Bridge {
 
                 var cl_req = smb2_close_request(
                     flags: 0,
-                    file_id: FileID.allOnes.raw,
+                    file_id: FileID.allOnes.raw
                 )
 
                 guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, makeLinkCloseCallback, callbackData) else {
@@ -181,7 +181,7 @@ extension Bridge {
     static func makeLink(
         context: Context,
         path: String,
-        destination: String,
+        destination: String
     ) throws {
         try Bridge.sync {
             try _makeLink(context: context, path: path, destination: destination)

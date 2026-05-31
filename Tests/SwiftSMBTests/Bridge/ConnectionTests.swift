@@ -234,7 +234,7 @@ struct ConnectionTests {
                 context: ctx,
                 server: testServerHost,
                 share: TestShare.private,
-                user: TestCredentials.user,
+                user: TestCredentials.user
             )
             try Bridge.disconnectShare(context: ctx)
         }

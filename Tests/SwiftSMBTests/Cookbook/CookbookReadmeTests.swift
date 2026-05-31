@@ -18,7 +18,7 @@ struct CookbookReadmeTests {
         let credentials = SMB.Credentials(user: "Anna", password: "1987")
         let shares = try SMB.listShares(
             server: server,
-            credentials: credentials,
+            credentials: credentials
         )
         for share in shares {
             _ = share.name
@@ -32,7 +32,7 @@ struct CookbookReadmeTests {
         let connection = try SMB.connect(
             server: server,
             credentials: credentials,
-            share: "Documents",
+            share: "Documents"
         )
         defer { try? connection.disconnect() }
         _ = connection.isConnected
@@ -62,7 +62,7 @@ struct CookbookReadmeTests {
 
         try connection.uploadFile(
             local: localURL,
-            remote: remote,
+            remote: remote
         ) { completed, total, lastBlockSpeed, averageSpeed in
             let speed = 0.5 * lastBlockSpeed + 0.5 * averageSpeed
             _ = speed
@@ -85,7 +85,7 @@ struct CookbookReadmeTests {
 
         try connection.downloadFile(
             remote: remote,
-            local: localURL,
+            local: localURL
         ) { completed, total, latestSpeed, averageSpeed in
             _ = completed
             _ = total

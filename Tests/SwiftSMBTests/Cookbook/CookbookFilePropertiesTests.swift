@@ -58,21 +58,21 @@ struct CookbookFilePropertiesTests {
         try connection.changeDate(
             at: remote,
             creation: now,
-            access: now,
+            access: now
         )
         try connection.changeDate(
             at: remote,
             creation: now,
             change: now,
             write: now,
-            access: now,
+            access: now
         )
         try connection.changeDate(
             at: remote,
             creation: now,
             change: now,
             write: now,
-            access: now,
+            access: now
         )
     }
 

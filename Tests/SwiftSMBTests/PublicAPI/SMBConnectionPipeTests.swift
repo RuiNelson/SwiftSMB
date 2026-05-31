@@ -266,7 +266,7 @@ struct SMBConnectionPipeTests {
                 remote: remote,
                 local: local,
                 from: .offset(byte: 4),
-                maxBlockSize: 3,
+                maxBlockSize: 3
             ) { transferred, total, _, _ in
                 totals.value.append(total)
                 #expect(transferred <= total)
@@ -298,7 +298,7 @@ struct SMBConnectionPipeTests {
                 local: local,
                 remote: remote,
                 from: .offset(byte: 4),
-                maxBlockSize: 3,
+                maxBlockSize: 3
             ) { transferred, total, _, _ in
                 totals.value.append(total)
                 #expect(transferred <= total)
@@ -328,7 +328,7 @@ struct SMBConnectionPipeTests {
             remote: remote,
             options: [.create, .truncate],
             maxBlockSize: 4,
-            atomic: false,
+            atomic: false
         ) { _, _, _, _ in true }
 
         #expect(try connection.loadFile(at: remote) == expected)
@@ -359,7 +359,7 @@ struct SMBConnectionPipeTests {
             .uploadFile(
                 local: uploadLocal,
                 remote: uploadRemote,
-                maxBlockSize: 4,
+                maxBlockSize: 4
             ) { transferred, total, latestSpeed, _ in
                 uploadProgress.value.append(transferred)
                 #expect(total == 0)
@@ -375,7 +375,7 @@ struct SMBConnectionPipeTests {
             .downloadFile(
                 remote: downloadRemote,
                 local: downloadLocal,
-                maxBlockSize: 4,
+                maxBlockSize: 4
             ) { transferred, total, latestSpeed, _ in
                 downloadProgress.value.append(transferred)
                 #expect(total == 0)
@@ -478,7 +478,7 @@ struct SMBConnectionPipeTests {
         let connection = try SMB.connect(
             server: SMB.Server(host: testServerHost),
             share: TestShare.public,
-            configuration: SMB.Configuration(),
+            configuration: SMB.Configuration()
         )
         defer { try? connection.disconnect() }
 
@@ -520,7 +520,7 @@ struct SMBConnectionPipeTests {
         let connection = try SMB.connect(
             server: SMB.Server(host: testServerHost),
             share: TestShare.public,
-            configuration: SMB.Configuration(),
+            configuration: SMB.Configuration()
         )
         defer { try? connection.disconnect() }
 
@@ -559,7 +559,7 @@ private func publicConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
         share: TestShare.public,
-        configuration: SMB.Configuration(transferBlockSize: 4),
+        configuration: SMB.Configuration(transferBlockSize: 4)
     )
 }
 

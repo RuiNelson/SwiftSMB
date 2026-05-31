@@ -17,7 +17,7 @@ extension Bridge {
         context: Context,
         server: String,
         user: String? = nil,
-        includeHidden: Bool = false,
+        includeHidden: Bool = false
     ) throws -> [Share] {
         setSecurityMode(.signingEnabled, on: context)
         try _connectShare(context: context, server: server, share: "IPC$", user: user)
@@ -25,7 +25,7 @@ extension Bridge {
         do {
             let shares = try filterForUserVisibleDiskShares(
                 listSharesOnConnectedIPCShare(context: context),
-                includeHidden: includeHidden,
+                includeHidden: includeHidden
             )
             try _disconnectShare(context: context)
             return shares
@@ -41,7 +41,7 @@ extension Bridge {
         context: Context,
         server: String,
         user: String? = nil,
-        includeHidden: Bool = false,
+        includeHidden: Bool = false
     ) throws -> [Share] {
         try Bridge.sync {
             try _listShares(context: context, server: server, user: user, includeHidden: includeHidden)
@@ -51,7 +51,7 @@ extension Bridge {
     /// Enumerates shares using SRVSVC on a context that is already connected to IPC$.
     static func listSharesOnConnectedIPCShare(
         context: Context,
-        level: ShareEnumerationLevel = .detailed,
+        level: ShareEnumerationLevel = .detailed
     ) throws -> [Share] {
         guard let response = smb2_share_enum_sync(context.raw, level.rawValue) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_share_enum_sync")
@@ -67,7 +67,7 @@ extension Bridge {
         default:
             throw SMB.Error.invalidArgument(
                 cause: .unsupportedShareEnumerationLevel(response.pointee.ses.Level),
-                onOperation: .smb2ShareEnumSync,
+                onOperation: .smb2ShareEnumSync
             )
         }
     }
@@ -88,7 +88,7 @@ extension Bridge {
                 name: string(from: buffer[index].netname),
                 kind: nil,
                 attributes: [],
-                remark: nil,
+                remark: nil
             )
         }
     }
@@ -104,7 +104,7 @@ extension Bridge {
                 name: string(from: info.netname),
                 kind: ShareKind(rawValue: info.type),
                 attributes: ShareAttributes(rawShareType: info.type),
-                remark: string(from: info.remark),
+                remark: string(from: info.remark)
             )
         }
     }

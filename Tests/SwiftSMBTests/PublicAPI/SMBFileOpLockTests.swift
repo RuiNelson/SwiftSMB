@@ -91,7 +91,7 @@ struct SMBPublicAPIFileOpLockTests {
         try withPublicFixtureFile(on: connection, prefix: "pub-lease-handle") { path, content in
             let file = try connection.openFile(
                 at: path,
-                opLock: .lease([.readCaching, .handleCaching]),
+                opLock: .lease([.readCaching, .handleCaching])
             )
             defer { try? file.close() }
             let data = try file.read()
@@ -110,7 +110,7 @@ struct SMBPublicAPIFileOpLockTests {
 
         let file = try connection.openFile(
             at: path,
-            opLock: .lease([.readCaching, .handleCaching, .writeCaching]),
+            opLock: .lease([.readCaching, .handleCaching, .writeCaching])
         )
         defer { try? file.close() }
         let data = try file.read()
@@ -130,7 +130,7 @@ struct SMBPublicAPIFileOpLockTests {
             at: path,
             accessMode: .readWrite,
             options: [.create, .exclusive],
-            opLock: .batch,
+            opLock: .batch
         )
         _ = try wh.write(content)
         try wh.close()
@@ -154,7 +154,7 @@ struct SMBPublicAPIFileOpLockTests {
             at: path,
             accessMode: .readWrite,
             options: [.create, .exclusive],
-            opLock: .lease([.readCaching, .writeCaching]),
+            opLock: .lease([.readCaching, .writeCaching])
         )
         _ = try wh.write(content)
         try wh.close()
@@ -185,7 +185,7 @@ struct SMBPublicAPIFileOpLockTests {
         try withPublicFixtureFile(on: connection, prefix: "pub-lease-stat") { path, content in
             let file = try connection.openFile(
                 at: path,
-                opLock: .lease(.readCaching),
+                opLock: .lease(.readCaching)
             )
             defer { try? file.close() }
             let stat = try file.stat()
@@ -198,14 +198,14 @@ struct SMBPublicAPIFileOpLockTests {
 private func publicConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
-        share: TestShare.public,
+        share: TestShare.public
     )
 }
 
 private func withPublicFixtureFile<T>(
     on connection: SMB.Connection,
     prefix: String,
-    body: (String, Data) throws -> T,
+    body: (String, Data) throws -> T
 ) throws -> T {
     let path = uniquePath(prefix) + ".txt"
     let content = Data(TestContent.helloBytes)

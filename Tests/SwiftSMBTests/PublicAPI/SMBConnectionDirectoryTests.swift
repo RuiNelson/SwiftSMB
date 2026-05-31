@@ -109,6 +109,6 @@ struct SMBConnectionDirectoryTests {
 private func publicDirectoryConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
-        share: TestShare.public,
+        share: TestShare.public
     )
 }

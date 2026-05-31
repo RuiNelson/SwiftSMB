@@ -62,7 +62,7 @@ func withFreshContext<T>(_ body: (Bridge.Context) throws -> T) throws -> T {
 private func withShare<T>(
     _ shareName: String,
     credentials: (user: String, password: String)? = nil,
-    body: (Bridge.Context) throws -> T,
+    body: (Bridge.Context) throws -> T
 ) throws -> T {
     let ctx = try Bridge.createContext()
     if let credentials {
@@ -136,7 +136,7 @@ func readSomeBytesAt(
     context: Bridge.Context,
     file: Bridge.FileHandle,
     count: Int,
-    offset: UInt64,
+    offset: UInt64
 ) throws -> [UInt8] {
     var buffer = [UInt8](repeating: 0, count: count)
     let n = try buffer.withUnsafeMutableBytes { rawBuf in
@@ -156,7 +156,7 @@ func writeAllBytesAt(
     context: Bridge.Context,
     file: Bridge.FileHandle,
     data: [UInt8],
-    offset: UInt64,
+    offset: UInt64
 ) throws -> Int {
     try data.withUnsafeBytes { rawBuf in
         try Bridge.write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf), offset: offset)
@@ -172,7 +172,7 @@ func writeAllBytesChunked(context: Bridge.Context, file: Bridge.FileHandle, data
         guard n > 0 else {
             throw SMB.Error.unknown(
                 operation: "smb2_write",
-                message: "Write made no progress before all test data was written",
+                message: "Write made no progress before all test data was written"
             )
         }
         offset += n

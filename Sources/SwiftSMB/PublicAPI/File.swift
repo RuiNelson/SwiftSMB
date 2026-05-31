@@ -127,7 +127,7 @@ public extension SMB {
         let connection: Connection
         private let protectedHandle = Protected<Bridge.FileHandle?>(
             nil,
-            label: "com.ruinelson.SwiftSMB.SMB.File.handle",
+            label: "com.ruinelson.SwiftSMB.SMB.File.handle"
         )
 
         /// The live bridge file handle, if the file is still open.
@@ -181,7 +181,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the read fails.
         public func read(
             upTo: Int64? = nil,
-            transferChunkSize: Int64? = nil,
+            transferChunkSize: Int64? = nil
         ) throws -> Data {
             if let upTo, upTo <= 0 { return Data() }
 
@@ -200,7 +200,7 @@ public extension SMB {
                     try Bridge.read(
                         context: context,
                         file: handle,
-                        into: MutableRawSpan(_unsafeBytes: rawBuffer),
+                        into: MutableRawSpan(_unsafeBytes: rawBuffer)
                     )
                 }
                 guard readCount > 0 else { break }
@@ -223,7 +223,7 @@ public extension SMB {
         @discardableResult
         public func write(
             _ data: Data,
-            transferChunkSize: Int64? = nil,
+            transferChunkSize: Int64? = nil
         ) throws -> Int64 {
             let chunkSize = try transferChunkSize ?? Int64(connection.maxWriteSize)
             let context = try connection.requireContext()
@@ -237,13 +237,13 @@ public extension SMB {
                     try Bridge.write(
                         context: context,
                         file: handle,
-                        bytes: RawSpan(_unsafeBytes: rawBuffer),
+                        bytes: RawSpan(_unsafeBytes: rawBuffer)
                     )
                 }
                 guard count > 0 else {
                     throw SMB.Error.unknown(
                         operation: "smb2_write",
-                        message: "Write made no progress before all data was written",
+                        message: "Write made no progress before all data was written"
                     )
                 }
                 written += Int64(count)
@@ -411,13 +411,13 @@ public extension SMB {
             guard range.lowerBound >= 0 else {
                 throw SMB.Error.invalidArgument(
                     cause: .invalidLockRange("lowerBound must be non-negative"),
-                    onOperation: .smb2Flock,
+                    onOperation: .smb2Flock
                 )
             }
             guard !range.isEmpty else {
                 throw SMB.Error.invalidArgument(
                     cause: .invalidLockRange("range must not be empty"),
-                    onOperation: .smb2Flock,
+                    onOperation: .smb2Flock
                 )
             }
             let offset = UInt64(range.lowerBound)

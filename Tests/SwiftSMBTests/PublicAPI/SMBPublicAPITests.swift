@@ -26,7 +26,7 @@ struct SMBPublicAPITests {
             name: "data$",
             kind: .diskTree,
             attributes: [.hidden, .temporary],
-            remark: "Private data",
+            remark: "Private data"
         )
 
         #expect(share.name == "data$")
@@ -44,7 +44,7 @@ struct SMBPublicAPITests {
             requiresEncryption: false,
             requiresSigning: false,
             authentication: .ntlmssp,
-            transferBlockSize: 65536,
+            transferBlockSize: 65536
         )
 
         #expect(configuration.timeout == 30)
@@ -59,7 +59,7 @@ struct SMBPublicAPITests {
         let credentials = SMB.Credentials(
             user: "alice",
             password: "secret",
-            workstation: "LAPTOP",
+            workstation: "LAPTOP"
         )
 
         #expect(server.host == "example.test")

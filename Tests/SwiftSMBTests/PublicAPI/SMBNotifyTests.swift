@@ -50,7 +50,7 @@ struct SMBNotifyIntegrationTests {
             at: root,
             filter: [.fileName, .lastWrite],
             delegate: delegate,
-            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyDelegate"),
+            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyDelegate")
         )
         defer { watcher.cancel() }
 
@@ -75,7 +75,7 @@ struct SMBNotifyIntegrationTests {
         let watcher = try connection.watchDirectory(
             at: root,
             delegate: delegate,
-            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyCancelDelegate"),
+            callbackQueue: DispatchQueue(label: "com.ruinelson.SwiftSMB.SwiftSMBTests.NotifyCancelDelegate")
         )
 
         #expect(delegate.waitForStart(timeout: 5))
@@ -144,6 +144,6 @@ private final class RecordingNotifyWatcherDelegate: SMB.NotifyWatcherDelegate, @
 private func publicNotifyConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
-        share: TestShare.public,
+        share: TestShare.public
     )
 }

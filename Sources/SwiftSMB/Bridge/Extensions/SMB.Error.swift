@@ -23,7 +23,7 @@ extension SMB.Error {
                 rawValue: ntStatusRawValue,
                 posixCode: nil,
                 operation: operation,
-                message: message,
+                message: message
             )
         }
 
@@ -38,7 +38,7 @@ extension SMB.Error {
                     rawValue: rawNTStatus,
                     posixCode: nil,
                     operation: operation,
-                    message: message,
+                    message: message
                 )
             }
             if let code = POSIXErrorCode(rawValue: absolute) {

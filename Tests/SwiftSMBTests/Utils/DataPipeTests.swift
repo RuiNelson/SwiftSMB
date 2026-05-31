@@ -91,7 +91,7 @@ struct DataPipeTests {
         let pipe = DataPipe(maxPackages: 4, label: "SwiftSMBTests.DataPipeTests.concurrent")
         let completed = Protected(
             false,
-            label: "SwiftSMBTests.DataPipeTests.concurrent.completed",
+            label: "SwiftSMBTests.DataPipeTests.concurrent.completed"
         )
         let producerCount = 64
         let received = Protected<[UInt8]>([], label: "SwiftSMBTests.DataPipeTests.concurrent.received")
@@ -129,7 +129,7 @@ struct DataPipeTests {
 
 private func eventually(
     timeout: Duration = .seconds(2),
-    _ condition: () -> Bool,
+    _ condition: () -> Bool
 ) async throws -> Bool {
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {

@@ -12,7 +12,7 @@ extension Int {
         guard self >= 0, self <= Int(UInt32.max) else {
             throw SMB.Error.invalidArgument(
                 cause: .byteCountCannotBeRepresentedAsUInt32(self),
-                onOperation: operation,
+                onOperation: operation
             )
         }
 

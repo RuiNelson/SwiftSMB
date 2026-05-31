@@ -108,7 +108,7 @@ struct SMBConnectionFileTests {
             creation: epoch,
             change: epoch.addingTimeInterval(60),
             write: epoch.addingTimeInterval(120),
-            access: epoch.addingTimeInterval(180),
+            access: epoch.addingTimeInterval(180)
         )
 
         let after = try connection.attributes(at: path)
@@ -123,7 +123,7 @@ struct SMBConnectionFileTests {
         let connection = try SMB.connect(
             server: SMB.Server(host: testServerHost),
             credentials: .init(user: TestCredentials.user, password: TestCredentials.password),
-            share: TestShare.private,
+            share: TestShare.private
         )
         defer { try? connection.disconnect() }
 
@@ -185,6 +185,6 @@ struct SMBConnectionFileTests {
 private func publicFileConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
-        share: TestShare.public,
+        share: TestShare.public
     )
 }

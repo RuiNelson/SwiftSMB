@@ -23,12 +23,12 @@ extension Bridge {
         directory: FileHandle,
         flags: NotifyChangeFlags = [],
         filter: NotifyChangeFilter = .all,
-        handler: @escaping NotifyChangeHandler,
+        handler: @escaping NotifyChangeHandler
     ) throws -> PendingRequest {
         guard let fileID = smb2_get_file_id(directory.raw) else {
             throw SMB.Error.invalidArgument(
                 cause: .directoryFileHandleMissingFileID,
-                onOperation: .smb2GetFileID,
+                onOperation: .smb2GetFileID
             )
         }
 
@@ -40,7 +40,7 @@ extension Bridge {
 
         let state = PendingRequestState(
             operation: "smb2_cmd_change_notify_async",
-            handler: handler,
+            handler: handler
         )
         let callbackData = Unmanaged.passRetained(state).toOpaque()
 
@@ -48,7 +48,7 @@ extension Bridge {
             context.raw,
             &request,
             notifyChangeCallback,
-            callbackData,
+            callbackData
         ) else {
             Unmanaged<PendingRequestState>.fromOpaque(callbackData).release()
             throw SMB.Error.fromBridge(context, operation: "smb2_cmd_change_notify_async")
@@ -66,7 +66,7 @@ extension Bridge {
         directory: FileHandle,
         flags: NotifyChangeFlags = [],
         filter: NotifyChangeFilter = .all,
-        handler: @escaping NotifyChangeHandler,
+        handler: @escaping NotifyChangeHandler
     ) throws -> PendingRequest {
         try Bridge.sync {
             try _notifyChange(context: context, directory: directory, flags: flags, filter: filter, handler: handler)
@@ -91,7 +91,7 @@ extension Bridge {
 
     private static func _serviceNotifyEvents(
         context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
+        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
     ) throws {
         var pfd = pollfd()
         pfd.fd = smb2_get_fd(context.raw)
@@ -107,7 +107,7 @@ extension Bridge {
             throw SMB.Error.posix(
                 code: errno,
                 operation: "poll",
-                message: "poll failed while waiting for SMB2 notification",
+                message: "poll failed while waiting for SMB2 notification"
             )
         }
 
@@ -119,7 +119,7 @@ extension Bridge {
     /// Services pending SMB2 events for a notification watcher.
     static func serviceNotifyEvents(
         context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds,
+        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
     ) throws {
         try Bridge.sync {
             try _serviceNotifyEvents(context: context, timeoutMilliseconds: timeoutMilliseconds)
@@ -144,7 +144,7 @@ extension Bridge {
         guard let rawContext else {
             handler(.failure(.unknown(
                 operation: state.operation,
-                message: "Missing SMB2 context in callback",
+                message: "Missing SMB2 context in callback"
             )))
             return
         }
@@ -166,7 +166,7 @@ extension Bridge {
 
     private static func decodeNotifyChanges(
         context: Context,
-        commandData: UnsafeMutableRawPointer,
+        commandData: UnsafeMutableRawPointer
     ) -> Result<[NotifyChange], SMB.Error> {
         let reply = commandData.assumingMemoryBound(to: smb2_change_notify_reply.self).pointee
 
@@ -176,7 +176,7 @@ extension Bridge {
 
         let buffer = UnsafeRawBufferPointer(
             start: output,
-            count: Int(reply.output_buffer_length),
+            count: Int(reply.output_buffer_length)
         )
         return decodeNotifyChanges(buffer)
     }
@@ -202,7 +202,7 @@ extension Bridge {
 
             changes.append(NotifyChange(
                 action: NotifyChangeAction(rawValue: action),
-                name: decodeNotifyChangeName(from: buffer, offset: nameOffset, byteCount: nameLength),
+                name: decodeNotifyChangeName(from: buffer, offset: nameOffset, byteCount: nameLength)
             ))
 
             guard nextEntryOffset != 0 else {
@@ -231,7 +231,7 @@ extension Bridge {
     private static func decodeNotifyChangeName(
         from buffer: UnsafeRawBufferPointer,
         offset: Int,
-        byteCount: Int,
+        byteCount: Int
     ) -> String {
         var codeUnits: [UInt16] = []
         codeUnits.reserveCapacity(byteCount / 2)
@@ -249,14 +249,14 @@ extension Bridge {
     private static func malformedNotifyChangeResponse(_ message: String) -> SMB.Error {
         .unknown(
             operation: "smb2_decode_filenotifychangeinformation",
-            message: message,
+            message: message
         )
     }
 
     private static func notifyChangeError(
         context: Context,
         status: Int32,
-        operation: String,
+        operation: String
     ) -> SMB.Error {
         let rawStatus = UInt32(bitPattern: status)
         let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""

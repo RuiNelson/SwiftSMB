@@ -134,6 +134,6 @@ struct SMBFileLockTests {
 private func publicFileConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: SMB.Server(host: testServerHost),
-        share: TestShare.public,
+        share: TestShare.public
     )
 }

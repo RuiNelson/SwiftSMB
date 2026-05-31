@@ -18,7 +18,7 @@ func cookbookConnection() throws -> SMB.Connection {
     try SMB.connect(
         server: cookbookServer,
         credentials: cookbookCredentials,
-        share: cookbookShare,
+        share: cookbookShare
     )
 }
 

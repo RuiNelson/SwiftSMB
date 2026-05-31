@@ -37,7 +37,7 @@ extension Bridge {
             0xFF,
             0xFF,
             0xFF,
-            0xFF,
+            0xFF
         ))
 
         init(_ raw: smb2_file_id) {
@@ -111,7 +111,7 @@ extension Bridge {
 
         init(
             _ accessMode: OpenAccessMode = .readOnly,
-            options: OpenOptions = [],
+            options: OpenOptions = []
         ) {
             self.accessMode = accessMode
             self.options = options
@@ -426,7 +426,7 @@ extension Bridge {
 
         init(
             operation: String,
-            handler: @escaping NotifyChangeHandler,
+            handler: @escaping NotifyChangeHandler
         ) {
             self.operation = operation
             self.handler = handler
@@ -434,7 +434,7 @@ extension Bridge {
 
         func didCreateRequest(
             raw: UnsafeMutablePointer<smb2_pdu>,
-            callbackData: UnsafeMutableRawPointer,
+            callbackData: UnsafeMutableRawPointer
         ) {
             lock.lock()
             defer { lock.unlock() }

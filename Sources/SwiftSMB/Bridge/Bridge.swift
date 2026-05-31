@@ -156,7 +156,7 @@ class Bridge {
         context: Context,
         server: String,
         share: String,
-        user: String? = nil,
+        user: String? = nil
     ) throws {
         let status = server.withCString { serverPointer in
             share.withCString { sharePointer in
@@ -174,7 +174,7 @@ class Bridge {
         context: Context,
         server: String,
         share: String,
-        user: String? = nil,
+        user: String? = nil
     ) throws {
         try sync {
             try _connectShare(context: context, server: server, share: share, user: user)
@@ -215,7 +215,7 @@ class Bridge {
     private static func _open(
         context: Context,
         path: String,
-        flags: OpenFlags = OpenFlags(),
+        flags: OpenFlags = OpenFlags()
     ) throws -> FileHandle {
         let rawHandle = path.withCString { smb2_open(context.raw, $0, flags.rawValue) }
 
@@ -230,7 +230,7 @@ class Bridge {
     static func open(
         context: Context,
         path: String,
-        flags: OpenFlags = OpenFlags(),
+        flags: OpenFlags = OpenFlags()
     ) throws -> FileHandle {
         try sync {
             try _open(context: context, path: path, flags: flags)
@@ -263,7 +263,7 @@ class Bridge {
         flags: OpenFlags = OpenFlags(),
         opLockLevel: OpLockLevel = .none,
         leaseState: LeaseState = [],
-        leaseKey: Data? = nil,
+        leaseKey: Data? = nil
     ) throws -> FileHandle {
         let state = OpenState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
@@ -282,7 +282,7 @@ class Bridge {
                         leaseState.rawValue,
                         keyBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
                         openCallback,
-                        callbackData,
+                        callbackData
                     )
                 }
             }
@@ -297,7 +297,7 @@ class Bridge {
                     0,
                     nil,
                     openCallback,
-                    callbackData,
+                    callbackData
                 )
             }
         }
@@ -312,14 +312,14 @@ class Bridge {
             throw SMB.Error.fromBridge(
                 context,
                 operation: "smb2_open_async_with_oplock_or_lease",
-                status: state.status,
+                status: state.status
             )
         }
 
         guard let handle = state.fileHandle else {
             throw SMB.Error.unknown(
                 operation: "smb2_open_async_with_oplock_or_lease",
-                message: "File handle was nil after successful open",
+                message: "File handle was nil after successful open"
             )
         }
 
@@ -333,7 +333,7 @@ class Bridge {
         flags: OpenFlags = OpenFlags(),
         opLockLevel: OpLockLevel = .none,
         leaseState: LeaseState = [],
-        leaseKey: Data? = nil,
+        leaseKey: Data? = nil
     ) throws -> FileHandle {
         try sync {
             try _open(
@@ -342,7 +342,7 @@ class Bridge {
                 flags: flags,
                 opLockLevel: opLockLevel,
                 leaseState: leaseState,
-                leaseKey: leaseKey,
+                leaseKey: leaseKey
             )
         }
     }
@@ -396,7 +396,7 @@ class Bridge {
         context: Context,
         file: FileHandle,
         into buffer: consuming MutableRawSpan,
-        offset: UInt64,
+        offset: UInt64
     ) throws -> Int {
         try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Pread)
@@ -414,7 +414,7 @@ class Bridge {
         context: Context,
         file: FileHandle,
         bytes: RawSpan,
-        offset: UInt64,
+        offset: UInt64
     ) throws -> Int {
         let count = try bytes.byteCount.asUInt32(operation: .smb2Pwrite)
         let status = bytes.withUnsafeBytes { bytes in
@@ -431,7 +431,7 @@ class Bridge {
         context: Context,
         file: FileHandle,
         bytes: RawSpan,
-        offset: UInt64,
+        offset: UInt64
     ) throws -> Int {
         try sync {
             try _write(context: context, file: file, bytes: bytes, offset: offset)
@@ -442,7 +442,7 @@ class Bridge {
     static func read(
         context: Context,
         file: FileHandle,
-        into buffer: consuming MutableRawSpan,
+        into buffer: consuming MutableRawSpan
     ) throws -> Int {
         try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Read)
@@ -459,7 +459,7 @@ class Bridge {
     private static func _write(
         context: Context,
         file: FileHandle,
-        bytes: RawSpan,
+        bytes: RawSpan
     ) throws -> Int {
         let count = try bytes.byteCount.asUInt32(operation: .smb2Write)
         let status = bytes.withUnsafeBytes { bytes in
@@ -475,7 +475,7 @@ class Bridge {
     static func write(
         context: Context,
         file: FileHandle,
-        bytes: RawSpan,
+        bytes: RawSpan
     ) throws -> Int {
         try sync {
             try _write(context: context, file: file, bytes: bytes)
@@ -486,7 +486,7 @@ class Bridge {
         context: Context,
         file: FileHandle,
         offset: Int64,
-        whence: Int32,
+        whence: Int32
     ) throws -> UInt64 {
         var currentOffset: UInt64 = 0
         let status = smb2_lseek(context.raw, file.raw, offset, whence, &currentOffset)
@@ -502,7 +502,7 @@ class Bridge {
         context: Context,
         file: FileHandle,
         offset: Int64,
-        whence: Int32,
+        whence: Int32
     ) throws -> UInt64 {
         try sync {
             try _seek(context: context, file: file, offset: offset, whence: whence)
@@ -623,7 +623,7 @@ class Bridge {
         try check(
             path.withCString { smb2_statvfs(context.raw, $0, &statvfs) },
             context: context,
-            operation: "smb2_statvfs",
+            operation: "smb2_statvfs"
         )
         return VFSStat(statvfs)
     }
@@ -653,7 +653,7 @@ class Bridge {
         try check(
             path.withCString { smb2_stat(context.raw, $0, &stat) },
             context: context,
-            operation: "smb2_stat",
+            operation: "smb2_stat"
         )
         return Stat(stat)
     }
@@ -686,7 +686,7 @@ class Bridge {
         try check(
             path.withCString { smb2_truncate(context.raw, $0, length) },
             context: context,
-            operation: "smb2_truncate",
+            operation: "smb2_truncate"
         )
     }
 
@@ -725,7 +725,7 @@ class Bridge {
     @discardableResult static func check(
         _ status: Int32,
         context: Context,
-        operation: String,
+        operation: String
     ) throws -> Int32 {
         guard status >= 0 else {
             throw SMB.Error.fromBridge(context, operation: operation, status: status)
@@ -830,7 +830,7 @@ class Bridge {
                 throw SMB.Error.posix(
                     code: errno,
                     operation: "poll",
-                    message: "poll failed while waiting for SMB2 operation",
+                    message: "poll failed while waiting for SMB2 operation"
                 )
             }
             if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
@@ -846,7 +846,7 @@ class Bridge {
         lastAccessTime: Date? = nil,
         lastWriteTime: Date? = nil,
         changeTime: Date? = nil,
-        fileAttributes: UInt32? = nil,
+        fileAttributes: UInt32? = nil
     ) throws {
         let dontChangeTime = smb2_timeval(tv_sec: 0xFFFF_FFFF, tv_usec: 0xFFFF_FFFF)
 
@@ -865,7 +865,7 @@ class Bridge {
             last_access_time: smb2Timeval(from: lastAccessTime),
             last_write_time: smb2Timeval(from: lastWriteTime),
             change_time: smb2Timeval(from: changeTime),
-            file_attributes: fileAttributes ?? 0,
+            file_attributes: fileAttributes ?? 0
         )
 
         let state = SetStatsState()
@@ -889,7 +889,7 @@ class Bridge {
                     name: pathPointer,
                     create_context_offset: 0,
                     create_context_length: 0,
-                    create_context: nil,
+                    create_context: nil
                 )
 
                 guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, setStatsCreateCallback, callbackData) else {
@@ -903,7 +903,7 @@ class Bridge {
                     buffer_offset: 0,
                     additional_information: 0,
                     file_id: FileID.allOnes.raw,
-                    input_data: infoPointer,
+                    input_data: infoPointer
                 )
 
                 guard let next_pdu = smb2_cmd_set_info_async(context.raw, &si_req, setStatsSetCallback, callbackData) else {
@@ -914,7 +914,7 @@ class Bridge {
 
                 var cl_req = smb2_close_request(
                     flags: 0,
-                    file_id: FileID.allOnes.raw,
+                    file_id: FileID.allOnes.raw
                 )
 
                 guard let close_pdu = smb2_cmd_close_async(context.raw, &cl_req, setStatsCloseCallback, callbackData) else {
@@ -942,7 +942,7 @@ class Bridge {
         lastAccessTime: Date? = nil,
         lastWriteTime: Date? = nil,
         changeTime: Date? = nil,
-        fileAttributes: UInt32? = nil,
+        fileAttributes: UInt32? = nil
     ) throws {
         try sync {
             try _setStats(
@@ -952,7 +952,7 @@ class Bridge {
                 lastAccessTime: lastAccessTime,
                 lastWriteTime: lastWriteTime,
                 changeTime: changeTime,
-                fileAttributes: fileAttributes,
+                fileAttributes: fileAttributes
             )
         }
     }
@@ -979,7 +979,7 @@ class Bridge {
                 name: pathPointer,
                 create_context_offset: 0,
                 create_context_length: 0,
-                create_context: nil,
+                create_context: nil
             )
 
             guard let pdu = smb2_cmd_create_async(context.raw, &cr_req, queryAttributesCreateCallback, callbackData) else {
@@ -996,14 +996,14 @@ class Bridge {
                 additional_information: 0,
                 flags: 0,
                 file_id: FileID.allOnes.raw,
-                input: nil,
+                input: nil
             )
 
             guard let next_pdu = smb2_cmd_query_info_async(
                 context.raw,
                 &qi_req,
                 queryAttributesQueryCallback,
-                callbackData,
+                callbackData
             ) else {
                 smb2_free_pdu(context.raw, pdu)
                 throw SMB.Error.fromBridge(context, operation: "smb2_cmd_query_info_async")
@@ -1012,14 +1012,14 @@ class Bridge {
 
             var cl_req = smb2_close_request(
                 flags: 0,
-                file_id: FileID.allOnes.raw,
+                file_id: FileID.allOnes.raw
             )
 
             guard let close_pdu = smb2_cmd_close_async(
                 context.raw,
                 &cl_req,
                 queryAttributesCloseCallback,
-                callbackData,
+                callbackData
             ) else {
                 smb2_free_pdu(context.raw, pdu)
                 throw SMB.Error.fromBridge(context, operation: "smb2_cmd_close_async")
@@ -1110,7 +1110,7 @@ class Bridge {
 
     private static func _requestResumeKey(
         context: Context,
-        sourceHandle: OpaquePointer,
+        sourceHandle: OpaquePointer
     ) throws -> Data {
         guard let fileIDPtr = smb2_get_file_id(sourceHandle) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
@@ -1131,14 +1131,14 @@ class Bridge {
             output_count: 0,
             max_output_response: 64,
             flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
-            input: nil,
+            input: nil
         )
 
         guard let pdu = smb2_cmd_ioctl_async(
             context.raw,
             &ioctl_req,
             resumeKeyIoctlCallback,
-            callbackData,
+            callbackData
         ) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_cmd_ioctl_async")
         }
@@ -1154,7 +1154,7 @@ class Bridge {
         guard let key = state.resumeKey, key.count >= resumeKeyLength else {
             throw SMB.Error.unknown(
                 operation: "FSCTL_SRV_REQUEST_RESUME_KEY",
-                message: "Server returned an invalid resume key",
+                message: "Server returned an invalid resume key"
             )
         }
 
@@ -1167,7 +1167,7 @@ class Bridge {
         resumeKey: Data,
         sourceOffset: UInt64,
         targetOffset: UInt64,
-        length: UInt32,
+        length: UInt32
     ) throws {
         var input = [UInt8]()
         input.reserveCapacity(56)
@@ -1195,7 +1195,7 @@ class Bridge {
                 output_count: 0,
                 max_output_response: 16,
                 flags: UInt32(SMB2_0_IOCTL_IS_FSCTL),
-                input: buffer.baseAddress,
+                input: buffer.baseAddress
             )
 
             guard let pdu = smb2_cmd_ioctl_async(context.raw, &req, copyChunkCallback, callbackData) else {
@@ -1216,13 +1216,13 @@ class Bridge {
         context: Context,
         sourcePath: String,
         destinationPath: String,
-        chunkSize: UInt32,
+        chunkSize: UInt32
     ) throws {
         var stat = smb2_stat_64()
         try check(
             sourcePath.withCString { smb2_stat(context.raw, $0, &stat) },
             context: context,
-            operation: "smb2_stat",
+            operation: "smb2_stat"
         )
         let fileSize = stat.smb2_size
 
@@ -1279,7 +1279,7 @@ class Bridge {
                     resumeKey: resumeKey,
                     sourceOffset: offset,
                     targetOffset: offset,
-                    length: UInt32(length),
+                    length: UInt32(length)
                 )
                 offset += length
             }
@@ -1298,7 +1298,7 @@ class Bridge {
     static func serverSideCopy(
         context: Context,
         sourcePath: String,
-        destinationPath: String,
+        destinationPath: String
     ) throws {
         try sync {
             let chunkSize = smb2_get_max_write_size(context.raw)
@@ -1306,7 +1306,7 @@ class Bridge {
                 context: context,
                 sourcePath: sourcePath,
                 destinationPath: destinationPath,
-                chunkSize: chunkSize,
+                chunkSize: chunkSize
             )
         }
     }

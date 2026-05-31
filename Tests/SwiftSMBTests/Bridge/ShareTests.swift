@@ -75,7 +75,7 @@ struct ShareTests {
     }
 
     @Test(
-        "names only enumeration returns shares without kind or remark",
+        "names only enumeration returns shares without kind or remark"
     ) func namesOnlyEnumerationReturnsSharesWithoutKindOrRemark() throws {
         try withFreshContext { ctx in
             Bridge.setSecurityMode(.signingEnabled, on: ctx)
@@ -104,7 +104,7 @@ struct ShareTests {
     }
 
     @Test(
-        "share remark from detailed enumeration is not nil for public share",
+        "share remark from detailed enumeration is not nil for public share"
     ) func shareRemarkFromDetailedEnumerationIsNotNilForPublicShare() throws {
         try withFreshContext { ctx in
             let shares = try Bridge.listShares(context: ctx, server: testServerHost)

@@ -272,14 +272,14 @@ public extension SMB {
             state: SMBNotifyWatcherState,
             callbacks: SMBNotifyWatcherCallbacks,
             delegate: (any NotifyWatcherDelegate)?,
-            callbackQueue: DispatchQueue,
+            callbackQueue: DispatchQueue
         ) {
             self.path = path
             self.state = state
             self.callbackQueue = callbackQueue
             protectedDelegate = Protected(
                 SMBNotifyWatcherDelegateBox(delegate),
-                label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.delegate.\(state.id)",
+                label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.delegate.\(state.id)"
             )
             callbacks.watcher = self
             state.start()
@@ -370,14 +370,14 @@ public extension SMB.Connection {
         options: SMB.NotifyOptions = [],
         filter: SMB.NotifyFilter = .all,
         delegate: (any SMB.NotifyWatcherDelegate)? = nil,
-        callbackQueue: DispatchQueue = .main,
+        callbackQueue: DispatchQueue = .main
     ) throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
         let directory = try Bridge.open(
             context: context,
             path: path,
-            flags: Bridge.OpenFlags(.readOnly, options: [.directory]),
+            flags: Bridge.OpenFlags(.readOnly, options: [.directory])
         )
         let callbacks = SMBNotifyWatcherCallbacks()
         let state = SMBNotifyWatcherState(
@@ -388,7 +388,7 @@ public extension SMB.Connection {
             callbacks: callbacks,
             onFinish: { [weak self] id in
                 self?.unregisterNotifyWatcher(id: id)
-            },
+            }
         )
 
         registerNotifyWatcher(state)
@@ -397,7 +397,7 @@ public extension SMB.Connection {
             state: state,
             callbacks: callbacks,
             delegate: delegate,
-            callbackQueue: callbackQueue,
+            callbackQueue: callbackQueue
         )
     }
 }
@@ -524,7 +524,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         options: Bridge.NotifyChangeFlags,
         filter: Bridge.NotifyChangeFilter,
         callbacks: SMBNotifyWatcherCallbacks,
-        onFinish: @escaping @Sendable (UUID) -> Void,
+        onFinish: @escaping @Sendable (UUID) -> Void
     ) {
         self.context = context
         self.directory = directory
@@ -574,7 +574,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
                     context: context,
                     directory: directory,
                     flags: options,
-                    filter: filter,
+                    filter: filter
                 ) { [weak self] result in
                     self?.complete(result)
                 }

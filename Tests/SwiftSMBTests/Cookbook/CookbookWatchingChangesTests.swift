@@ -27,7 +27,7 @@ struct CookbookWatchingChangesTests {
         let delegate = CookbookWatcherDelegate()
         let watcher = try watcherConnection.watchDirectory(
             at: root,
-            delegate: delegate,
+            delegate: delegate
         )
         defer { watcher.cancel() }
 
@@ -51,7 +51,7 @@ struct CookbookWatchingChangesTests {
         let watcher = try watcherConnection.watchDirectory(
             at: root,
             filter: [.fileName, .directoryName, .size],
-            delegate: delegate,
+            delegate: delegate
         )
         defer { watcher.cancel() }
 
@@ -73,7 +73,7 @@ struct CookbookWatchingChangesTests {
         let watcher = try watcherConnection.watchDirectory(
             at: root,
             options: .recursive,
-            delegate: delegate,
+            delegate: delegate
         )
         defer { watcher.cancel() }
 
@@ -96,7 +96,7 @@ struct CookbookWatchingChangesTests {
         let watcher = try watcherConnection.watchDirectory(
             at: root,
             delegate: delegate,
-            callbackQueue: queue,
+            callbackQueue: queue
         )
         defer { watcher.cancel() }
 
@@ -115,7 +115,7 @@ struct CookbookWatchingChangesTests {
         let delegate = CookbookWatcherDelegate()
         let watcher = try connection.watchDirectory(
             at: root,
-            delegate: delegate,
+            delegate: delegate
         )
 
         #expect(delegate.waitForStart(timeout: 5))

@@ -44,7 +44,7 @@ extension Bridge {
         file: FileHandle,
         flags: LockFlags,
         offset: UInt64 = 0,
-        length: UInt64 = UInt64.max,
+        length: UInt64 = UInt64.max
     ) throws {
         guard let fileIDPtr = smb2_get_file_id(file.raw) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
@@ -55,7 +55,7 @@ extension Bridge {
             offset: offset,
             length: length,
             flags: flags.rawValue,
-            reserved: 0,
+            reserved: 0
         )
 
         try withUnsafeMutablePointer(to: &element) { elementPointer in
@@ -64,7 +64,7 @@ extension Bridge {
                 lock_sequence_number: 0,
                 lock_sequence_index: 0,
                 file_id: fileID,
-                locks: elementPointer,
+                locks: elementPointer
             )
 
             let state = LockState()
@@ -76,7 +76,7 @@ extension Bridge {
                     context.raw,
                     requestPointer,
                     lockCallback,
-                    callbackData,
+                    callbackData
                 ) else {
                     throw SMB.Error.fromBridge(context, operation: "smb2_cmd_lock_async")
                 }
@@ -98,7 +98,7 @@ extension Bridge {
         file: FileHandle,
         flags: LockFlags,
         offset: UInt64 = 0,
-        length: UInt64 = UInt64.max,
+        length: UInt64 = UInt64.max
     ) throws {
         try Bridge.sync {
             try _lock(context: context, file: file, flags: flags, offset: offset, length: length)
@@ -110,7 +110,7 @@ extension Bridge {
         context: Context,
         file: FileHandle,
         offset: UInt64 = 0,
-        length: UInt64 = UInt64.max,
+        length: UInt64 = UInt64.max
     ) throws {
         try lock(context: context, file: file, flags: .unlock, offset: offset, length: length)
     }

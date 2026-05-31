@@ -31,12 +31,12 @@ public extension SMB {
         
         private let protectedContext = Protected<Bridge.Context?>(
             nil,
-            label: "com.ruinelson.SwiftSMB.SMB.Connection.context",
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.context"
         )
         /// Active notification watchers that must be cancelled before context teardown.
         let protectedNotifyWatchers = Protected<[UUID: SMBNotifyWatcherState]>(
             [:],
-            label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers",
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers"
         )
 
         /// The live bridge context, if the connection is still open.
@@ -175,7 +175,7 @@ public extension SMB {
             at path: String,
             accessMode: File.AccessMode = .readOnly,
             options: File.OpenOptions = [],
-            opLock: File.OpLock = .none,
+            opLock: File.OpLock = .none
         ) throws -> File {
             let path = try SMB.validatePath(path, operation: .smb2Open)
             let context = try requireContext()
@@ -213,7 +213,7 @@ public extension SMB {
                 flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
                 opLockLevel: bridgeLevel,
                 leaseState: bridgeLeaseState,
-                leaseKey: leaseKey,
+                leaseKey: leaseKey
             )
             return File(connection: self, path: path, handle: handle)
         }
@@ -267,7 +267,7 @@ public extension SMB {
                     throw SMB.Error.posix(
                         code: POSIXErrorCode.EEXIST.rawValue,
                         operation: "SMB.Connection.makeDirectory",
-                        message: "Path component already exists and is not a directory",
+                        message: "Path component already exists and is not a directory"
                     )
                 }
             }
@@ -405,7 +405,7 @@ public extension SMB {
             creation: Date? = nil,
             change: Date? = nil,
             write: Date? = nil,
-            access: Date? = nil,
+            access: Date? = nil
         ) throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
@@ -415,7 +415,7 @@ public extension SMB {
                 creationTime: creation,
                 lastAccessTime: access,
                 lastWriteTime: write,
-                changeTime: change,
+                changeTime: change
             )
         }
 
@@ -442,7 +442,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the update.
         public func changeAttributes(
             at path: String,
-            _ change: (FileAttributes) -> FileAttributes,
+            _ change: (FileAttributes) -> FileAttributes
         ) throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
@@ -451,7 +451,7 @@ public extension SMB {
             try Bridge.setStats(
                 context: context,
                 path: path,
-                fileAttributes: new.rawValue,
+                fileAttributes: new.rawValue
             )
         }
 

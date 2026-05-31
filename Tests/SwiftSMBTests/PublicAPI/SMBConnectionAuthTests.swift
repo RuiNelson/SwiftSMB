@@ -17,14 +17,14 @@ struct SMBConnectionAuthTests {
         let server = SMB.Server(host: testServerHost)
         let credentials = SMB.Credentials(
             user: TestCredentials.user,
-            password: "wrong_password",
+            password: "wrong_password"
         )
 
         do {
             _ = try SMB.connect(
                 server: server,
                 credentials: credentials,
-                share: TestShare.private,
+                share: TestShare.private
             )
             Issue.record("Expected connection to fail with wrong password")
         }
@@ -46,7 +46,7 @@ struct SMBConnectionAuthTests {
         do {
             _ = try SMB.connect(
                 server: server,
-                share: TestShare.private,
+                share: TestShare.private
             )
             Issue.record("Expected connection to fail without credentials")
         }

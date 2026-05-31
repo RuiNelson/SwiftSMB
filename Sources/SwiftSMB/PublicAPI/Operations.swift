@@ -25,7 +25,7 @@ public extension SMB {
         server: Server,
         credentials: Credentials? = nil,
         configuration: Configuration = Configuration(),
-        includeHidden: Bool = false,
+        includeHidden: Bool = false
     ) throws -> [Share] {
         let context = try Bridge.createContext()
         defer { Bridge.destroyContext(context) }
@@ -37,7 +37,7 @@ public extension SMB {
             context: context,
             server: server.address,
             user: credentials?.user,
-            includeHidden: includeHidden,
+            includeHidden: includeHidden
         ).map(Share.init)
     }
 
@@ -57,7 +57,7 @@ public extension SMB {
         server: Server,
         credentials: Credentials? = nil,
         share: String,
-        configuration: Configuration = Configuration(),
+        configuration: Configuration = Configuration()
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
@@ -70,7 +70,7 @@ public extension SMB {
                 context: context,
                 server: server.address,
                 share: share,
-                user: credentials?.user,
+                user: credentials?.user
             )
             return Connection(server: server, share: share, configuration: configuration, context: context)
         }
@@ -103,7 +103,7 @@ public extension SMB {
             guard timeout >= 0, timeout <= Int(Int32.max) else {
                 throw Error.invalidArgument(
                     cause: .timeoutMustFitInInt32Seconds,
-                    onOperation: .smb2SetTimeout,
+                    onOperation: .smb2SetTimeout
                 )
             }
             Bridge.setTimeout(Int32(timeout), on: context)
@@ -134,7 +134,7 @@ public extension SMB {
     internal static func configureCredentials(
         _ credentials: Credentials?,
         server: Server,
-        on context: Bridge.Context,
+        on context: Bridge.Context
     ) {
         if let user = credentials?.user {
             Bridge.setUser(user, on: context)

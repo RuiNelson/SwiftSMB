@@ -69,7 +69,7 @@ public extension SMB.Connection {
         _ data: Data,
         to path: String,
         options: SMB.File.OpenOptions = [.create, .truncate],
-        chunkSize: Int? = nil,
+        chunkSize: Int? = nil
     ) throws {
         let path = try SMB.validatePath(path, operation: .smbConnectionWriteFile)
         let file = try openFile(at: path, accessMode: .writeOnly, options: options)
@@ -134,19 +134,19 @@ public extension SMB.Connection {
             throw SMB.Error.posix(
                 code: POSIXErrorCode.EEXIST.rawValue,
                 operation: "SMB.Connection.copyFile",
-                message: "Destination file already exists",
+                message: "Destination file already exists"
             )
         case .directory, .other:
             throw SMB.Error.invalidArgument(
                 cause: .remoteDestinationIsNotAFile,
-                onOperation: .smbConnectionCopyFile,
+                onOperation: .smbConnectionCopyFile
             )
         }
 
         try Bridge.serverSideCopy(
             context: context,
             sourcePath: sourcePath,
-            destinationPath: destinationPath,
+            destinationPath: destinationPath
         )
     }
 
@@ -159,7 +159,7 @@ public extension SMB.Connection {
         try acceptedBlockSize(
             preferredBlockSize,
             serverMaximum: Int(maxReadSize),
-            operation: .smb2GetMaxReadSize,
+            operation: .smb2GetMaxReadSize
         )
     }
 
@@ -172,7 +172,7 @@ public extension SMB.Connection {
         try acceptedBlockSize(
             preferredBlockSize,
             serverMaximum: Int(maxWriteSize),
-            operation: .smb2GetMaxWriteSize,
+            operation: .smb2GetMaxWriteSize
         )
     }
 
@@ -180,19 +180,19 @@ public extension SMB.Connection {
     private func acceptedBlockSize(
         _ preferredBlockSize: Int?,
         serverMaximum: Int,
-        operation: SMB.Error.InvalidArgumentOperation,
+        operation: SMB.Error.InvalidArgumentOperation
     ) throws -> Int {
         let chunkSize = preferredBlockSize ?? configuration.transferBlockSize ?? 65536
         guard chunkSize > 0 else {
             throw SMB.Error.invalidArgument(
                 cause: .blockSizeMustBeGreaterThanZero,
-                onOperation: operation,
+                onOperation: operation
             )
         }
         guard serverMaximum > 0 else {
             throw SMB.Error.invalidArgument(
                 cause: .serverMaximumBlockSizeMustBeGreaterThanZero,
-                onOperation: operation,
+                onOperation: operation
             )
         }
         return min(chunkSize, serverMaximum)

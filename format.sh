@@ -6,4 +6,3 @@ else
 	echo "swift-comment-reflow not found, skipping"
 fi
 swiftformat Sources Tests
-

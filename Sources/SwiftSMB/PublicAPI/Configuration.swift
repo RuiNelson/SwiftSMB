@@ -74,7 +74,7 @@ public extension SMB {
             user: String? = nil,
             password: String? = nil,
             domain: String? = nil,
-            workstation: String? = nil,
+            workstation: String? = nil
         ) {
             self.user = user
             self.password = password
@@ -130,7 +130,7 @@ public extension SMB {
             requiresEncryption: Bool? = nil,
             requiresSigning: Bool? = nil,
             authentication: AuthenticationMethod? = nil,
-            transferBlockSize: Int? = nil,
+            transferBlockSize: Int? = nil
         ) {
             self.timeout = timeout
             self.dialect = dialect

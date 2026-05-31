@@ -31,7 +31,7 @@ struct CookbookHandlesTests {
         let file = try connection.openFile(
             at: remote,
             accessMode: .readWrite,
-            options: [.create, .append],
+            options: [.create, .append]
         )
         do { try? file.close() }
     }
@@ -70,7 +70,7 @@ struct CookbookHandlesTests {
         let file = try connection.openFile(
             at: remote,
             accessMode: .writeOnly,
-            options: [.create, .truncate],
+            options: [.create, .truncate]
         )
         defer { try? file.close() }
         try file.write(Data("Hello, World!".utf8))
@@ -87,7 +87,7 @@ struct CookbookHandlesTests {
         let file = try connection.openFile(
             at: remote,
             accessMode: .readWrite,
-            options: [.create, .truncate],
+            options: [.create, .truncate]
         )
         defer { try? file.close() }
         try file.write(Data("0123456789".utf8))
@@ -117,7 +117,7 @@ struct CookbookHandlesTests {
         let file = try connection.openFile(
             at: remote,
             accessMode: .writeOnly,
-            options: [.create, .truncate],
+            options: [.create, .truncate]
         )
         defer { try? file.close() }
         try file.write(Data("sync me".utf8))
@@ -188,7 +188,7 @@ struct CookbookHandlesTests {
         try connection.dumpToFile(Data("lock test".utf8), to: remote)
         let file = try connection.openFile(
             at: remote,
-            accessMode: .readWrite,
+            accessMode: .readWrite
         )
         defer { try? file.close() }
         try file.lock(.exclusive, nonBlocking: false)
@@ -216,7 +216,7 @@ struct CookbookHandlesTests {
         try connection.dumpToFile(Data("lock test".utf8), to: remote)
         let file = try connection.openFile(
             at: remote,
-            accessMode: .readWrite,
+            accessMode: .readWrite
         )
         defer { try? file.close() }
         try file.lock(.exclusive, nonBlocking: true)
@@ -232,7 +232,7 @@ struct CookbookHandlesTests {
         try connection.dumpToFile(Data("lock test".utf8), to: remote)
         let file = try connection.openFile(
             at: remote,
-            accessMode: .readWrite,
+            accessMode: .readWrite
         )
         defer { try? file.close() }
         try file.lock(.exclusive, nonBlocking: false, range: 1024 ..< 2048)

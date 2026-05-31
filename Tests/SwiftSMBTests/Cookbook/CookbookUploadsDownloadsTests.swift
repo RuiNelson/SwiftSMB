@@ -27,7 +27,7 @@ struct CookbookUploadsDownloadsTests {
         try connection.uploadFile(
             local: localURL,
             remote: remote,
-            maxBlockSize: UInt64(256 * 1024),
+            maxBlockSize: UInt64(256 * 1024)
         ) { _, _, _, _ in true }
     }
 
@@ -46,7 +46,7 @@ struct CookbookUploadsDownloadsTests {
 
         try connection.downloadFile(
             remote: remote,
-            local: localURL,
+            local: localURL
         ) { completed, total, latestSpeed, averageSpeed in
             _ = completed
             _ = total
@@ -83,7 +83,7 @@ struct CookbookUploadsDownloadsTests {
         try connection.dumpToFile(
             payload,
             to: remote,
-            options: [.create, .append],
+            options: [.create, .append]
         )
     }
 

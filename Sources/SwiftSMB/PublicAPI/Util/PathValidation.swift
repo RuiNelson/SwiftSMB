@@ -12,7 +12,7 @@ extension SMB {
     /// Validates a share name before passing it to libsmb2.
     static func validateShareName(
         _ share: String,
-        operation: SMB.Error.InvalidArgumentOperation,
+        operation: SMB.Error.InvalidArgumentOperation
     ) throws {
         guard share.isSafeFilenameForNTFS else {
             throw SMB.Error.invalidArgument(cause: .invalidShareName(share), onOperation: operation)
@@ -27,7 +27,7 @@ extension SMB {
     @discardableResult static func validatePath(
         _ path: String,
         operation: SMB.Error.InvalidArgumentOperation,
-        allowRoot: Bool = false,
+        allowRoot: Bool = false
     ) throws -> String {
         var pcs = path.pathComponents
 
@@ -58,7 +58,7 @@ extension SMB {
             guard component.isSafeFilenameForNTFS else {
                 throw SMB.Error.invalidArgument(
                     cause: .invalidPathComponent(component),
-                    onOperation: operation,
+                    onOperation: operation
                 )
             }
         }
