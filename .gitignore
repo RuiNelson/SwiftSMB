@@ -67,3 +67,4 @@ fastlane/test_output
 opencode.json
 Package.resolved
 tmp/
+.DS_Store
