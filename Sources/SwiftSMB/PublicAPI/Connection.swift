@@ -24,11 +24,11 @@ public extension SMB {
 
         /// The configuration used to create the connection.
         public let configuration: Configuration
-        
+
         let readWorkerQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.read.worker")
         let downloaderQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.consumer")
         let uploadProducerQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.producer")
-        
+
         private let protectedContext = Protected<Bridge.Context?>(
             nil,
             label: "com.ruinelson.SwiftSMB.SMB.Connection.context"
@@ -159,7 +159,20 @@ public extension SMB {
             let end = DispatchTime.now()
             return Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
         }
-        
+
+        /// Sets the command timeout for subsequent operations on this connection.
+        ///
+        /// Commands that exceed the timeout are aborted by `libsmb2` with an I/O timeout status. Pass `0` to disable
+        /// command timeouts. Negative values are treated as `0`; values larger than `Int32.max` are clamped.
+        ///
+        /// - Parameter timeout: The timeout interval, in seconds.
+        /// - Throws: ``SMB/Error`` if the connection is already closed.
+        public func setTimeout(_ timeout: Int) throws {
+            let context = try requireContext()
+            let int32val = timeout >= 0 ? Int32(clamping: timeout) : 0
+            Bridge.setTimeout(int32val, on: context)
+        }
+
         // MARK: Handles
 
         /// Opens a file on the connected share.

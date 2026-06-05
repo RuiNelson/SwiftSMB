@@ -11,6 +11,27 @@ let connection = try SMB.connect(server: server, credentials: credentials, share
 defer { try? connection.disconnect() }
 ```
 
+## Adjusting command timeouts
+
+Pass ``SMB.Configuration.timeout`` when connecting to apply a timeout from the start:
+
+```swift
+let connection = try SMB.connect(
+    server: server,
+    credentials: credentials,
+    share: "Documents",
+    configuration: SMB.Configuration(timeout: 30)
+)
+```
+
+Use ``SMB.Connection.setTimeout(_:)`` to change the timeout for subsequent operations on an existing connection. Pass
+`0` to disable command timeouts.
+
+```swift
+try connection.setTimeout(10)
+try connection.setTimeout(0)
+```
+
 ## Opening a file handle
 
 ``SMB.Connection.openFile(at:accessMode:options:)`` returns an ``SMB.File`` handle:

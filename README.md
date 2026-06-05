@@ -51,6 +51,24 @@ let connection = try SMB.connect(
 defer { try? connection.disconnect() }
 ```
 
+Set a command timeout when connecting if you want `libsmb2` to abort operations that take too long:
+
+```swift
+let connection = try SMB.connect(
+    server: server,
+    credentials: credentials,
+    share: "Documents",
+    configuration: SMB.Configuration(timeout: 30)
+)
+```
+
+You can also change the timeout for subsequent operations on an existing connection:
+
+```swift
+try connection.setTimeout(10)
+try connection.setTimeout(0) // Disable command timeouts
+```
+
 ### Listing a directory
 
 `listDirectory(at:)` returns an array with the entries in a directory:
