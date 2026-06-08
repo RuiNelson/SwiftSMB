@@ -3,6 +3,26 @@
 
 import PackageDescription
 
+let includeIntegrationTests = Context.environment["SWIFTSMB_SKIP_INTEGRATION_TESTS"] == nil
+
+var testTargets: [Target] = [
+    .testTarget(
+        name: "SwiftSMBUnitTests",
+        dependencies: ["SwiftSMB"],
+        path: "Tests/SwiftSMBUnitTests",
+    ),
+]
+
+if includeIntegrationTests {
+    testTargets.append(
+        .testTarget(
+            name: "SwiftSMBTests",
+            dependencies: ["SwiftSMB"],
+            path: "Tests/SwiftSMBTests",
+        )
+    )
+}
+
 let package = Package(
     name: "SwiftSMB",
     platforms: [
@@ -63,15 +83,5 @@ let package = Package(
                 .product(name: "Collections", package: "swift-collections"),
             ],
         ),
-        .testTarget(
-            name: "SwiftSMBUnitTests",
-            dependencies: ["SwiftSMB"],
-            path: "Tests/SwiftSMBUnitTests",
-        ),
-        .testTarget(
-            name: "SwiftSMBTests",
-            dependencies: ["SwiftSMB"],
-            path: "Tests/SwiftSMBTests",
-        ),
-    ],
+    ] + testTargets,
 )

@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  SWIFTSMB_SKIP_INTEGRATION_TESTS: "1"
+
 jobs:
   macos:
     name: macOS
@@ -22,9 +25,7 @@ jobs:
         run: swift build
 
       - name: Unit tests
-        run: |
-          swift build --target SwiftSMBUnitTests
-          swift test --filter 'SwiftSMBUnitTests\.' --skip-build
+        run: swift test
 
   linux:
     name: Linux
@@ -39,6 +40,4 @@ jobs:
         run: swift build
 
       - name: Unit tests
-        run: |
-          swift build --target SwiftSMBUnitTests
-          swift test --filter 'SwiftSMBUnitTests\.' --skip-build
+        run: swift test
