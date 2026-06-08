@@ -1,7 +1,7 @@
 # SwiftSMB
 
 [![](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](https://swift.org)
-[![](https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgrey)](#)
+[![](https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Linux%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgrey)](#)
 [![](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](LICENSE)
 [![](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB?label=release)](https://github.com/RuiNelson/SwiftSMB/releases)
 

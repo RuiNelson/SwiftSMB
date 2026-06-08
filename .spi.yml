@@ -2,3 +2,6 @@ version: 1
 builder:
   configs:
     - documentation_targets: [SwiftSMB]
+    - platform: linux
+      swift_version: "6.2"
+      run_tests: true

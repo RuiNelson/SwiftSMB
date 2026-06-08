@@ -49,7 +49,6 @@ let package = Package(
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("include"),
-                .headerSearchPath("include/apple"),
                 .headerSearchPath("include/smb2"),
                 .headerSearchPath("lib"),
                 .define("_U_", to: "__attribute__((unused))"),
