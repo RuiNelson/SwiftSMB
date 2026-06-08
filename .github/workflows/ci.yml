@@ -14,15 +14,13 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.2"
-
       - name: Build
         run: swift build
 
       - name: Unit tests
-        run: swift test --filter 'TypeTests|SMBPublicAPITests|DataPipeTests'
+        run: |
+          swift build --target SwiftSMBUnitTests
+          swift test --filter 'SwiftSMBUnitTests\.' --skip-build
 
   linux:
     name: Linux
@@ -37,4 +35,6 @@ jobs:
         run: swift build
 
       - name: Unit tests
-        run: swift test --filter 'TypeTests|SMBPublicAPITests|DataPipeTests'
+        run: |
+          swift build --target SwiftSMBUnitTests
+          swift test --filter 'SwiftSMBUnitTests\.' --skip-build

@@ -64,8 +64,14 @@ let package = Package(
             ],
         ),
         .testTarget(
+            name: "SwiftSMBUnitTests",
+            dependencies: ["SwiftSMB"],
+            path: "Tests/SwiftSMBUnitTests",
+        ),
+        .testTarget(
             name: "SwiftSMBTests",
             dependencies: ["SwiftSMB"],
+            path: "Tests/SwiftSMBTests",
         ),
     ],
 )
