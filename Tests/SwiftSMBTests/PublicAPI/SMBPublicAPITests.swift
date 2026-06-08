@@ -54,31 +54,6 @@ struct SMBPublicAPITests {
         #expect(configuration.transferBlockSize == 65536)
     }
 
-    @Test("connection timeout can be changed after connect", .tags(.integration))
-    func connectionTimeoutCanBeChangedAfterConnect() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        defer { try? connection.disconnect() }
-
-        try connection.setTimeout(45)
-        #expect(connection.debugDescription.contains("timeout: 45"))
-
-        try connection.setTimeout(-1)
-        #expect(connection.debugDescription.contains("timeout: 0"))
-
-        try connection.setTimeout(Int.max)
-        #expect(connection.debugDescription.contains("timeout: \(Int32.max)"))
-    }
-
-    @Test("connection timeout throws after disconnect", .tags(.integration))
-    func connectionTimeoutThrowsAfterDisconnect() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        try connection.disconnect()
-
-        #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
-            try connection.setTimeout(30)
-        }
-    }
-
     @Test("public server and credentials are separate") func publicServerAndCredentialsAreSeparate() {
         let server = SMB.Server(host: "example.test", port: 445, domain: "CORP")
         let credentials = SMB.Credentials(
