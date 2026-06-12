@@ -49,6 +49,27 @@ public API was added, removed, or changed.
     `smb2_context` field-by-field, which is expensive to keep in sync with
     libsmb2. `SMB.Connection.debugDescription` no longer includes a context
     dump. Commit `b85de10`.
+12. ✅ Reconciled AGENTS.md's project tree and inline references with the
+    actual source layout (`BridgeTypes.swift`, `Extensions/SMB.Error.swift`,
+    `Connection.swift`, etc.), and added a style note documenting that
+    `Connection-Conv-Transfer.swift` and `Connection-Conv.swift`
+    intentionally use different private-helper styles. Commit `0fc7f70`.
+13. ✅ Added `File.OpLock.bridgeValue` and simplified `Connection.openFile`'s
+    5-case oplock switch to an `if case let .lease` check, removing the
+    repeated `bridgeLeaseState = []; leaseKey = nil` assignments. Commit
+    `4a9c1e6`.
+14. ✅ Added a `Bridge.closeQuietly(_:context:)` helper and used it for the
+    error-cleanup `_ = try? check(smb2_close(...))` sites in
+    `_serverSideCopy`. Commit `86a1c40`.
+15. ✅ Factored `Notify.swift`'s four delegate-dispatch methods
+    (`notifyReceived`/`notifyStarted`/`notifyFailed`/`notifyCancelled`) into
+    a shared private `deliver(_:)` helper. Commit `eeedd42`.
+16. ✅ Added `Operations.makeConfiguredContext(configuration:credentials:
+    server:)` and used it in `listShares` and `connect`, removing the
+    duplicated create/configure/configureCredentials sequence. Commit
+    `52f2b75`.
+17. ✅ Renamed `Bridge-ShareEnum.swift`'s private `string(from:)` helper to
+    `decodeUTF16String(from:)`. Commit `a47b764`.
 
 ## Investigated, no action taken
 
@@ -62,52 +83,24 @@ public API was added, removed, or changed.
 - `Error-InvalidArgument.swift`'s two large `description` switches are
   separate exhaustive mappings, not duplication.
 - `Date+.swift`, `OptionSet+.swift` — small, focused, idiomatic; no issues.
-
-## Remaining (lower priority, optional)
-
-- AGENTS.md's project tree still references `SMB2BridgeTypes.swift` /
-  `SMBError+Bridge.swift`, but the actual files are `BridgeTypes.swift` /
-  `Extensions/SMB.Error.swift`. Reconcile.
-- `Connection-Conv.swift` defines both a computed `var
-  acceptedReadBlockSize`/`acceptedWriteBlockSize` (throws, no args) and a
-  method of the same name taking an optional preferred size — duplicated doc
-  blocks for one operation. Consolidating to a single method with a default
-  parameter **touches public API surface** — if implemented, keep both
-  existing public entry points (e.g. keep the computed `var` as a thin
-  wrapper calling the method with a default argument) rather than removing
-  either.
-- `Connection.swift` `openFile`'s oplock switch repeats `bridgeLeaseState =
-  []; leaseKey = nil` in 4 of 5 cases; a `bridgeValue` mapping (matching the
-  convention used for `Dialect`/`AuthenticationMethod`) with `.lease`
-  handled separately would save ~15 lines.
-- `Bridge.swift` `_serverSideCopy` repeats `_ = try? check(smb2_close(...))`
-  ~5 times across error paths in slightly different orders. A
-  `closeQuietly(_:)` helper or defer-based cleanup would reduce risk of
-  missing a close on new error paths.
-- `Notify.swift`'s four delegate-dispatch methods (`notifyReceived`/
-  `notifyStarted`/`notifyFailed`/`notifyCancelled`) all do
-  `callbackQueue.async { [self] in guard let delegate else { return };
-  delegate.notifyWatcher(...) }`. Could factor a private
-  `deliver(_ body: @escaping (any NotifyWatcherDelegate) -> Void)`.
-- `Operations.swift` repeats a "create context → configure →
-  configureCredentials" sequence across `listShares`, `connect`, and
-  `parseURL`. A private `makeConfiguredContext(configuration:credentials:
-  server:)` helper would remove the triplication.
+- `Connection-Conv.swift`'s computed `var acceptedReadBlockSize`/
+  `acceptedWriteBlockSize` are already thin wrappers around the
+  same-named methods (`get throws { try acceptedReadBlockSize() }`) —
+  no further consolidation needed without touching public API.
 - `File.OpenOptions.bridgeValue` manually maps 5 flags one-by-one with `if
-  contains(...) { insert(...) }`, while `NotifyOptions`/`LeaseState`
-  conversions use `OptionSet(rawValue:)` directly — could collapse if bit
-  positions match.
-- `Bridge-ShareEnum.swift`'s private helper `string(from:)` could be renamed
-  `decodeUTF16String(from:)` to avoid shadowing `String`.
-- Style note: `Connection-Conv-Transfer.swift` uses private free functions
-  taking `on connection:` as first arg, while `Connection-Conv.swift` uses
-  private extension methods. Both styles coexist intentionally — worth a
-  short AGENTS.md note so neither gets "fixed" to match the other
-  unnecessarily.
+  contains(...) { insert(...) }`. `Bridge.OpenOptions` uses POSIX flag
+  values (`O_SYNC`, `O_CREAT`, etc.) while `File.OpenOptions` uses custom
+  bit positions (`1 << 0`...`1 << 4`); the raw values don't match, so
+  collapsing to `OptionSet(rawValue:)` would be incorrect. Left as-is.
+
+## Remaining
+
+None — all items from the original review have been completed or
+investigated with no action needed.
 
 ## Verification
 
-As of commit `b85de10`, `swift build` and `swift test`
+As of commit `a47b764`, `swift build` and `swift test`
 (`SWIFTSMB_SKIP_INTEGRATION_TESTS=1`) both pass with all 102 unit tests
-green, and the integration Notify and Transfer tests pass against the
-Docker test server.
+green, and the integration ServerSideCopy, Notify, ConnectionTests, and
+ShareTests suites pass against the Docker test server.
