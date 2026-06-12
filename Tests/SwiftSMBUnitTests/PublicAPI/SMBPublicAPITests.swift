@@ -84,4 +84,13 @@ struct SMBPublicAPITests {
         #expect(SMB.SMBStatus.noSuchFile.severity == .error)
         #expect(SMB.SMBStatusSeverity.warning.rawValue == 0x8000_0000)
     }
+
+    @Test("negotiated dialect maps known raw values") func negotiatedDialectMapsKnownRawValues() {
+        #expect(SMB.NegotiatedDialect(rawValue: 0x0202) == .smb2_02)
+        #expect(SMB.NegotiatedDialect(rawValue: 0x0210) == .smb2_10)
+        #expect(SMB.NegotiatedDialect(rawValue: 0x0300) == .smb3_00)
+        #expect(SMB.NegotiatedDialect(rawValue: 0x0302) == .smb3_02)
+        #expect(SMB.NegotiatedDialect(rawValue: 0x0311) == .smb3_11)
+        #expect(SMB.NegotiatedDialect(rawValue: 0x9999) == .unknown(0x9999))
+    }
 }

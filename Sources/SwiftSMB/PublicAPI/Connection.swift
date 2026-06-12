@@ -59,6 +59,15 @@ public extension SMB {
             }
         }
 
+        /// The negotiated SMB dialect, as a known dialect case.
+        ///
+        /// - Throws: ``SMB/Error`` if the connection is already closed.
+        public var negotiatedDialectKind: NegotiatedDialect {
+            get throws {
+                try NegotiatedDialect(rawValue: negotiatedDialect)
+            }
+        }
+
         /// The SMB session identifier.
         ///
         /// - Throws: ``SMB/Error`` if the connection is closed or the session ID cannot be retrieved.

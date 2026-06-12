@@ -166,6 +166,56 @@ public extension SMB {
         }
     }
 
+    /// A negotiated SMB protocol dialect, as reported by the server after connecting.
+    enum NegotiatedDialect: Equatable, CustomDebugStringConvertible, Sendable {
+        /// SMB 2.0.2.
+        case smb2_02
+
+        /// SMB 2.1.
+        case smb2_10
+
+        /// SMB 3.0.
+        case smb3_00
+
+        /// SMB 3.0.2.
+        case smb3_02
+
+        /// SMB 3.1.1.
+        case smb3_11
+
+        /// An unrecognized dialect revision.
+        case unknown(UInt16)
+
+        /// Creates a negotiated dialect from the raw dialect revision reported by the server.
+        public init(rawValue: UInt16) {
+            switch rawValue {
+            case 0x0202:
+                self = .smb2_02
+            case 0x0210:
+                self = .smb2_10
+            case 0x0300:
+                self = .smb3_00
+            case 0x0302:
+                self = .smb3_02
+            case 0x0311:
+                self = .smb3_11
+            default:
+                self = .unknown(rawValue)
+            }
+        }
+
+        public var debugDescription: String {
+            switch self {
+            case .smb2_02: "SMB.NegotiatedDialect.smb2_02"
+            case .smb2_10: "SMB.NegotiatedDialect.smb2_10"
+            case .smb3_00: "SMB.NegotiatedDialect.smb3_00"
+            case .smb3_02: "SMB.NegotiatedDialect.smb3_02"
+            case .smb3_11: "SMB.NegotiatedDialect.smb3_11"
+            case let .unknown(rawValue): "SMB.NegotiatedDialect.unknown(\(hex(rawValue)))"
+            }
+        }
+    }
+
     /// The presence and kind of an item at a share-relative path.
     enum ItemExistence: Equatable, CustomDebugStringConvertible, Sendable {
         /// No item exists at the path.
