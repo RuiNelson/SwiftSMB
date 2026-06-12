@@ -188,38 +188,22 @@ public extension SMB {
             let path = try SMB.validatePath(path, operation: .smb2Open)
             let context = try requireContext()
 
-            let bridgeLevel: Bridge.OpLockLevel
             let bridgeLeaseState: Bridge.LeaseState
             let leaseKey: Data?
-
-            switch opLock {
-            case .none:
-                bridgeLevel = .none
-                bridgeLeaseState = []
-                leaseKey = nil
-            case .levelII:
-                bridgeLevel = .levelII
-                bridgeLeaseState = []
-                leaseKey = nil
-            case .exclusive:
-                bridgeLevel = .exclusive
-                bridgeLeaseState = []
-                leaseKey = nil
-            case .batch:
-                bridgeLevel = .batch
-                bridgeLeaseState = []
-                leaseKey = nil
-            case let .lease(state):
-                bridgeLevel = .lease
+            if case let .lease(state) = opLock {
                 bridgeLeaseState = state.bridgeValue
                 leaseKey = Self.generateLeaseKey()
+            }
+            else {
+                bridgeLeaseState = []
+                leaseKey = nil
             }
 
             let handle = try Bridge.open(
                 context: context,
                 path: path,
                 flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
-                opLockLevel: bridgeLevel,
+                opLockLevel: opLock.bridgeValue,
                 leaseState: bridgeLeaseState,
                 leaseKey: leaseKey
             )
@@ -228,8 +212,7 @@ public extension SMB {
 
         /// Generates a random 16-byte lease key.
         private static func generateLeaseKey() -> Data {
-            withUnsafeBytes(of: UUID().uuid) { Data($0)
-            }
+            withUnsafeBytes(of: UUID().uuid) { Data($0) }
         }
 
         /// Opens a directory on the connected share.

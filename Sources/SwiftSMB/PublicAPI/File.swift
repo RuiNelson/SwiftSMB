@@ -338,6 +338,22 @@ public extension SMB {
 
             /// Lease — SMB3 leasing with fine-grained caching states.
             case lease(LeaseState)
+
+            /// The bridge oplock level for this oplock request.
+            var bridgeValue: Bridge.OpLockLevel {
+                switch self {
+                case .none:
+                    .none
+                case .levelII:
+                    .levelII
+                case .exclusive:
+                    .exclusive
+                case .batch:
+                    .batch
+                case .lease:
+                    .lease
+                }
+            }
         }
 
         /// Caching states for an SMB3 lease.
