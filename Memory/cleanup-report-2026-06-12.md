@@ -178,10 +178,11 @@ either.
    in `Notify.swift` into one `Protected<RunState>` struct (File/Notify #5),
    making `finish()`'s read of `didFail` and write of `didFinish` atomic under
    a single lock. Commit `835127b`.
-9. **Remaining**: the larger transfer-loop and read/write-bridge factoring
-   (Connection #4/#5, Bridge #3) — these touch more delicate code paths
-   (upload/download progress loops, server-side copy, raw read/write) and
-   warrant a separate, more careful pass with extra test coverage.
+9. ✅ Factored Bridge's four read/write variants to share a `withPointer`
+   pointer-binding helper (Bridge #3). Commit `9bf7d89`.
+10. ✅ Deduplicated transfer progress tracking into `ProgressTracker` and had
+    `transferReaderToRemoteFile`'s write loop reuse `writeEntireData` with a
+    per-block callback (Connection #4/#5). Commit `224ead1`.
 
 Also noted but not addressed (lower priority, from the original findings):
 - `BridgeTypes.swift` debug-formatting block could move to its own file
@@ -191,7 +192,12 @@ Also noted but not addressed (lower priority, from the original findings):
   `acceptedWriteBlockSize` var+method pair (Connection #3) — touches public
   API surface, see constraint note above.
 
-As of commit `835127b`, `swift build` and `swift test`
+As of commit `224ead1`, `swift build` and `swift test`
 (`SWIFTSMB_SKIP_INTEGRATION_TESTS=1`) both pass with all 102 unit tests
-green, and the integration Notify tests pass against the Docker test
-server.
+green, and the integration Notify and Transfer tests pass against the
+Docker test server.
+
+All items from the original "Suggested next steps" list are now done. The
+remaining "Also noted but not addressed" items (BridgeTypes.swift
+debug-formatting move, AGENTS.md stale filenames, Connection-Conv block-size
+dedup) are lower-priority and optional.
