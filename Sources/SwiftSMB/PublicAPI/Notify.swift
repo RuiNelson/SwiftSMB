@@ -499,17 +499,23 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Serial queue that services the libsmb2 context for this watcher.
     private let queue: DispatchQueue
 
+    /// Lifecycle flags tracked alongside `State`.
+    struct RunState {
+        /// Whether the watcher has already reported a failure.
+        var didFail = false
+
+        /// Whether the watcher has already sent its terminal callback.
+        var didFinish = false
+
+        /// Whether bridge resources have already been released.
+        var didCleanUp = false
+    }
+
     /// Protected mutable request state.
     private let protectedState: Protected<State>
 
-    /// Whether the watcher has already reported a failure.
-    private let protectedDidFail: Protected<Bool>
-
-    /// Whether the watcher has already sent its terminal callback.
-    private let protectedDidFinish: Protected<Bool>
-
-    /// Whether bridge resources have already been released.
-    private let protectedDidCleanUp: Protected<Bool>
+    /// Protected lifecycle flags.
+    private let protectedRunState: Protected<RunState>
 
     /// Signals `cancelAndWait()` after cleanup completes.
     private let cleanupSemaphore = DispatchSemaphore(value: 0)
@@ -534,9 +540,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         self.onFinish = onFinish
         queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.\(id)")
         protectedState = Protected(State(), label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.state.\(id)")
-        protectedDidFail = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didFail.\(id)")
-        protectedDidFinish = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didFinish.\(id)")
-        protectedDidCleanUp = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.didCleanUp.\(id)")
+        protectedRunState = Protected(RunState(), label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.runState.\(id)")
     }
 
     /// Starts the serial notification loop.
@@ -556,7 +560,7 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Requests cancellation and waits until bridge resources are released.
     func cancelAndWait() {
         cancel()
-        if protectedDidCleanUp.current {
+        if protectedRunState.current.didCleanUp {
             return
         }
         cleanupSemaphore.wait()
@@ -680,25 +684,33 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         try? Bridge.close(context: context, file: directory)
         finish()
         onFinish(id)
-        protectedDidCleanUp.current = true
+        protectedRunState.withLock { state in
+            state.didCleanUp = true
+        }
         cleanupSemaphore.signal()
     }
 
     /// Reports a terminal failure.
     private func fail(with error: Swift.Error) {
-        protectedDidFail.current = true
+        protectedRunState.withLock { state in
+            state.didFail = true
+        }
         callbacks.failed(with: error)
         finish()
     }
 
     /// Sends the terminal cancellation callback once.
     private func finish() {
-        let alreadyFinished = protectedDidFinish.take(replacingWith: true)
+        let (alreadyFinished, didFail) = protectedRunState.withLock { state in
+            let alreadyFinished = state.didFinish
+            state.didFinish = true
+            return (alreadyFinished, state.didFail)
+        }
         guard !alreadyFinished else {
             return
         }
 
-        if !protectedDidFail.current {
+        if !didFail {
             callbacks.cancelled()
         }
     }
