@@ -25,8 +25,7 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
-        private let protectedContext = Protected<Bridge.Context?>(
-            nil,
+        private let protectedContext = ProtectedHandle<Bridge.Context>(
             label: "com.ruinelson.SwiftSMB.SMB.Connection.context"
         )
         /// Active notification watchers that must be cancelled before context teardown.
@@ -474,15 +473,14 @@ public extension SMB {
 
         /// Returns the live bridge context or throws if the connection is closed.
         func requireContext() throws -> Bridge.Context {
-            guard let context else {
-                throw Error.operationRequestedAfterConnectionClosed
+            try protectedContext.require {
+                .operationRequestedAfterConnectionClosed
             }
-            return context
         }
 
         /// Takes ownership of the context and marks the connection closed.
         private func takeContext() -> Bridge.Context? {
-            protectedContext.take(replacingWith: nil)
+            protectedContext.take()
         }
 
         public var debugDescription: String {

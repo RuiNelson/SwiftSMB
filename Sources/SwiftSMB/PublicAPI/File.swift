@@ -125,8 +125,7 @@ public extension SMB {
         public let path: String
 
         let connection: Connection
-        private let protectedHandle = Protected<Bridge.FileHandle?>(
-            nil,
+        private let protectedHandle = ProtectedHandle<Bridge.FileHandle>(
             label: "com.ruinelson.SwiftSMB.SMB.File.handle"
         )
 
@@ -427,15 +426,14 @@ public extension SMB {
 
         /// Returns the live bridge handle or throws if the file is closed.
         private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.FileHandle {
-            guard let handle else {
-                throw SMB.Error.invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
+            try protectedHandle.require {
+                .invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
             }
-            return handle
         }
 
         /// Takes ownership of the handle and marks the file closed.
         private func takeHandle() -> Bridge.FileHandle? {
-            protectedHandle.take(replacingWith: nil)
+            protectedHandle.take()
         }
 
         public var debugDescription: String {

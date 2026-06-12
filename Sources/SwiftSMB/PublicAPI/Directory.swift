@@ -13,8 +13,7 @@ public extension SMB {
         public let path: String
 
         private let connection: Connection
-        private let protectedHandle = Protected<Bridge.DirectoryHandle?>(
-            nil,
+        private let protectedHandle = ProtectedHandle<Bridge.DirectoryHandle>(
             label: "com.ruinelson.SwiftSMB.SMB.Directory.handle"
         )
 
@@ -98,15 +97,14 @@ public extension SMB {
 
         /// Returns the live bridge handle or throws if the directory is closed.
         private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.DirectoryHandle {
-            guard let handle else {
-                throw SMB.Error.invalidArgument(cause: .directoryAlreadyClosed, onOperation: operation)
+            try protectedHandle.require {
+                .invalidArgument(cause: .directoryAlreadyClosed, onOperation: operation)
             }
-            return handle
         }
 
         /// Takes ownership of the handle and marks the directory closed.
         private func takeHandle() -> Bridge.DirectoryHandle? {
-            protectedHandle.take(replacingWith: nil)
+            protectedHandle.take()
         }
 
         public var debugDescription: String {
