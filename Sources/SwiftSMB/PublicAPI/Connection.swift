@@ -484,7 +484,7 @@ public extension SMB {
         }
 
         public var debugDescription: String {
-            "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected), context: \(context.map(\.debugDescription) ?? "<nil>"))"
+            "SMB.Connection(server: \(server.debugDescription), share: \(share), isConnected: \(isConnected))"
         }
     }
 }
