@@ -393,9 +393,6 @@ public extension SMB {
                     throw error
                 }
             }
-            catch {
-                throw error
-            }
         }
         
         /// Changes the timestamps of a file or directory.
