@@ -6,43 +6,119 @@
 // Copyright its respective authors
 //
 
-import Dispatch
+import Foundation
+import Synchronization
 
-final class Protected<Value>: CustomDebugStringConvertible, @unchecked Sendable {
-    private let label: String
-    private let queue: DispatchQueue
+/// Type-erased locking backend shared by `Protected`'s storage strategies.
+private protocol ProtectedBox<Value>: AnyObject, Sendable {
+    associatedtype Value
+
+    var debugValue: Value { get }
+    func get() -> sending Value
+    func set(_ newValue: Value)
+    func take(replacingWith replacement: sending Value) -> sending Value
+}
+
+/// `NSLock`-backed storage, used where `Mutex` is unavailable.
+private final class LockBox<Value>: ProtectedBox, @unchecked Sendable {
+    private let lock = NSLock()
     private var value: Value
 
-    init(_ value: Value, label: String) {
-        self.label = label
-        queue = DispatchQueue(label: label)
+    init(_ value: sending Value) {
         self.value = value
     }
 
-    var debugDescription: String {
-        queue.sync {
-            "Protected<\(Value.self)>(\(label), \(value))"
+    var debugValue: Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func get() -> sending Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ newValue: Value) {
+        lock.lock()
+        defer { lock.unlock() }
+        value = newValue
+    }
+
+    func take(replacingWith replacement: sending Value) -> sending Value {
+        lock.lock()
+        defer { lock.unlock() }
+        let currentValue = value
+        value = replacement
+        return currentValue
+    }
+}
+
+/// Wraps a non-`Sendable` value so it can be stored in a `Mutex`, which requires its contents to cross isolation
+/// regions freely.
+private struct ValueBox<Value>: @unchecked Sendable {
+    var value: Value
+}
+
+/// `Mutex`-backed storage, preferred when available.
+@available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
+private final class MutexBox<Value>: ProtectedBox, @unchecked Sendable {
+    private let mutex: Mutex<ValueBox<Value>>
+
+    init(_ value: sending Value) {
+        mutex = Mutex(ValueBox(value: value))
+    }
+
+    var debugValue: Value {
+        mutex.withLock { $0.value }
+    }
+
+    func get() -> sending Value {
+        mutex.withLock { $0.value }
+    }
+
+    func set(_ newValue: Value) {
+        mutex.withLock { $0.value = newValue }
+    }
+
+    func take(replacingWith replacement: sending Value) -> sending Value {
+        mutex.withLock { box in
+            let currentValue = box.value
+            box.value = replacement
+            return currentValue
         }
+    }
+}
+
+final class Protected<Value>: CustomDebugStringConvertible, @unchecked Sendable {
+    private let label: String
+    private let box: any ProtectedBox<Value>
+
+    init(_ value: sending Value, label: String) {
+        self.label = label
+        if #available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *) {
+            box = MutexBox(value)
+        }
+        else {
+            box = LockBox(value)
+        }
+    }
+
+    var debugDescription: String {
+        "Protected<\(Value.self)>(\(label), \(box.debugValue))"
     }
 
     var current: Value {
         get {
-            queue.sync {
-                value
-            }
+            box.get()
         }
         set {
-            queue.sync {
-                value = newValue
-            }
+            box.set(newValue)
         }
     }
 
-    func take(replacingWith replacement: Value) -> Value {
-        queue.sync {
-            let currentValue = value
-            value = replacement
-            return currentValue
-        }
+    func take(replacingWith replacement: sending Value) -> sending Value {
+        box.take(replacingWith: replacement)
     }
 }
