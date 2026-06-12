@@ -388,6 +388,26 @@ class Bridge {
         }
     }
 
+    /// Calls `body` with a pointer to `buffer`'s storage, or `nil` if it is empty.
+    private static func withPointer(
+        _ buffer: inout MutableRawSpan,
+        _ body: (UnsafeMutablePointer<UInt8>?) -> Int32
+    ) -> Int32 {
+        buffer.withUnsafeMutableBytes { bytes in
+            bytes.bindMemory(to: UInt8.self).baseAddress.map(body) ?? body(nil)
+        }
+    }
+
+    /// Calls `body` with a pointer to `bytes`'s storage, or `nil` if it is empty.
+    private static func withPointer(
+        _ bytes: RawSpan,
+        _ body: (UnsafePointer<UInt8>?) -> Int32
+    ) -> Int32 {
+        bytes.withUnsafeBytes { raw in
+            raw.bindMemory(to: UInt8.self).baseAddress.map(body) ?? body(nil)
+        }
+    }
+
     /// Reads bytes from a file at an explicit offset.
     static func read(
         context: Context,
@@ -397,30 +417,11 @@ class Bridge {
     ) throws -> Int {
         try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Pread)
-            let status = buffer.withUnsafeMutableBytes { bytes in
-                bytes.bindMemory(to: UInt8.self).baseAddress.map {
-                    smb2_pread(context.raw, file.raw, $0, count, offset)
-                } ?? smb2_pread(context.raw, file.raw, nil, count, offset)
+            let status = withPointer(&buffer) {
+                smb2_pread(context.raw, file.raw, $0, count, offset)
             }
-
             return try Int(check(status, context: context, operation: "smb2_pread"))
         }
-    }
-
-    private static func _write(
-        context: Context,
-        file: FileHandle,
-        bytes: RawSpan,
-        offset: UInt64
-    ) throws -> Int {
-        let count = try bytes.byteCount.asUInt32(operation: .smb2Pwrite)
-        let status = bytes.withUnsafeBytes { bytes in
-            bytes.bindMemory(to: UInt8.self).baseAddress.map {
-                smb2_pwrite(context.raw, file.raw, $0, count, offset)
-            } ?? smb2_pwrite(context.raw, file.raw, nil, count, offset)
-        }
-
-        return try Int(check(status, context: context, operation: "smb2_pwrite"))
     }
 
     /// Writes bytes to a file at an explicit offset.
@@ -431,7 +432,11 @@ class Bridge {
         offset: UInt64
     ) throws -> Int {
         try sync {
-            try _write(context: context, file: file, bytes: bytes, offset: offset)
+            let count = try bytes.byteCount.asUInt32(operation: .smb2Pwrite)
+            let status = withPointer(bytes) {
+                smb2_pwrite(context.raw, file.raw, $0, count, offset)
+            }
+            return try Int(check(status, context: context, operation: "smb2_pwrite"))
         }
     }
 
@@ -443,29 +448,11 @@ class Bridge {
     ) throws -> Int {
         try sync {
             let count = try buffer.byteCount.asUInt32(operation: .smb2Read)
-            let status = buffer.withUnsafeMutableBytes { bytes in
-                bytes.bindMemory(to: UInt8.self).baseAddress.map {
-                    smb2_read(context.raw, file.raw, $0, count)
-                } ?? smb2_read(context.raw, file.raw, nil, count)
+            let status = withPointer(&buffer) {
+                smb2_read(context.raw, file.raw, $0, count)
             }
-
             return try Int(check(status, context: context, operation: "smb2_read"))
         }
-    }
-
-    private static func _write(
-        context: Context,
-        file: FileHandle,
-        bytes: RawSpan
-    ) throws -> Int {
-        let count = try bytes.byteCount.asUInt32(operation: .smb2Write)
-        let status = bytes.withUnsafeBytes { bytes in
-            bytes.bindMemory(to: UInt8.self).baseAddress.map {
-                smb2_write(context.raw, file.raw, $0, count)
-            } ?? smb2_write(context.raw, file.raw, nil, count)
-        }
-
-        return try Int(check(status, context: context, operation: "smb2_write"))
     }
 
     /// Writes bytes at the current file offset.
@@ -475,7 +462,11 @@ class Bridge {
         bytes: RawSpan
     ) throws -> Int {
         try sync {
-            try _write(context: context, file: file, bytes: bytes)
+            let count = try bytes.byteCount.asUInt32(operation: .smb2Write)
+            let status = withPointer(bytes) {
+                smb2_write(context.raw, file.raw, $0, count)
+            }
+            return try Int(check(status, context: context, operation: "smb2_write"))
         }
     }
 
