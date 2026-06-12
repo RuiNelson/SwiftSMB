@@ -174,7 +174,11 @@ either.
    lock, and makeLink Bridge callbacks (Bridge #2). Commit `27532d5`.
 7. ✅ Factored `ProtectedHandle<Handle>` and used it for `Connection`,
    `File`, and `Directory` (File/Notify #1). Commit `a55b3e9`.
-8. **Remaining**: the larger transfer-loop and read/write-bridge factoring
+8. ✅ Consolidated `protectedDidFail`/`protectedDidFinish`/`protectedDidCleanUp`
+   in `Notify.swift` into one `Protected<RunState>` struct (File/Notify #5),
+   making `finish()`'s read of `didFail` and write of `didFinish` atomic under
+   a single lock. Commit `835127b`.
+9. **Remaining**: the larger transfer-loop and read/write-bridge factoring
    (Connection #4/#5, Bridge #3) — these touch more delicate code paths
    (upload/download progress loops, server-side copy, raw read/write) and
    warrant a separate, more careful pass with extra test coverage.
@@ -186,11 +190,8 @@ Also noted but not addressed (lower priority, from the original findings):
 - `Connection-Conv.swift`'s duplicated `acceptedReadBlockSize`/
   `acceptedWriteBlockSize` var+method pair (Connection #3) — touches public
   API surface, see constraint note above.
-- Consolidating `protectedDidFail`/`protectedDidFinish`/`protectedDidCleanUp`
-  in `Notify.swift` into one `Protected<RunState>` enum (File/Notify #5 in
-  the per-area findings) — now easier with `withLock` available, but not yet
-  done.
 
-As of commit `a55b3e9`, `swift build` and `swift test`
+As of commit `835127b`, `swift build` and `swift test`
 (`SWIFTSMB_SKIP_INTEGRATION_TESTS=1`) both pass with all 102 unit tests
-green.
+green, and the integration Notify tests pass against the Docker test
+server.
