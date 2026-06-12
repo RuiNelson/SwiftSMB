@@ -27,7 +27,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │           ├── SMBConfiguration.swift        # Server, credentials, and connection configuration.
 │           ├── SMBConnection.swift           # Connection handle, state, and primitive bridge operations.
 │           ├── SMBConnection-Conv.swift      # Connection convenience methods built from primitives.
-│           ├── SMBConnection-Conv-Pipe.swift # Named-pipe convenience methods.
+│           ├── SMBConnection-Conv-Transfer.swift # Upload/download convenience methods.
 │           ├── SMBFile.swift                 # OOP file handle.
 │           ├── SMBFile-Conv.swift            # File convenience methods built from primitives.
 │           ├── SMBDirectory.swift            # OOP directory handle.
@@ -39,7 +39,6 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │           ├── SMBPathValidation.swift       # Share-name and share-relative path validation.
 │           ├── SMBStatus.swift               # SMB.SMBStatus and SMB.SMBStatusSeverity.
 │           └── Util
-│               ├── DataPipe.swift            # A bounded data pipe that synchronises a single producer with a single consumer.
 │               ├── Date+.swift               # Date helpers for SMB timestamp values.
 │               ├── OptionSet+DebugDescription.swift # Shared debug formatting helpers.
 │               └── Protected.swift           # DispatchQueue-backed state wrapper for Sendable handles.
@@ -52,13 +51,11 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │       │   ├── IntegrationSupport.swift      # Shared helpers and server credentials for integration tests.
 │       │   ├── ShareTests.swift              # Share enumeration and info tests.
 │       │   └── TypeTests.swift               # Value types, errors, and enum raw-value unit tests (no server).
-│       ├── PublicAPI                         # Public API unit tests.
-│       │   ├── SMBConnectionDirectoryTests.swift # Directory convenience public API tests.
-│       │   ├── SMBConnectionPipeTests.swift  # Named-pipe public API tests.
-│       │   ├── SMBNotifyTests.swift          # Notification public API and integration tests.
-│       │   └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
-│       └── Utils
-│           └── DataPipeTests.swift           # DataPipe backpressure and ring-buffer unit tests.
+│       └── PublicAPI                         # Public API unit tests.
+│           ├── SMBConnectionDirectoryTests.swift # Directory convenience public API tests.
+│           ├── SMBConnectionTransferTests.swift # Upload/download convenience public API tests.
+│           ├── SMBNotifyTests.swift          # Notification public API and integration tests.
+│           └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 └── TestServer                                # Docker Samba server for integration tests.
 ```
 
@@ -91,7 +88,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
 - File convenience methods are named `loadFile(at:)` and `dumpToFile(_:to:)`; avoid reintroducing the older `readFile`/`writeFile` names.
 - Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
-- File transfer convenience APIs use `DataPipe`, support cancellation/progress, and may create temporary remote paths for atomic uploads. Preserve the `.start` / `.data` / `.finish` / `.broken` package protocol.
+- File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe.
 - Public notifications are delegate-based: `SMB.Connection.watchDirectory(...)` returns `SMB.NotifyWatcher`, which calls `SMB.NotifyWatcherDelegate`. Keep the delegate weak, deliver callbacks on the requested queue, and keep watcher cancellation idempotent.
 - `SMB.NotifyWatcherDelegate.notifyWatcherDidStart(_:)` is used by tests and clients to know the first notify request has been armed; do not replace it with sleeps or timing assumptions.
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+DebugDescription.swift` for consistent debug output.
@@ -113,7 +110,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ## Concurrency & Dispatch
 
-- **Never use `DispatchQueue.global()`.** The global concurrent queue has a limited thread pool subject to exhaustion under heavy system load. Blocking work dispatched there can hang when all threads are occupied, because a caller waiting on a semaphore or pipe may never see the dispatched block execute. Use dedicated serial dispatch queues (created with `DispatchQueue(label:)`) for all async work, especially producer/consumer patterns that rely on semaphore-based backpressure like `DataPipe`.
+- **Never use `DispatchQueue.global()`.** The global concurrent queue has a limited thread pool subject to exhaustion under heavy system load. Blocking work dispatched there can hang when all threads are occupied, because a caller waiting on a semaphore or pipe may never see the dispatched block execute. Use dedicated serial dispatch queues (created with `DispatchQueue(label:)`) for all async work, especially producer/consumer patterns that block the caller for backpressure, like the transfer disk workers.
 
 ## Code Style & Commits
 

@@ -26,12 +26,12 @@ if includeIntegrationTests {
 let package = Package(
     name: "SwiftSMB",
     platforms: [
-        .macOS(.v10_15),
-        .iOS(.v13),
-        .macCatalyst(.v13),
-        .tvOS(.v13),
+        .macOS("10.15.4"),
+        .iOS("13.4"),
+        .macCatalyst("13.4"),
+        .tvOS("13.4"),
         .visionOS(.v1),
-        .watchOS(.v6),
+        .watchOS("6.2"),
     ],
     products: [
         .library(
@@ -46,7 +46,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/RuiNelson/PathWorks.git", from: "2.0.0"),
-        .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
     ],
     targets: [
         .target(
@@ -80,7 +79,6 @@ let package = Package(
             dependencies: [
                 "libsmb2",
                 .product(name: "PathWorks", package: "PathWorks"),
-                .product(name: "Collections", package: "swift-collections"),
             ],
         ),
     ] + testTargets,

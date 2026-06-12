@@ -42,11 +42,9 @@ public extension SMB.Error {
         case smb2GetMaxWriteSize
         case smb2GetFileID
         case smb2ShareEnumSync
-        case smbConnectionWriteFromPipeToFile
-        case smbConnectionReadFromFileToPipe
         case smbConnectionDownloadFile
         case smbConnectionUploadFile
-        case smbConnectionPipeBlockSize
+        case smbConnectionTransferBlockSize
         case smbConnectionRemoveItem
         case smbConnectionListDirectory
         case smbConnectionReadFile
@@ -87,11 +85,9 @@ public extension SMB.Error {
             case .smb2GetMaxWriteSize: "smb2_get_max_write_size"
             case .smb2GetFileID: "smb2_get_file_id"
             case .smb2ShareEnumSync: "smb2_share_enum_sync"
-            case .smbConnectionWriteFromPipeToFile: "SMB.Connection.write(fromPipe:toFile:)"
-            case .smbConnectionReadFromFileToPipe: "SMB.Connection.read(fromFile:toPipe:)"
             case .smbConnectionDownloadFile: "SMB.Connection.downloadFile"
             case .smbConnectionUploadFile: "SMB.Connection.uploadFile"
-            case .smbConnectionPipeBlockSize: "SMB.Connection.pipeBlockSize"
+            case .smbConnectionTransferBlockSize: "SMB.Connection.transferBlockSize"
             case .smbConnectionRemoveItem: "SMB.Connection.removeItem"
             case .smbConnectionListDirectory: "SMB.Connection.listDirectory"
             case .smbConnectionReadFile: "SMB.Connection.readFile"
@@ -121,7 +117,6 @@ public extension SMB.Error {
         case remoteParentDirectoryDoesNotExist
         case remoteParentPathIsNotADirectory
         case remoteDestinationIsNotAFile
-        case pipeDataMustBeginWithStartPackage
         case localFileShorterThanResumeOffset
         case offsetBeyondEndOfLocalFile
         case unableToDetermineLocalFileSize
@@ -149,7 +144,6 @@ public extension SMB.Error {
             case .remoteParentDirectoryDoesNotExist: "Remote parent directory does not exist"
             case .remoteParentPathIsNotADirectory: "Remote parent path exists and is not a directory"
             case .remoteDestinationIsNotAFile: "Remote destination is not a file"
-            case .pipeDataMustBeginWithStartPackage: "Pipe data must begin with a start package"
             case .localFileShorterThanResumeOffset: "Local file is shorter than the requested resume offset"
             case .offsetBeyondEndOfLocalFile: "Offset is beyond the end of the local file"
             case .unableToDetermineLocalFileSize: "Unable to determine local file size"

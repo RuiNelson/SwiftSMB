@@ -25,10 +25,6 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
-        let readWorkerQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.read.worker")
-        let downloaderQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.consumer")
-        let uploadProducerQueue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.producer")
-
         private let protectedContext = Protected<Bridge.Context?>(
             nil,
             label: "com.ruinelson.SwiftSMB.SMB.Connection.context"

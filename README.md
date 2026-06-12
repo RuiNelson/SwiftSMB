@@ -2,12 +2,12 @@
 
 [![License](https://img.shields.io/github/license/RuiNelson/SwiftSMB)](LICENSE)
 
-[![macOS](https://img.shields.io/badge/macOS-10.15+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![macOS](https://img.shields.io/badge/macCatalyst-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![iOS](https://img.shields.io/badge/iOS-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![macOS](https://img.shields.io/badge/macOS-10.15.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![macOS](https://img.shields.io/badge/macCatalyst-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![iOS](https://img.shields.io/badge/iOS-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![visionOS](https://img.shields.io/badge/visionOS-1+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![watchOS](https://img.shields.io/badge/watchOS-6+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![watchOS](https://img.shields.io/badge/tvOS-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![watchOS](https://img.shields.io/badge/watchOS-6.2+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![watchOS](https://img.shields.io/badge/tvOS-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](LinuxBuild/build.sh)
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
@@ -161,7 +161,7 @@ Then add `SwiftSMB` to the target that uses it:
 )
 ```
 
-SwiftSMB currently declares support for macOS 10.15+, iOS 13+, macCatalyst 13+, tvOS 13+, visionOS 1+, and watchOS 6+. The package uses Swift tools version 6.2.
+SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. The package uses Swift tools version 6.2.
 
 ### Xcode Project
 

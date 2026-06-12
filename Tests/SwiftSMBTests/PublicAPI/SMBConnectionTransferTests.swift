@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// SMBConnectionPipeTests.swift
+// SMBConnectionTransferTests.swift
 //
 // Licensed under LGPL v2.1
 // Copyright its respective authors
@@ -18,64 +18,7 @@ final class SendableBox<Value>: @unchecked Sendable {
 }
 
 @Suite(.tags(.integration))
-struct SMBConnectionPipeTests {
-    @Test("write from pipe stores remote file")
-    func writeFromPipeStoresRemoteFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
-
-        let path = uniquePath("pipe-write") + ".bin"
-        defer { try? connection.removeFile(at: path) }
-
-        let pipe = DataPipe(maxPackages: 4, label: "SwiftSMBTests.SMBConnectionPipeTests.write")
-        pipe.send(.start)
-        pipe.send(.data(Data([0x01, 0x02])))
-        pipe.send(.data(Data([0x03, 0x04])))
-        pipe.send(.finish)
-
-        let progress = SendableBox<[UInt64]>([])
-        try connection.write(fromPipe: pipe, toFile: path) { transferred, _, _ in
-            progress.value.append(transferred)
-            return true
-        }
-
-        #expect(try connection.loadFile(at: path) == Data([0x01, 0x02, 0x03, 0x04]))
-        #expect(progress.value.last == 4)
-    }
-
-    @Test("write from broken pipe throws")
-    func writeFromBrokenPipeThrows() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
-
-        let path = uniquePath("pipe-broken") + ".bin"
-        defer { try? connection.removeFile(at: path) }
-
-        let pipe = DataPipe(maxPackages: 2, label: "SwiftSMBTests.SMBConnectionPipeTests.broken")
-        pipe.send(.start)
-        pipe.send(.broken)
-
-        #expect(throws: (any Error).self) {
-            try connection.write(fromPipe: pipe, toFile: path) { _, _, _ in true }
-        }
-    }
-
-    @Test("write from pipe requires start package")
-    func writeFromPipeRequiresStartPackage() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
-
-        let path = uniquePath("pipe-missing-start") + ".bin"
-
-        let pipe = DataPipe(maxPackages: 2, label: "SwiftSMBTests.SMBConnectionPipeTests.missingStart")
-        pipe.send(.data(Data([0x01])))
-        pipe.send(.finish)
-
-        #expect(throws: (any Error).self) {
-            try connection.write(fromPipe: pipe, toFile: path) { _, _, _ in true }
-        }
-    }
-
+struct SMBConnectionTransferTests {
     @Test("leading slash in remote path is ignored")
     func leadingSlashInRemotePathIsIgnored() throws {
         let connection = try publicConnection()
@@ -88,82 +31,6 @@ struct SMBConnectionPipeTests {
 
         #expect(try connection.loadFile(at: path) == Data("ok".utf8))
         #expect(try connection.loadFile(at: "/" + path) == Data("ok".utf8))
-    }
-
-    @Test("read to pipe transfers remote file")
-    func readToPipeTransfersRemoteFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
-
-        let path = uniquePath("pipe-read") + ".bin"
-        defer { try? connection.removeFile(at: path) }
-
-        let expected = Data([0xAA, 0xBB, 0xCC, 0xDD])
-        try connection.dumpToFile(expected, to: path)
-
-        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.read")
-        let progress = SendableBox<[UInt64]>([])
-        try connection.read(fromFile: path, toPipe: pipe) { transferred, _, _ in
-            progress.value.append(transferred)
-            return true
-        }
-
-        var received = Data()
-        var isComplete = false
-        while !isComplete, let package = pipe.receive(timeout: nil) {
-            switch package {
-            case .start:
-                continue
-            case let .data(chunk):
-                received.append(chunk)
-            case .finish:
-                isComplete = true
-            case .broken:
-                Issue.record("Pipe broke before the file was fully read")
-                isComplete = true
-            }
-        }
-
-        #expect(received == expected)
-        #expect(progress.value.last == UInt64(expected.count))
-    }
-
-    @Test("read to pipe honors max block size")
-    func readToPipeHonorsMaxBlockSize() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
-
-        let path = uniquePath("pipe-read-block-size") + ".bin"
-        defer { try? connection.removeFile(at: path) }
-
-        let expected = Data([0x10, 0x11, 0x12, 0x13])
-        try connection.dumpToFile(expected, to: path)
-
-        let pipe = DataPipe(maxPackages: 3, label: "SwiftSMBTests.SMBConnectionPipeTests.readBlockSize")
-        let progress = SendableBox<[UInt64]>([])
-        try connection.read(fromFile: path, toPipe: pipe, maxBlockSize: 2) { transferred, _, _ in
-            progress.value.append(transferred)
-            return true
-        }
-
-        var received = Data()
-        var isComplete = false
-        while !isComplete, let package = pipe.receive(timeout: nil) {
-            switch package {
-            case .start:
-                continue
-            case let .data(chunk):
-                received.append(chunk)
-            case .finish:
-                isComplete = true
-            case .broken:
-                Issue.record("Pipe broke before the file was fully read")
-                isComplete = true
-            }
-        }
-
-        #expect(received == expected)
-        #expect(progress.value == [2, 4, 4])
     }
 
     @Test("upload file writes remote file")
