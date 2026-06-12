@@ -27,11 +27,8 @@ public extension SMB {
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false
     ) throws -> [Share] {
-        let context = try Bridge.createContext()
+        let context = try makeConfiguredContext(configuration: configuration, credentials: credentials, server: server)
         defer { Bridge.destroyContext(context) }
-
-        try configure(context, with: configuration)
-        configureCredentials(credentials, server: server, on: context)
 
         return try Bridge.listShares(
             context: context,
@@ -61,11 +58,9 @@ public extension SMB {
     ) throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try Bridge.createContext()
+        let context = try makeConfiguredContext(configuration: configuration, credentials: credentials, server: server)
 
         do {
-            try configure(context, with: configuration)
-            configureCredentials(credentials, server: server, on: context)
             try Bridge.connectShare(
                 context: context,
                 server: server.address,
@@ -95,6 +90,24 @@ public extension SMB {
             try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
         }
         return parsedURL
+    }
+
+    /// Creates a context and applies negotiation options and credentials, destroying the context on failure.
+    internal static func makeConfiguredContext(
+        configuration: Configuration,
+        credentials: Credentials?,
+        server: Server
+    ) throws -> Bridge.Context {
+        let context = try Bridge.createContext()
+        do {
+            try configure(context, with: configuration)
+            configureCredentials(credentials, server: server, on: context)
+            return context
+        }
+        catch {
+            Bridge.destroyContext(context)
+            throw error
+        }
     }
 
     /// Applies negotiation options to a context before connection.
