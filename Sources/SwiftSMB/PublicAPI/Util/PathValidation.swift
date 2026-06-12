@@ -97,32 +97,24 @@ private let forbiddenNames = [
     "LPT9",
 ]
 
-private extension Character {
-    var isAllowedSpecialChar: Bool {
-        allowedSpecialChars.contains { specialChar in
-            self == specialChar
-        }
-    }
-}
-
 extension String: CanBeSMBShareName {
     public var isValidSMBShareName: Bool {
         guard self.count > 0, self.count <= 80 else {
             return false
         }
-        
+
         guard self.first != ".", self.first != " " else {
             return false
         }
-        
+
         guard self.last != ".", self.last != " " else {
             return false
         }
-        
+
         let charsOK = allSatisfy {
-            $0.isLetter || $0.isNumber || $0 == " " || $0.isAllowedSpecialChar
+            $0.isLetter || $0.isNumber || $0 == " " || allowedSpecialChars.contains($0)
         }
-        
+
         guard charsOK else {
             return false
         }
