@@ -11,7 +11,7 @@
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](LinuxBuild/build.sh)
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
-[![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSFTP)](https://github.com/RuiNelson/SwiftSMB/releases)
+[![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
 [![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml)
 [![Linux](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml)
 
