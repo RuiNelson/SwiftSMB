@@ -6,8 +6,8 @@
 // Copyright its respective authors
 //
 
+@testable import SwiftSMB
 import Foundation
-import SwiftSMB
 import Testing
 
 @Suite(.tags(.integration))
@@ -18,13 +18,13 @@ struct SMBPublicAPIIntegrationTests {
         defer { try? connection.disconnect() }
 
         try connection.setTimeout(45)
-        #expect(connection.debugDescription.contains("timeout: 45"))
+        #expect(try Bridge.getTimeout(on: connection.requireContext()) == 45)
 
         try connection.setTimeout(-1)
-        #expect(connection.debugDescription.contains("timeout: 0"))
+        #expect(try Bridge.getTimeout(on: connection.requireContext()) == 0)
 
         try connection.setTimeout(Int.max)
-        #expect(connection.debugDescription.contains("timeout: \(Int32.max)"))
+        #expect(try Bridge.getTimeout(on: connection.requireContext()) == Int32.max)
     }
 
     @Test("connection timeout throws after disconnect")

@@ -74,6 +74,11 @@ class Bridge {
         smb2_set_timeout(context.raw, seconds)
     }
 
+    /// Returns the command timeout in seconds for a context.
+    static func getTimeout(on context: Context) -> Int32 {
+        context.raw.pointee.timeout
+    }
+
     /// Sets the SMB dialect negotiation preference for a context.
     static func setVersion(_ version: smb2_negotiate_version, on context: Context) {
         smb2_set_version(context.raw, version)
