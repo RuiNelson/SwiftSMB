@@ -249,6 +249,41 @@ private struct TransferResult {
     let averageSpeed: Double
 }
 
+/// Tracks cumulative bytes transferred and reports progress through a `FileProgress` continuation.
+private struct ProgressTracker {
+    private(set) var transferred: UInt64
+    private let totalBytes: UInt64
+    private let operationStart = DispatchTime.now()
+
+    init(totalBytes: UInt64) {
+        transferred = 0
+        self.totalBytes = totalBytes
+    }
+
+    /// The average transfer rate since the operation began, in bytes per second.
+    var averageSpeed: Double {
+        speed(bytes: transferred, from: operationStart, to: .now())
+    }
+
+    /// Records a transferred block and reports progress.
+    ///
+    /// - Returns: `false` if `continuation` requested cancellation.
+    mutating func record(
+        bytes: UInt64,
+        blockStart: DispatchTime,
+        continuation: SMB.Connection.FileProgress
+    ) -> Bool {
+        transferred += bytes
+        let latestSpeed = speed(bytes: bytes, from: blockStart, to: .now())
+        return continuation(transferred, totalBytes, latestSpeed, averageSpeed)
+    }
+
+    /// Builds a `TransferResult` reflecting the bytes transferred so far.
+    func result(cancelled: Bool) -> TransferResult {
+        TransferResult(transferred: transferred, cancelled: cancelled, averageSpeed: averageSpeed)
+    }
+}
+
 /// Reads the remote file in server-sized blocks and hands each block to the background writer, so the disk write of one
 /// block overlaps the network read of the next. Reports progress after each block.
 private func transferRemoteFileToWriter(
@@ -265,26 +300,21 @@ private func transferRemoteFileToWriter(
     defer { try? file.close() }
 
     var remoteOffset = startingOffset
-    var transferred: UInt64 = 0
-    var averageSpeed: Double = 0
-    let operationStart = DispatchTime.now()
+    var tracker = ProgressTracker(totalBytes: totalBytes)
 
     while true {
         let blockStart = DispatchTime.now()
         _ = try file.seek(offset: Int64(remoteOffset), from: .start)
         let data = try file.read(upTo: Int64(blockSize))
         guard !data.isEmpty else {
-            return TransferResult(transferred: transferred, cancelled: false, averageSpeed: averageSpeed)
+            return tracker.result(cancelled: false)
         }
 
         try writer.append(data)
         remoteOffset += UInt64(data.count)
-        transferred += UInt64(data.count)
 
-        let latestSpeed = speed(bytes: UInt64(data.count), from: blockStart, to: .now())
-        averageSpeed = speed(bytes: transferred, from: operationStart, to: .now())
-        guard continuation(transferred, totalBytes, latestSpeed, averageSpeed) else {
-            return TransferResult(transferred: transferred, cancelled: true, averageSpeed: averageSpeed)
+        guard tracker.record(bytes: UInt64(data.count), blockStart: blockStart, continuation: continuation) else {
+            return tracker.result(cancelled: true)
         }
     }
 }
@@ -305,37 +335,23 @@ private func transferReaderToRemoteFile(
     defer { try? file.close() }
 
     var remoteOffset = startingOffset
-    var transferred: UInt64 = 0
-    var averageSpeed: Double = 0
-    let operationStart = DispatchTime.now()
+    var tracker = ProgressTracker(totalBytes: totalBytes)
 
     while true {
         let data = try reader.next()
         guard !data.isEmpty else {
-            return TransferResult(transferred: transferred, cancelled: false, averageSpeed: averageSpeed)
+            return tracker.result(cancelled: false)
         }
 
-        var dataOffset = 0
-        while dataOffset < data.count {
-            let blockStart = DispatchTime.now()
-            _ = try file.seek(offset: Int64(remoteOffset), from: .start)
-            let written = try file.write(data.subdata(in: dataOffset ..< data.count))
-            guard written > 0 else {
-                throw SMB.Error.unknown(
-                    operation: "smb2_write",
-                    message: "Write made no progress before the upload completed"
-                )
-            }
-
-            dataOffset += Int(written)
+        var cancelled = false
+        try writeEntireData(data, to: file, atOffset: remoteOffset) { written, blockStart in
             remoteOffset += UInt64(written)
-            transferred += UInt64(written)
-
-            let latestSpeed = speed(bytes: UInt64(written), from: blockStart, to: .now())
-            averageSpeed = speed(bytes: transferred, from: operationStart, to: .now())
-            guard continuation(transferred, totalBytes, latestSpeed, averageSpeed) else {
-                return TransferResult(transferred: transferred, cancelled: true, averageSpeed: averageSpeed)
+            if !tracker.record(bytes: UInt64(written), blockStart: blockStart, continuation: continuation) {
+                cancelled = true
             }
+        }
+        if cancelled {
+            return tracker.result(cancelled: true)
         }
     }
 }
@@ -591,31 +607,36 @@ private func prepareAtomicUploadTarget(
                 onOperation: operation
             )
         }
-        try writeEntireData(data, to: output, atOffset: copied, operation: operation)
+        try writeEntireData(data, to: output, atOffset: copied)
         copied += UInt64(data.count)
     }
 }
 
 /// Writes a complete data buffer to a remote file, retrying internally if the server accepts only a prefix.
+///
+/// - Parameter onBlockWritten: Called after each SMB write with the number of bytes written and the time the write
+/// started.
 private func writeEntireData(
     _ data: Data,
     to file: SMB.File,
     atOffset baseOffset: UInt64,
-    operation: SMB.Error.InvalidArgumentOperation
+    onBlockWritten: (UInt64, DispatchTime) -> Void = { _, _ in }
 ) throws {
     var dataOffset = 0
     var fileOffset = baseOffset
     while dataOffset < data.count {
+        let blockStart = DispatchTime.now()
         _ = try file.seek(offset: Int64(fileOffset), from: .start)
         let written = try file.write(data.subdata(in: dataOffset ..< data.count))
         guard written > 0 else {
             throw SMB.Error.unknown(
                 operation: "smb2_write",
-                message: "Write made no progress while copying the remote prefix"
+                message: "Write made no progress before all data was written"
             )
         }
         dataOffset += Int(written)
         fileOffset += UInt64(written)
+        onBlockWritten(UInt64(written), blockStart)
     }
 }
 
