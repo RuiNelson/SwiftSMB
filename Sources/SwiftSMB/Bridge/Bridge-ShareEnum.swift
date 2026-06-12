@@ -85,7 +85,7 @@ extension Bridge {
 
         return shares(container.EntriesRead) { index in
             Share(
-                name: string(from: buffer[index].netname),
+                name: decodeUTF16String(from: buffer[index].netname),
                 kind: nil,
                 attributes: [],
                 remark: nil
@@ -101,15 +101,15 @@ extension Bridge {
         return shares(container.EntriesRead) { index in
             let info = buffer[index]
             return Share(
-                name: string(from: info.netname),
+                name: decodeUTF16String(from: info.netname),
                 kind: ShareKind(rawValue: info.type),
                 attributes: ShareAttributes(rawShareType: info.type),
-                remark: string(from: info.remark)
+                remark: decodeUTF16String(from: info.remark)
             )
         }
     }
 
-    private static func string(from string: dcerpc_utf16) -> String {
+    private static func decodeUTF16String(from string: dcerpc_utf16) -> String {
         string.utf8.map(String.init(cString:)) ?? ""
     }
 
