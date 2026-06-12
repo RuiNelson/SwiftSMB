@@ -43,6 +43,12 @@ public API was added, removed, or changed.
     and had `transferReaderToRemoteFile`'s write loop reuse
     `writeEntireData` with a per-block callback instead of duplicating the
     seek/write/advance/retry logic. Commit `224ead1`.
+11. ✅ Removed `BridgeTypes.swift`'s ~140-line debug-formatting block
+    (`makeDebugString`/`hexString`/`secName`/etc.) and `Bridge.Context`'s
+    `CustomDebugStringConvertible` conformance — it dumped the raw
+    `smb2_context` field-by-field, which is expensive to keep in sync with
+    libsmb2. `SMB.Connection.debugDescription` no longer includes a context
+    dump. Commit `b85de10`.
 
 ## Investigated, no action taken
 
@@ -59,11 +65,6 @@ public API was added, removed, or changed.
 
 ## Remaining (lower priority, optional)
 
-- `BridgeTypes.swift:478-620` — ~140 lines of debug-formatting free
-  functions (`makeDebugString`, `hexString`, `secName`, etc.) used only by
-  `Context.debugDescription`. Could move to a separate file (e.g.
-  `Bridge-Context+Debug.swift`) so `BridgeTypes.swift` stays focused on type
-  declarations.
 - AGENTS.md's project tree still references `SMB2BridgeTypes.swift` /
   `SMBError+Bridge.swift`, but the actual files are `BridgeTypes.swift` /
   `Extensions/SMB.Error.swift`. Reconcile.
@@ -106,7 +107,7 @@ public API was added, removed, or changed.
 
 ## Verification
 
-As of commit `224ead1`, `swift build` and `swift test`
+As of commit `b85de10`, `swift build` and `swift test`
 (`SWIFTSMB_SKIP_INTEGRATION_TESTS=1`) both pass with all 102 unit tests
 green, and the integration Notify and Transfer tests pass against the
 Docker test server.
