@@ -95,37 +95,31 @@ public extension SMB {
 
         /// The bridge operation that produced this error, if available.
         public var operation: String? {
-            switch self {
-            case .contextCreationFailed:
-                nil
-            case .operationRequestedAfterConnectionClosed:
-                nil
-            case let .invalidArgument(_, operation):
-                operation.description
-            case let .posix(_, operation, _),
-                 let .unknownPOSIX(_, operation, _),
-                 let .ntStatus(_, _, operation, _),
-                 let .unknownNTStatus(_, _, operation, _),
-                 let .unknown(operation, _):
-                operation
+            if case let .invalidArgument(_, operation) = self {
+                return operation.description
             }
+            return commonFields?.operation
         }
 
         /// The human-readable detail message from the bridge, if available.
         public var message: String? {
+            if case let .invalidArgument(cause, _) = self {
+                return cause.description
+            }
+            return commonFields?.message
+        }
+
+        /// The operation and message shared by the bridge-originated error cases.
+        private var commonFields: (operation: String, message: String)? {
             switch self {
-            case .contextCreationFailed:
+            case let .posix(_, operation, message),
+                 let .unknownPOSIX(_, operation, message),
+                 let .ntStatus(_, _, operation, message),
+                 let .unknownNTStatus(_, _, operation, message),
+                 let .unknown(operation, message):
+                (operation, message)
+            default:
                 nil
-            case .operationRequestedAfterConnectionClosed:
-                nil
-            case let .invalidArgument(cause, _):
-                cause.description
-            case let .posix(_, _, message),
-                 let .unknownPOSIX(_, _, message),
-                 let .ntStatus(_, _, _, message),
-                 let .unknownNTStatus(_, _, _, message),
-                 let .unknown(_, message):
-                message
             }
         }
 
