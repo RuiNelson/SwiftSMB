@@ -297,36 +297,32 @@ public extension SMB {
             state.cancel()
         }
 
-        /// Receives a change batch from the watcher state.
-        func notifyReceived(_ changes: [NotifyChange]) {
+        /// Delivers a delegate callback on the callback queue, if a delegate is still set.
+        private func deliver(_ body: @escaping @Sendable (any NotifyWatcherDelegate) -> Void) {
             callbackQueue.async { [self] in
                 guard let delegate else { return }
-                delegate.notifyWatcher(self, didReceive: changes)
+                body(delegate)
             }
+        }
+
+        /// Receives a change batch from the watcher state.
+        func notifyReceived(_ changes: [NotifyChange]) {
+            deliver { [self] delegate in delegate.notifyWatcher(self, didReceive: changes) }
         }
 
         /// Receives the first-armed event from the watcher state.
         func notifyStarted() {
-            callbackQueue.async { [self] in
-                guard let delegate else { return }
-                delegate.notifyWatcherDidStart(self)
-            }
+            deliver { [self] delegate in delegate.notifyWatcherDidStart(self) }
         }
 
         /// Receives a terminal failure from the watcher state.
         func notifyFailed(with error: Swift.Error) {
-            callbackQueue.async { [self] in
-                guard let delegate else { return }
-                delegate.notifyWatcher(self, didFailWith: error)
-            }
+            deliver { [self] delegate in delegate.notifyWatcher(self, didFailWith: error) }
         }
 
         /// Receives normal watcher cancellation from the watcher state.
         func notifyCancelled() {
-            callbackQueue.async { [self] in
-                guard let delegate else { return }
-                delegate.notifyWatcherDidCancel(self)
-            }
+            deliver { [self] delegate in delegate.notifyWatcherDidCancel(self) }
         }
 
         /// A debug description of the watched path.
