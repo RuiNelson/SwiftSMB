@@ -548,9 +548,9 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
     /// Requests asynchronous cancellation.
     func cancel() {
-        var state = protectedState.current
-        state.isCancellationRequested = true
-        protectedState.current = state
+        protectedState.withLock { state in
+            state.isCancellationRequested = true
+        }
     }
 
     /// Requests cancellation and waits until bridge resources are released.
@@ -612,15 +612,14 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
     /// Stores a newly armed request unless cancellation already won the race.
     private func setPendingRequest(_ request: Bridge.PendingRequest) -> Bool {
-        var state = protectedState.current
-        guard !state.isCancellationRequested else {
-            protectedState.current = state
-            return false
-        }
+        protectedState.withLock { state in
+            guard !state.isCancellationRequested else {
+                return false
+            }
 
-        state.pendingRequest = request
-        protectedState.current = state
-        return true
+            state.pendingRequest = request
+            return true
+        }
     }
 
     /// Sends the first-armed delegate callback once.
@@ -635,28 +634,28 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
     /// Stores a completed bridge result for the run loop to consume.
     private func complete(_ result: Result<[Bridge.NotifyChange], SMB.Error>) {
-        var state = protectedState.current
-        state.pendingRequest = nil
-        state.completedResult = result
-        protectedState.current = state
+        protectedState.withLock { state in
+            state.pendingRequest = nil
+            state.completedResult = result
+        }
     }
 
     /// Takes the completed bridge result, if one is available.
     private func takeCompletedResult() -> Result<[Bridge.NotifyChange], SMB.Error>? {
-        var state = protectedState.current
-        let result = state.completedResult
-        state.completedResult = nil
-        protectedState.current = state
-        return result
+        protectedState.withLock { state in
+            let result = state.completedResult
+            state.completedResult = nil
+            return result
+        }
     }
 
     /// Takes the current pending request so it can be cancelled.
     private func takePendingRequest() -> Bridge.PendingRequest? {
-        var state = protectedState.current
-        let request = state.pendingRequest
-        state.pendingRequest = nil
-        protectedState.current = state
-        return request
+        protectedState.withLock { state in
+            let request = state.pendingRequest
+            state.pendingRequest = nil
+            return request
+        }
     }
 
     /// Converts a bridge result into public delegate callbacks.

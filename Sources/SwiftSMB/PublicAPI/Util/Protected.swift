@@ -17,6 +17,7 @@ private protocol ProtectedBox<Value>: AnyObject, Sendable {
     func get() -> sending Value
     func set(_ newValue: Value)
     func take(replacingWith replacement: sending Value) -> sending Value
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result
 }
 
 /// `NSLock`-backed storage, used where `Mutex` is unavailable.
@@ -52,6 +53,12 @@ private final class LockBox<Value>: ProtectedBox, @unchecked Sendable {
         let currentValue = value
         value = replacement
         return currentValue
+    }
+
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
     }
 }
 
@@ -89,6 +96,12 @@ private final class MutexBox<Value>: ProtectedBox, @unchecked Sendable {
             return currentValue
         }
     }
+
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
+        mutex.withLock { box in
+            body(&box.value)
+        }
+    }
 }
 
 final class Protected<Value>: CustomDebugStringConvertible, @unchecked Sendable {
@@ -120,5 +133,10 @@ final class Protected<Value>: CustomDebugStringConvertible, @unchecked Sendable 
 
     func take(replacingWith replacement: sending Value) -> sending Value {
         box.take(replacingWith: replacement)
+    }
+
+    /// Performs a read-modify-write of the protected value as a single atomic operation.
+    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
+        box.withLock(body)
     }
 }
