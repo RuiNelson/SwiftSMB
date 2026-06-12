@@ -1,0 +1,37 @@
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SWIFTSMB_SKIP_INTEGRATION_TESTS: "1"
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: swift:6.3-noble
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --scratch-path /tmp/swift-build -v
+
+      - name: Test (offline)
+        run: swift test --scratch-path /tmp/swift-test

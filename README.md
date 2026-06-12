@@ -1,9 +1,19 @@
 # SwiftSMB
 
-[![](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](https://swift.org)
-[![](https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Linux%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgrey)](#)
-[![](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](LICENSE)
-[![](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB?label=release)](https://github.com/RuiNelson/SwiftSMB/releases)
+[![License](https://img.shields.io/github/license/RuiNelson/SwiftSMB)](LICENSE)
+
+[![macOS](https://img.shields.io/badge/macOS-10.15+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![macOS](https://img.shields.io/badge/macCatalyst-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![iOS](https://img.shields.io/badge/iOS-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![visionOS](https://img.shields.io/badge/visionOS-1+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![watchOS](https://img.shields.io/badge/watchOS-6+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![watchOS](https://img.shields.io/badge/tvOS-13+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+[![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](LinuxBuild/build.sh)
+
+[![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
+[![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSFTP)](https://github.com/RuiNelson/SwiftSMB/releases)
+[![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml)
+[![Linux](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml)
 
 ![SwiftSMB Banner](docs/banner.jpg)
 
