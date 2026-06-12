@@ -33,10 +33,7 @@ extension Bridge {
     private static let lockCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<LockState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static func _lock(

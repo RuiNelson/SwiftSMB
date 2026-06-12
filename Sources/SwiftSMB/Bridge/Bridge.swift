@@ -251,10 +251,7 @@ class Bridge {
         if status == 0, let commandData {
             state.fileHandle = OpaquePointer(commandData)
         }
-        else {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static func _open(
@@ -756,43 +753,32 @@ class Bridge {
     private static let setStatsCreateCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<SetStatsState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let setStatsSetCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<SetStatsState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let setStatsCloseCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<SetStatsState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static let queryAttributesCreateCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let queryAttributesQueryCallback: smb2_command_cb =
         { rawContext, status, commandData, callbackData in
             guard let callbackData else { return }
             let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
-            if state.status == SMB2_STATUS_SUCCESS {
-                state.status = status
-            }
+            state.recordStatus(status)
             if status == SMB2_STATUS_SUCCESS, let commandData {
                 let reply = commandData.bindMemory(to: smb2_query_info_reply.self, capacity: 1)
                 if let rawContext, let buffer = reply.pointee.output_buffer {
@@ -809,10 +795,7 @@ class Bridge {
     private static let queryAttributesCloseCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<QueryAttributesState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
@@ -1063,17 +1046,12 @@ class Bridge {
     private static let resumeKeyCreateCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let resumeKeyIoctlCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
         if status == SMB2_STATUS_SUCCESS, let commandData, let rawContext {
             let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
             if reply.output_count > 0, let output = reply.output {
@@ -1081,31 +1059,25 @@ class Bridge {
                 smb2_free_data(rawContext, output)
             }
         }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static let resumeKeyCloseCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static let copyChunkCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<CopyChunkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
         if let commandData, let rawContext {
             let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
             if let output = reply.output {
                 smb2_free_data(rawContext, output)
             }
         }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static func _requestResumeKey(
@@ -1309,6 +1281,21 @@ class Bridge {
                 chunkSize: chunkSize
             )
         }
+    }
+}
+
+extension Bridge.PendingOperationState {
+    /// Records a command's status, keeping the first non-success status seen.
+    func recordStatus(_ status: Int32) {
+        if self.status == SMB2_STATUS_SUCCESS {
+            self.status = status
+        }
+    }
+
+    /// Records a command's status and marks the operation as finished.
+    func finish(_ status: Int32) {
+        recordStatus(status)
+        isFinished = true
     }
 }
 

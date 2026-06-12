@@ -56,26 +56,19 @@ extension Bridge {
     private static let makeLinkCreateCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let makeLinkIoctlCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
+        state.recordStatus(status)
     }
 
     private static let makeLinkCloseCallback: smb2_command_cb = { _, status, _, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<MakeLinkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if state.status == SMB2_STATUS_SUCCESS {
-            state.status = status
-        }
-        state.isFinished = true
+        state.finish(status)
     }
 
     private static func _makeLink(
