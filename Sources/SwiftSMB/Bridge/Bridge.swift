@@ -1180,6 +1180,11 @@ class Bridge {
         }
     }
 
+    /// Closes a raw file handle, ignoring any error. Used to clean up handles on error paths.
+    private static func closeQuietly(_ rawHandle: OpaquePointer, context: Context) {
+        _ = try? check(smb2_close(context.raw, rawHandle), context: context, operation: "smb2_close")
+    }
+
     private static func _serverSideCopy(
         context: Context,
         sourcePath: String,
@@ -1217,7 +1222,7 @@ class Bridge {
             resumeKey = try _requestResumeKey(context: context, sourceHandle: rawSourceHandle)
         }
         catch {
-            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
+            closeQuietly(rawSourceHandle, context: context)
             throw error
         }
 
@@ -1225,13 +1230,13 @@ class Bridge {
             smb2_open(context.raw, $0, O_RDWR | O_CREAT | O_TRUNC)
         }
         guard let rawDestHandle else {
-            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
+            closeQuietly(rawSourceHandle, context: context)
             throw SMB.Error.fromBridge(context, operation: "smb2_open")
         }
 
         guard let fileIDPtr = smb2_get_file_id(rawDestHandle) else {
-            _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
-            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
+            closeQuietly(rawDestHandle, context: context)
+            closeQuietly(rawSourceHandle, context: context)
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
         }
         let destFileID = fileIDPtr.pointee
@@ -1253,8 +1258,8 @@ class Bridge {
             }
         }
         catch {
-            _ = try? check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
-            _ = try? check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
+            closeQuietly(rawDestHandle, context: context)
+            closeQuietly(rawSourceHandle, context: context)
             throw error
         }
 
