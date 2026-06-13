@@ -32,6 +32,28 @@ try connection.setTimeout(10)
 try connection.setTimeout(0)
 ```
 
+## Checking the negotiated dialect
+
+``SMB.Connection.negotiatedDialect`` returns the raw SMB dialect revision the server agreed to after connecting:
+
+```swift
+let rawDialect = try connection.negotiatedDialect
+```
+
+``SMB.Connection.negotiatedDialectKind`` maps that raw value to ``SMB.NegotiatedDialect``, a typed enum covering the
+known SMB2/SMB3 dialects with a `.unknown(UInt16)` fallback for revisions this library doesn't recognize yet:
+
+```swift
+switch try connection.negotiatedDialectKind {
+case .smb3_11:
+    print("Connected using SMB 3.1.1")
+case .unknown(let rawValue):
+    print("Connected using an unrecognized dialect: \(rawValue)")
+default:
+    break
+}
+```
+
 ## Opening a file handle
 
 ``SMB.Connection.openFile(at:accessMode:options:)`` returns an ``SMB.File`` handle:

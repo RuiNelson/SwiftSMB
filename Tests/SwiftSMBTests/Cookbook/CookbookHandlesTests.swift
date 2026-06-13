@@ -12,6 +12,24 @@ import Testing
 
 @Suite(.tags(.integration))
 struct CookbookHandlesTests {
+    @Test("negotiated dialect compiles and runs")
+    func negotiatedDialect() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+
+        let rawDialect = try connection.negotiatedDialect
+        _ = rawDialect
+
+        switch try connection.negotiatedDialectKind {
+        case .smb3_11:
+            break
+        case let .unknown(rawValue):
+            _ = rawValue
+        default:
+            break
+        }
+    }
+
     @Test("openFile and read compiles and runs")
     func openFileAndRead() throws {
         let connection = try cookbookConnection()
