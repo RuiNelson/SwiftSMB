@@ -110,6 +110,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - `SMB.NotifyWatcherDelegate.notifyWatcherDidStart(_:)` is used by tests and clients to know the first notify request has been armed; do not replace it with sleeps or timing assumptions.
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+.swift` for consistent debug output.
 - `Connection-Conv-Transfer.swift`'s private helpers are file-scope free functions taking `on connection: SMB.Connection` as their first argument, while `Connection-Conv.swift`'s private helpers are `private extension SMB.Connection` methods. Both styles are intentional — don't "fix" one file to match the other.
+- `SMB.Configuration.Dialect` (negotiation preference, includes `.any`/`.anySMB2`/`.anySMB3`) and `SMB.NegotiatedDialect` (the actual dialect a server negotiated, with an `.unknown(UInt16)` fallback) are intentionally separate types with different case sets — don't merge them.
 
 ## Testing
 
