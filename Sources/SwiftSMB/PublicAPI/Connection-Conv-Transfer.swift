@@ -6,6 +6,9 @@
 // Copyright its respective authors
 //
 
+#if canImport(Android)
+import Android
+#endif
 import Foundation
 import PathWorks
 
