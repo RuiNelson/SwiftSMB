@@ -13,8 +13,7 @@ import Foundation
 
 public extension SMB {
     /// Errors thrown by the public SMB API.
-    enum Error: Swift.Error, Equatable, CustomStringConvertible, CustomDebugStringConvertible, LocalizedError,
-    Sendable {
+    enum Error: Swift.Error, Equatable, CustomStringConvertible, CustomDebugStringConvertible, Sendable {
         /// A `libsmb2` context could not be created.
         case contextCreationFailed
         
@@ -87,13 +86,6 @@ public extension SMB {
 
         public var description: String {
             debugDescription
-        }
-
-        /// A localized description of the error.
-        ///
-        /// Apps should override this computed variable and provide localized error descriptions
-        public var errorDescription: String? {
-            description
         }
 
         /// The bridge operation that produced this error, if available.
