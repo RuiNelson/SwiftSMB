@@ -56,13 +56,18 @@ public extension SMB.Connection {
 
     /// Downloads a file from the SMB share to a local URL.
     ///
-    /// The download is written to a temporary file first. When the transfer completes successfully, the temporary file
-    /// replaces `local` atomically where the platform supports it, or is moved into place when no destination exists.
-    /// If the transfer fails or is cancelled, the temporary file is removed and any existing file at `local` is left
-    /// untouched. Local disk writes happen on a background queue so they overlap the network reads.
+    /// When `atomic` is `true` (the default), the download is written to a temporary file first. When the transfer
+    /// completes successfully, the temporary file replaces `local` atomically where the platform supports it, or is
+    /// moved into place when no destination exists. If the transfer fails or is cancelled, the temporary file is
+    /// removed and any existing file at `local` is left untouched. When `atomic` is `false`, bytes are written directly
+    /// to
+    /// `local`; cancellation or failure leaves the partially written file at `local` in place. Local disk writes happen
+    /// on a background queue so they overlap the network reads.
     ///
     /// To resume a partial download, pass an offset with ``FromArgument/offset(byte:)``. The existing local file must
-    /// contain at least that many bytes; those bytes are copied into the temporary file before new data is appended.
+    /// contain at least that many bytes. For atomic downloads, those bytes are copied into the temporary file before
+    /// new data is appended. For non-atomic downloads, `local` is truncated to the resume offset and new data is
+    /// appended directly.
     ///
     /// If `continuation` returns `false`, the method cancels the download and returns normally.
     ///
@@ -73,6 +78,9 @@ public extension SMB.Connection {
     ///   - options: Options used when opening the remote source file.
     ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum read size
     /// are clamped.
+    ///   - atomic: A Boolean value indicating whether to download through a temporary local file before moving it into
+    /// place. When `false`, bytes are written directly to `local` and are not removed if the transfer fails or is
+    /// cancelled.
     ///   - continuation: A progress closure called after each block is read from the share and once after the completed
     /// download is moved into place.
     /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
@@ -83,6 +91,7 @@ public extension SMB.Connection {
         from: FromArgument = .beginning,
         options: SMB.File.OpenOptions = [],
         maxBlockSize: UInt64? = nil,
+        atomic: Bool = true,
         continuation: @escaping FileProgress
     ) throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
@@ -99,14 +108,26 @@ public extension SMB.Connection {
         let blockSize = try transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
         try assertValidLocalDestination(local, operation: operation)
-        let tempFile = try createUniqueLocalTempFile(near: local, operation: operation)
-        defer { try? FileManager.default.removeItem(at: tempFile) }
 
-        if offset > 0 {
-            try copyLocalPrefix(from: local, to: tempFile, byteCount: offset, operation: operation)
+        let tempFile: URL?
+        let writer: BackgroundFileWriter
+        if atomic {
+            let temp = try createUniqueLocalTempFile(near: local, operation: operation)
+            tempFile = temp
+            if offset > 0 {
+                try copyLocalPrefix(from: local, to: temp, byteCount: offset, operation: operation)
+            }
+            writer = try BackgroundFileWriter(appendingTo: temp)
         }
-
-        let writer = try BackgroundFileWriter(appendingTo: tempFile)
+        else {
+            tempFile = nil
+            writer = try BackgroundFileWriter(writingDirectlyTo: local, offset: offset, operation: operation)
+        }
+        defer {
+            if let tempFile {
+                try? FileManager.default.removeItem(at: tempFile)
+            }
+        }
         defer { try? writer.finish() }
 
         let result = try transferRemoteFileToWriter(
@@ -122,7 +143,9 @@ public extension SMB.Connection {
 
         try writer.finish()
         guard !result.cancelled else { return }
-        try moveTempFile(tempFile, to: local)
+        if let tempFile {
+            try moveTempFile(tempFile, to: local)
+        }
         _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
     }
 
@@ -376,6 +399,35 @@ private final class BackgroundFileWriter: @unchecked Sendable {
     init(appendingTo url: URL) throws {
         handle = try FileHandle(forWritingTo: url)
         try handle.seekToEnd()
+    }
+
+    /// Opens `url` for writing in place, creating it if it does not exist. The file is truncated to `offset` bytes,
+    /// discarding any stale data beyond a previous attempt's resume point, and the handle is positioned at `offset` so
+    /// new data is appended from there.
+    init(writingDirectlyTo url: URL, offset: UInt64, operation: SMB.Error.InvalidArgumentOperation) throws {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EIO.rawValue,
+                    operation: operation.description,
+                    message: "Unable to create local file"
+                )
+            }
+        }
+
+        let handle = try FileHandle(forWritingTo: url)
+        let existingSize = try handle.seekToEnd()
+        guard existingSize >= offset else {
+            try? handle.close()
+            throw SMB.Error.invalidArgument(
+                cause: .localFileShorterThanResumeOffset,
+                onOperation: operation
+            )
+        }
+
+        try handle.truncate(atOffset: offset)
+        try handle.seek(toOffset: offset)
+        self.handle = handle
     }
 
     deinit {

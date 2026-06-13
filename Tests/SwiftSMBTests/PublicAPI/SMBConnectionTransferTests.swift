@@ -420,6 +420,98 @@ struct SMBConnectionTransferTests {
         #expect(firstChunk == Data(repeating: 0xCD, count: 1024))
         #expect(lastChunk == Data(repeating: 0xCD, count: 1024))
     }
+
+    @Test("interrupted upload and download resume to the original file")
+    func interruptedUploadAndDownloadResume() throws {
+        let connection = try SMB.connect(
+            server: SMB.Server(host: testServerHost),
+            share: TestShare.public,
+            configuration: SMB.Configuration()
+        )
+        defer { try? connection.disconnect() }
+
+        let fileSize = 25 * 1024 * 1024
+        let blockSize: UInt64 = 1024 * 1024
+        let cancelAfter: UInt64 = 10 * 1024 * 1024
+
+        let source = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let chunk = Data((0 ..< 1024).map { UInt8($0 % 256) })
+        let sourceHandle = try FileHandle(forWritingTo: source)
+        for _ in 0 ..< (fileSize / chunk.count) {
+            sourceHandle.write(chunk)
+        }
+        try sourceHandle.close()
+
+        let remote = uniquePath("interrupted-upload") + ".bin"
+        defer { try? connection.removeFile(at: remote) }
+
+        // Upload, interrupting partway through.
+        let uploaded = SendableBox<UInt64>(0)
+        try connection
+            .uploadFile(
+                local: source,
+                remote: remote,
+                options: [.create, .truncate],
+                maxBlockSize: blockSize,
+                atomic: false
+            ) { transferred, _, _, _ in
+                uploaded.value = transferred
+                return transferred < cancelAfter
+            }
+
+        #expect(uploaded.value > 0)
+        #expect(uploaded.value < UInt64(fileSize))
+        #expect(try connection.stat(at: remote).size == uploaded.value)
+
+        // Resume the upload from where it left off.
+        try connection
+            .uploadFile(
+                local: source,
+                remote: remote,
+                from: .offset(byte: uploaded.value),
+                maxBlockSize: blockSize,
+                atomic: false
+            ) { _, _, _, _ in true }
+
+        #expect(try connection.stat(at: remote).size == UInt64(fileSize))
+
+        // Download, interrupting partway through.
+        let destination = try localTemporaryFileURL()
+        try? FileManager.default.removeItem(at: destination)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let downloaded = SendableBox<UInt64>(0)
+        try connection
+            .downloadFile(
+                remote: remote,
+                local: destination,
+                maxBlockSize: blockSize,
+                atomic: false
+            ) { transferred, _, _, _ in
+                downloaded.value = transferred
+                return transferred < cancelAfter
+            }
+
+        #expect(downloaded.value > 0)
+        #expect(downloaded.value < UInt64(fileSize))
+        let partialSize = try (FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?
+            .uint64Value
+        #expect(partialSize == downloaded.value)
+
+        // Resume the download from where it left off.
+        try connection
+            .downloadFile(
+                remote: remote,
+                local: destination,
+                from: .offset(byte: downloaded.value),
+                maxBlockSize: blockSize,
+                atomic: false
+            ) { _, _, _, _ in true }
+
+        #expect(try Data(contentsOf: destination) == Data(contentsOf: source))
+    }
 }
 
 private func publicConnection() throws -> SMB.Connection {
