@@ -9,11 +9,13 @@
 [![watchOS](https://img.shields.io/badge/watchOS-6.2+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![watchOS](https://img.shields.io/badge/tvOS-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](LinuxBuild/build.sh)
+[![Android](https://img.shields.io/badge/Android-28+-lightgrey?logo=android&logoColor=white)](.github/workflows/android.yml)
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
 [![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
 [![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml)
 [![Linux](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml)
+[![Android](https://github.com/RuiNelson/SwiftSMB/actions/workflows/android.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/android.yml)
 
 ![SwiftSMB Banner](docs/banner.jpg)
 
@@ -161,7 +163,7 @@ Then add `SwiftSMB` to the target that uses it:
 )
 ```
 
-SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. The package uses Swift tools version 6.2.
+SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.2.
 
 ### Xcode Project
 
