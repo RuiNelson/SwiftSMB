@@ -1,0 +1,31 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  android:
+    name: Android (aarch64)
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@0.0.11
+    with:
+      enable_linux_checks: false
+      enable_macos_checks: false
+      enable_windows_checks: false
+      enable_android_sdk_build: true
+      enable_android_sdk_checks: false
+      android_sdk_versions: '["6.3"]'
+      android_ndk_versions: '["r27d"]'
+      android_sdk_triples: '["aarch64-unknown-linux-android28"]'
+      android_sdk_pre_build_command: |
+        git submodule update --init --recursive
+      android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build -v
