@@ -401,14 +401,16 @@ public extension SMB.Connection {
 extension SMB.Connection {
     /// Registers a watcher so it can be cancelled before context teardown.
     func registerNotifyWatcher(_ watcher: SMBNotifyWatcherState) {
-        var watchers = protectedNotifyWatchers.current
-        watchers[watcher.id] = watcher
-        protectedNotifyWatchers.current = watchers
+        protectedNotifyWatchers.withLock { watchers in
+            watchers[watcher.id] = watcher
+        }
     }
 
     /// Removes a finished watcher from the active watcher registry.
     func unregisterNotifyWatcher(id: UUID) {
-        protectedNotifyWatchers.current = protectedNotifyWatchers.current.filter { $0.key != id }
+        protectedNotifyWatchers.withLock { watchers in
+            _ = watchers.removeValue(forKey: id)
+        }
     }
 
     /// Cancels all active watchers before closing the underlying SMB context.

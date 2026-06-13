@@ -7,7 +7,7 @@
 //
 
 #if canImport(Android)
-import Android
+    import Android
 #endif
 import Dispatch
 import Foundation
