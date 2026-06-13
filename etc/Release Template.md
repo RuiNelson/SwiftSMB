@@ -1,10 +1,12 @@
 # Release Notes Template
 
-Template for writing GitHub release notes.
+This is the template for writing GitHub release notes.
+
+For the release title, use this format: "Version X.X.X"
+
+For the release notes, use the following format:
 
 ---
-
-# Version X.X.X
 
 ## What's New
 
