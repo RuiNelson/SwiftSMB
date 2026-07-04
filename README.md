@@ -209,8 +209,8 @@ Open the folder, then disable **Code Coverage** on the test plan:
 
 ## Licensing
 
-SwiftSMB and the bundled `libsmb2` sources are distributed under the GNU Lesser General Public License, version 2.1. A copy of the license is included in [LICENSE](LICENSE).
+SwiftSMB is distributed under the Apache License, version 2.0. A copy of the license is included in [LICENSE](LICENSE).
 
-The LGPL v2.1 permits use of the library from both open source and commercial software, including software distributed under different licenses, as long as the LGPL requirements for the library are respected. In practice, if you distribute an app or product that links with SwiftSMB/libsmb2, make sure you preserve license notices, provide access to the LGPL-covered source, and allow users to replace or relink the LGPL-covered library as required by the license.
+The bundled [`libsmb2`](https://github.com/sahlberg/libsmb2) sources keep their own license, the GNU Lesser General Public License, version 2.1. If you distribute an app or product that links with SwiftSMB/libsmb2, make sure you preserve license notices, provide access to the LGPL-covered `libsmb2` source, and allow users to replace or relink the LGPL-covered library as required by that license.
 
-This section is only a project summary, not legal advice. Review the LGPL v2.1 terms for your distribution model.
+This section is only a project summary, not legal advice. Review the Apache 2.0 and LGPL v2.1 terms for your distribution model.

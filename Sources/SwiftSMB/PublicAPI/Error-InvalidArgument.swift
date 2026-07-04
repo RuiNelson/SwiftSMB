@@ -2,7 +2,7 @@
 // Part of SwiftSMB
 // Error-InvalidArgument.swift
 //
-// Licensed under LGPL v2.1
+// Licensed under Apache License v2.0
 // Copyright its respective authors
 //
 

@@ -2,7 +2,7 @@
 // Part of SwiftSMB
 // PathValidation.swift
 //
-// Licensed under LGPL v2.1
+// Licensed under Apache License v2.0
 // Copyright its respective authors
 //
 
