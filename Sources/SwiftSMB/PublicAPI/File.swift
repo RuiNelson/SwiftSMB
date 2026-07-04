@@ -225,14 +225,23 @@ public extension SMB {
             transferChunkSize: Int64? = nil
         ) throws -> Int64 {
             let chunkSize = try transferChunkSize ?? Int64(connection.maxWriteSize)
+            guard chunkSize > 0 else {
+                throw SMB.Error.invalidArgument(
+                    cause: .blockSizeMustBeGreaterThanZero,
+                    onOperation: .smb2Write
+                )
+            }
             let context = try connection.requireContext()
             let handle = try requireHandle(operation: .smb2Write)
 
+            // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
+            let maxChunk = Int(min(chunkSize, Int64(data.count)))
             var written: Int64 = 0
 
             while written < data.count {
-                let end = min(Int(written) + Int(chunkSize), data.count)
-                let count = try data.subdata(in: Int(written) ..< end).withUnsafeBytes { rawBuffer in
+                let start = data.startIndex + Int(written)
+                let end = min(start + maxChunk, data.endIndex)
+                let count = try data.subdata(in: start ..< end).withUnsafeBytes { rawBuffer in
                     try Bridge.write(
                         context: context,
                         file: handle,

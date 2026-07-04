@@ -25,6 +25,43 @@ struct SMBConnectionFileTests {
         #expect(Array(data) == TestContent.helloBytes)
     }
 
+    @Test("write accepts a Data slice with non-zero start index") func writeAcceptsDataSlice() throws {
+        let connection = try publicFileConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("slice") + ".bin"
+        defer { try? connection.removeFile(at: path) }
+
+        let full = Data("prefix-payload".utf8)
+        let slice = full[full.index(full.startIndex, offsetBy: 7)...]
+        #expect(slice.startIndex != 0)
+
+        let file = try connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
+        // Chunk size 3 forces multiple write iterations over the slice.
+        try file.write(slice, transferChunkSize: 3)
+        try file.close()
+
+        #expect(try connection.loadFile(at: path) == Data("payload".utf8))
+    }
+
+    @Test("write rejects a non-positive chunk size") func writeRejectsNonPositiveChunkSize() throws {
+        let connection = try publicFileConnection()
+        defer { try? connection.disconnect() }
+
+        let path = uniquePath("badchunk") + ".bin"
+        defer { try? connection.removeFile(at: path) }
+
+        let file = try connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
+        defer { try? file.close() }
+
+        #expect(throws: SMB.Error.self) {
+            try file.write(Data("x".utf8), transferChunkSize: 0)
+        }
+        #expect(throws: SMB.Error.self) {
+            try file.write(Data("x".utf8), transferChunkSize: -1)
+        }
+    }
+
     @Test("copyFile throws when destination exists") func copyFileThrowsWhenDestinationExists() throws {
         let connection = try publicFileConnection()
         defer { try? connection.disconnect() }
