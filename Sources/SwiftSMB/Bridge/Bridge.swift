@@ -56,7 +56,9 @@ class Bridge {
 
     /// Closes the active connection for a context without destroying the context.
     static func closeContext(_ context: Context) {
-        smb2_close_context(context.raw)
+        sync {
+            smb2_close_context(context.raw)
+        }
     }
 
     private static func _destroyContext(_ context: Context) {
