@@ -119,7 +119,7 @@ extension String: CanBeSMBShareName {
             return false
         }
         
-        guard !forbiddenNames.contains(self) else {
+        guard !forbiddenNames.contains(uppercased()) else {
             return false
         }
         

@@ -454,6 +454,14 @@ struct SMBPathValidationTests {
             try SMB.validateShareName("bad:name", operation: .smb2Open)
         }
     }
+
+    @Test("rejects reserved device names in any case") func rejectsReservedShareNamesCaseInsensitively() throws {
+        for name in ["CON", "con", "Con", "lpt1", "AUX"] {
+            #expect(throws: SMB.Error.self, "\(name) should be rejected") {
+                try SMB.validateShareName(name, operation: .smb2Open)
+            }
+        }
+    }
 }
 
 // MARK: - Bridge.OpLockLevel
