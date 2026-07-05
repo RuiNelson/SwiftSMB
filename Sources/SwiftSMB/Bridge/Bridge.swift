@@ -1039,9 +1039,27 @@ class Bridge {
         var resumeKey: Data?
     }
 
+    /// Per-request limits for FSCTL_SRV_COPYCHUNK, as advertised by the server in a SRV_COPYCHUNK_RESPONSE (MS-SMB2
+    /// 2.2.32.1).
+    private struct CopyChunkLimits {
+        let maxChunkCount: UInt32
+        let maxChunkLength: UInt32
+        let maxTotalLength: UInt32
+    }
+
+    /// A single chunk in a server-side copy request.
+    private struct CopyChunk {
+        let sourceOffset: UInt64
+        let targetOffset: UInt64
+        let length: UInt32
+    }
+
+    private static let copyChunkResponseLength = 12
+
     private final class CopyChunkState: PendingOperationState {
         var status: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
+        var serverLimits: CopyChunkLimits?
     }
 
     private static let resumeKeyCreateCallback: smb2_command_cb = { _, status, _, callbackData in
@@ -1072,10 +1090,27 @@ class Bridge {
     private static let copyChunkCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<CopyChunkState>.fromOpaque(callbackData).takeUnretainedValue()
-        if let commandData, let rawContext {
+        if status == SMB2_STATUS_SUCCESS, let commandData, let rawContext {
             let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
             if let output = reply.output {
                 smb2_free_data(rawContext, output)
+            }
+        }
+        else if UInt32(bitPattern: status) == SMB2_STATUS_INVALID_PARAMETER, let commandData, let rawContext {
+            // A rejected COPYCHUNK arrives as a full IOCTL reply whose output buffer is a SRV_COPYCHUNK_RESPONSE
+            // advertising the server's limits (MS-SMB2 3.3.4.4, 3.3.5.15.6.1). The libsmb2 fork parses it as an ioctl
+            // reply rather than an error body (see smb2_is_copychunk_ioctl in pdu.c).
+            let reply = commandData.assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
+            if let output = reply.output {
+                defer { smb2_free_data(rawContext, output) }
+                if reply.output_count >= copyChunkResponseLength {
+                    let buffer = UnsafeRawBufferPointer(start: output, count: copyChunkResponseLength)
+                    state.serverLimits = CopyChunkLimits(
+                        maxChunkCount: readLittleEndianUInt32(from: buffer, at: 0),
+                        maxChunkLength: readLittleEndianUInt32(from: buffer, at: 4),
+                        maxTotalLength: readLittleEndianUInt32(from: buffer, at: 8)
+                    )
+                }
             }
         }
         state.finish(status)
@@ -1134,24 +1169,28 @@ class Bridge {
         return key.prefix(resumeKeyLength)
     }
 
-    private static func _copyChunk(
+    /// Sends one FSCTL_SRV_COPYCHUNK request containing `chunks`.
+    ///
+    /// - Returns: `nil` on success, or the server's advertised limits when it rejected the request with
+    /// `STATUS_INVALID_PARAMETER` (MS-SMB2 3.3.5.15.6.1).
+    private static func _copyChunks(
         context: Context,
         fileID: smb2_file_id,
         resumeKey: Data,
-        sourceOffset: UInt64,
-        targetOffset: UInt64,
-        length: UInt32
-    ) throws {
+        chunks: [CopyChunk]
+    ) throws -> CopyChunkLimits? {
         var input = [UInt8]()
-        input.reserveCapacity(56)
+        input.reserveCapacity(32 + chunks.count * 24)
 
         input.append(contentsOf: resumeKey.prefix(resumeKeyLength))
-        withUnsafeBytes(of: UInt32(1).littleEndian) { input.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(chunks.count).littleEndian) { input.append(contentsOf: $0) }
         withUnsafeBytes(of: UInt32(0).littleEndian) { input.append(contentsOf: $0) }
-        withUnsafeBytes(of: sourceOffset.littleEndian) { input.append(contentsOf: $0) }
-        withUnsafeBytes(of: targetOffset.littleEndian) { input.append(contentsOf: $0) }
-        withUnsafeBytes(of: length.littleEndian) { input.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt32(0).littleEndian) { input.append(contentsOf: $0) }
+        for chunk in chunks {
+            withUnsafeBytes(of: chunk.sourceOffset.littleEndian) { input.append(contentsOf: $0) }
+            withUnsafeBytes(of: chunk.targetOffset.littleEndian) { input.append(contentsOf: $0) }
+            withUnsafeBytes(of: chunk.length.littleEndian) { input.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(0).littleEndian) { input.append(contentsOf: $0) }
+        }
 
         let state = CopyChunkState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
@@ -1181,8 +1220,30 @@ class Bridge {
         }
 
         if state.status != SMB2_STATUS_SUCCESS {
+            if let limits = state.serverLimits {
+                return limits
+            }
             throw SMB.Error.fromBridge(context, operation: "FSCTL_SRV_COPYCHUNK", status: state.status)
         }
+        return nil
+    }
+
+    /// Splits the region starting at `offset` into as many chunks as one COPYCHUNK request allows under `limits`.
+    private static func planCopyChunks(
+        from offset: UInt64,
+        fileSize: UInt64,
+        limits: CopyChunkLimits
+    ) -> [CopyChunk] {
+        var chunks: [CopyChunk] = []
+        var position = offset
+        var budget = UInt64(limits.maxTotalLength)
+        while position < fileSize, chunks.count < Int(limits.maxChunkCount), budget > 0 {
+            let length = min(UInt64(limits.maxChunkLength), fileSize - position, budget)
+            chunks.append(CopyChunk(sourceOffset: position, targetOffset: position, length: UInt32(length)))
+            position += length
+            budget -= length
+        }
+        return chunks
     }
 
     /// Closes a raw file handle, ignoring any error. Used to clean up handles on error paths.
@@ -1247,19 +1308,33 @@ class Bridge {
         let destFileID = fileIDPtr.pointee
 
         do {
+            // Start with one chunk sized to the negotiated max write size. If the server rejects that with its
+            // COPYCHUNK limits, adopt them once and retry the same region with batched chunks.
+            var limits = CopyChunkLimits(maxChunkCount: 1, maxChunkLength: chunkSize, maxTotalLength: chunkSize)
+            var didAdoptServerLimits = false
             var offset: UInt64 = 0
             while offset < fileSize {
-                let remaining = fileSize - offset
-                let length = min(UInt64(chunkSize), remaining)
-                try _copyChunk(
+                let chunks = planCopyChunks(from: offset, fileSize: fileSize, limits: limits)
+                if let serverLimits = try _copyChunks(
                     context: context,
                     fileID: destFileID,
                     resumeKey: resumeKey,
-                    sourceOffset: offset,
-                    targetOffset: offset,
-                    length: UInt32(length)
-                )
-                offset += length
+                    chunks: chunks
+                ) {
+                    guard !didAdoptServerLimits,
+                          serverLimits.maxChunkCount > 0,
+                          serverLimits.maxChunkLength > 0,
+                          serverLimits.maxTotalLength > 0 else {
+                        throw SMB.Error.unknown(
+                            operation: "FSCTL_SRV_COPYCHUNK",
+                            message: "Server rejected a copy request that honors its advertised limits"
+                        )
+                    }
+                    didAdoptServerLimits = true
+                    limits = serverLimits
+                    continue
+                }
+                offset += chunks.reduce(0) { $0 + UInt64($1.length) }
             }
         }
         catch {
@@ -1279,7 +1354,7 @@ class Bridge {
         destinationPath: String
     ) throws {
         try sync {
-            let chunkSize = smb2_get_max_write_size(context.raw)
+            let chunkSize = max(smb2_get_max_write_size(context.raw), 1)
             try _serverSideCopy(
                 context: context,
                 sourcePath: sourcePath,

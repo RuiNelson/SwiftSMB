@@ -96,6 +96,30 @@ struct SMBConnectionFileTests {
         #expect(stat.size == 0)
     }
 
+    @Test("copyFile copies file larger than the server chunk limit") func copyFileCopiesLargeFile() throws {
+        let connection = try publicFileConnection()
+        defer { try? connection.disconnect() }
+
+        let sourcePath = uniquePath("copy_large_src") + ".bin"
+        let destPath = uniquePath("copy_large_dst") + ".bin"
+        defer {
+            try? connection.removeFile(at: sourcePath)
+            try? connection.removeFile(at: destPath)
+        }
+
+        // Samba caps COPYCHUNK at 1 MiB per chunk, so this size forces the limit renegotiation path and an uneven final
+        // chunk.
+        var content = Data(count: 3 * 1024 * 1024 + 12345)
+        for index in stride(from: 0, to: content.count, by: 4096) {
+            content[index] = UInt8(truncatingIfNeeded: index >> 12)
+        }
+        try connection.dumpToFile(content, to: sourcePath)
+
+        try connection.copyFile(from: sourcePath, to: destPath)
+
+        #expect(try connection.loadFile(at: destPath) == content)
+    }
+
     @Test("copyFile throws for nonexistent source") func copyFileThrowsForNonexistentSource() throws {
         let connection = try publicFileConnection()
         defer { try? connection.disconnect() }

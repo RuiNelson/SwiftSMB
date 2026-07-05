@@ -224,7 +224,7 @@ extension Bridge {
         return .failure(malformedNotifyChangeResponse("Entry count exceeded defensive limit"))
     }
 
-    private static func readLittleEndianUInt32(from buffer: UnsafeRawBufferPointer, at offset: Int) -> UInt32 {
+    static func readLittleEndianUInt32(from buffer: UnsafeRawBufferPointer, at offset: Int) -> UInt32 {
         UInt32(buffer[offset])
             | (UInt32(buffer[offset + 1]) << 8)
             | (UInt32(buffer[offset + 2]) << 16)
