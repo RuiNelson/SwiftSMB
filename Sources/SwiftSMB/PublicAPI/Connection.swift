@@ -448,10 +448,12 @@ public extension SMB {
             let context = try requireContext()
             let current = try attributes(at: path)
             let new = change(current)
+            // On the wire, FileAttributes 0 means "leave unchanged" (MS-FSCC); clearing every flag must be sent as
+            // FILE_ATTRIBUTE_NORMAL instead.
             try Bridge.setStats(
                 context: context,
                 path: path,
-                fileAttributes: new.rawValue
+                fileAttributes: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue
             )
         }
 
