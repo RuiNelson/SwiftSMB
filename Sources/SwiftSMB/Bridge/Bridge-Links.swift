@@ -26,7 +26,9 @@ extension Bridge {
         }
 
         let count = try bufferSize.asUInt32(operation: .smb2Readlink)
-        var buffer = [CChar](repeating: 0, count: bufferSize)
+        // libsmb2 copies the target with strncpy and does not NUL-terminate when it fills the buffer; keep one spare
+        // zero byte so String(cString:) never reads past the end.
+        var buffer = [CChar](repeating: 0, count: bufferSize + 1)
         let status = path.withCString { smb2_readlink(context.raw, $0, &buffer, count) }
         try check(status, context: context, operation: "smb2_readlink")
         return buffer.withUnsafeBufferPointer { pointer in
