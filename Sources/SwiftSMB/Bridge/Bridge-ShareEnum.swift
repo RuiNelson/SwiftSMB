@@ -19,7 +19,10 @@ extension Bridge {
         user: String? = nil,
         includeHidden: Bool = false
     ) throws -> [Share] {
-        setSecurityMode(.signingEnabled, on: context)
+        // SRVSVC enumeration needs signing enabled, but keep any stricter mode (e.g. signingRequired) the caller
+        // configured instead of overwriting it.
+        let configuredMode = SecurityMode(rawValue: context.raw.pointee.security_mode)
+        setSecurityMode(configuredMode.union(.signingEnabled), on: context)
         try _connectShare(context: context, server: server, share: "IPC$", user: user)
 
         do {
@@ -61,9 +64,9 @@ extension Bridge {
 
         switch response.pointee.ses.Level {
         case UInt32(SHARE_INFO_0.rawValue):
-            return shares(from: response.pointee.ses.ShareInfo.Level0)
+            return shares(from: response.pointee.ses.ShareEnum.Level0)
         case UInt32(SHARE_INFO_1.rawValue):
-            return shares(from: response.pointee.ses.ShareInfo.Level1)
+            return shares(from: response.pointee.ses.ShareEnum.Level1)
         default:
             throw SMB.Error.invalidArgument(
                 cause: .unsupportedShareEnumerationLevel(response.pointee.ses.Level),
@@ -79,13 +82,13 @@ extension Bridge {
     }
 
     private static func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [Share] {
-        guard let buffer = container.Buffer?.pointee.share_info_0 else {
+        guard let buffer = container.share_info_0 else {
             return []
         }
 
         return shares(container.EntriesRead) { index in
             Share(
-                name: decodeUTF16String(from: buffer[index].netname),
+                name: decodeString(from: buffer[index].netname),
                 kind: nil,
                 attributes: [],
                 remark: nil
@@ -94,23 +97,23 @@ extension Bridge {
     }
 
     private static func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [Share] {
-        guard let buffer = container.Buffer?.pointee.share_info_1 else {
+        guard let buffer = container.share_info_1 else {
             return []
         }
 
         return shares(container.EntriesRead) { index in
             let info = buffer[index]
             return Share(
-                name: decodeUTF16String(from: info.netname),
+                name: decodeString(from: info.netname),
                 kind: ShareKind(rawValue: info.type),
                 attributes: ShareAttributes(rawShareType: info.type),
-                remark: decodeUTF16String(from: info.remark)
+                remark: decodeString(from: info.remark)
             )
         }
     }
 
-    private static func decodeUTF16String(from string: dcerpc_utf16) -> String {
-        string.utf8.map(String.init(cString:)) ?? ""
+    private static func decodeString(from string: UnsafeMutablePointer<CChar>?) -> String {
+        string.map { String(cString: $0) } ?? ""
     }
 
     private static func filterForUserVisibleDiskShares(_ shares: [Share], includeHidden: Bool) -> [Share] {
