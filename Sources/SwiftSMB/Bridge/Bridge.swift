@@ -75,13 +75,20 @@ class Bridge {
     // MARK: - Configuration
 
     /// Sets the command timeout in seconds for a context.
+    ///
+    /// Serialized on the bridge queue because it can be called on a live connection (`SMB.Connection.setTimeout`) while
+    /// other bridge operations are in flight.
     static func setTimeout(_ seconds: Int32, on context: Context) {
-        smb2_set_timeout(context.raw, seconds)
+        sync {
+            smb2_set_timeout(context.raw, seconds)
+        }
     }
 
     /// Returns the command timeout in seconds for a context.
     static func getTimeout(on context: Context) -> Int32 {
-        context.raw.pointee.timeout
+        sync {
+            context.raw.pointee.timeout
+        }
     }
 
     /// Sets the SMB dialect negotiation preference for a context.
