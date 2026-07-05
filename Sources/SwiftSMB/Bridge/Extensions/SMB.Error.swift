@@ -35,7 +35,8 @@ extension SMB.Error {
             if let knownNTStatus = SMB.SMBStatus(rawValue: rawNTStatus) {
                 return .ntStatus(knownNTStatus, posixCode: nil, operation: operation, message: message)
             }
-            let absolute = status < 0 ? Int32(-status) : status
+            // status.magnitude, not -status: negating Int32.min (raw NT status 0x80000000) would trap.
+            let absolute = status.magnitude
             if absolute > 1024 {
                 return .unknownNTStatus(
                     rawValue: rawNTStatus,
@@ -44,10 +45,10 @@ extension SMB.Error {
                     message: message
                 )
             }
-            if let code = POSIXErrorCode(rawValue: absolute) {
+            if let code = POSIXErrorCode(rawValue: Int32(absolute)) {
                 return .posix(code: code.rawValue, operation: operation, message: message)
             }
-            return .unknownPOSIX(code: absolute, operation: operation, message: message)
+            return .unknownPOSIX(code: Int32(absolute), operation: operation, message: message)
         }
 
         return .unknown(operation: operation, message: message)
