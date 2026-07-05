@@ -583,3 +583,30 @@ struct SMBFileLeaseStateTests {
         #expect(bridge.contains(.handleCaching))
     }
 }
+
+struct SMBServerAddressTests {
+    @Test("hostname without port") func hostnameWithoutPort() {
+        #expect(SMB.Server(host: "example.test").address == "example.test")
+    }
+
+    @Test("hostname with port") func hostnameWithPort() {
+        #expect(SMB.Server(host: "example.test", port: 44445).address == "example.test:44445")
+    }
+
+    @Test("embedded host:port passes through unchanged") func embeddedHostPort() {
+        #expect(SMB.Server(host: "example.test:44445").address == "example.test:44445")
+    }
+
+    @Test("bare IPv6 host is bracketed even without a port") func bareIPv6WithoutPort() {
+        #expect(SMB.Server(host: "fe80::1").address == "[fe80::1]")
+    }
+
+    @Test("bare IPv6 host with port") func bareIPv6WithPort() {
+        #expect(SMB.Server(host: "fe80::1", port: 44445).address == "[fe80::1]:44445")
+    }
+
+    @Test("pre-bracketed IPv6 host is not double-bracketed") func bracketedIPv6() {
+        #expect(SMB.Server(host: "[fe80::1]").address == "[fe80::1]")
+        #expect(SMB.Server(host: "[fe80::1]", port: 44445).address == "[fe80::1]:44445")
+    }
+}

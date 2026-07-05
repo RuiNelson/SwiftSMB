@@ -33,15 +33,15 @@ public extension SMB {
         }
 
         /// Host and port in the format expected by `libsmb2`.
+        ///
+        /// Bare IPv6 hosts are always bracketed: `libsmb2` splits the address at the first `:` after the host, so an
+        /// unbracketed IPv6 address would be misparsed even when no port is set. A host with a single colon is treated
+        /// as an embedded `host:port` and passed through unchanged.
         var address: String {
-            guard let port else { return host }
-            if host.hasPrefix("[") {
-                return "\(host):\(port)"
-            }
-            if host.contains(":") {
-                return "[\(host)]:\(port)"
-            }
-            return "\(host):\(port)"
+            let isBareIPv6 = !host.hasPrefix("[") && host.lazy.count(where: { $0 == ":" }) >= 2
+            let bracketedHost = isBareIPv6 ? "[\(host)]" : host
+            guard let port else { return bracketedHost }
+            return "\(bracketedHost):\(port)"
         }
 
         public var debugDescription: String {
