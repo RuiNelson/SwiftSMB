@@ -68,3 +68,4 @@ opencode.json
 Package.resolved
 tmp/
 .DS_Store
+/build
