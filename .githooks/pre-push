@@ -1,0 +1,54 @@
+#!/bin/sh
+
+set -eu
+
+repository_root="$(git rev-parse --show-toplevel)"
+push_blocked=0
+
+cd "$repository_root"
+
+check_submodule() {
+  submodule_name="$1"
+  submodule_path="$2"
+  submodule_branch="$(git config --file .gitmodules --get "submodule.$submodule_name.branch")"
+
+  if ! git -C "$submodule_path" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Initializing $submodule_path before push..." >&2
+    git submodule update --init --recursive "$submodule_path"
+  fi
+
+  echo "Checking $submodule_path against origin/$submodule_branch..." >&2
+  if ! git -C "$submodule_path" fetch --quiet origin "$submodule_branch"; then
+    echo "Push cancelled: could not fetch $submodule_path." >&2
+    push_blocked=1
+    return
+  fi
+
+  upstream_commit="$(git -C "$submodule_path" rev-parse FETCH_HEAD)"
+  committed_commit="$(git rev-parse "HEAD:$submodule_path")"
+  checked_out_commit="$(git -C "$submodule_path" rev-parse HEAD)"
+
+  if [ "$committed_commit" = "$upstream_commit" ]; then
+    return
+  fi
+
+  if [ "$checked_out_commit" != "$upstream_commit" ]; then
+    if [ -n "$(git -C "$submodule_path" status --porcelain --untracked-files=no)" ]; then
+      echo "Push cancelled: $submodule_path has tracked changes." >&2
+      echo "Resolve them before updating to origin/$submodule_branch." >&2
+      push_blocked=1
+      return
+    fi
+
+    git -C "$submodule_path" checkout --quiet --detach "$upstream_commit"
+    git -C "$submodule_path" submodule update --init --recursive
+  fi
+
+  echo "Push cancelled: $submodule_path was updated to $upstream_commit." >&2
+  echo "Commit the updated submodule reference, then push again." >&2
+  push_blocked=1
+}
+
+check_submodule "libsmb2" "libsmb2"
+
+exit "$push_blocked"
