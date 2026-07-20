@@ -63,6 +63,8 @@ let connection = try SMB.connect(
     share: "Documents"
 )
 defer { try? connection.disconnect() }
+
+let serverID: UUID = try connection.serverGUID
 ```
 
 Set a command timeout when connecting if you want `libsmb2` to abort operations that take too long:
@@ -81,6 +83,13 @@ You can also change the timeout for subsequent operations on an existing connect
 ```swift
 try connection.setTimeout(10)
 try connection.setTimeout(0) // Disable command timeouts
+```
+
+Encryption has three explicit policies: `.automatic` advertises support and uses encryption when required by the
+server or share, `.disabled` suppresses encryption, and `.required` fails unless encryption is negotiated:
+
+```swift
+let configuration = SMB.Configuration(encryption: .required)
 ```
 
 ### Listing a directory

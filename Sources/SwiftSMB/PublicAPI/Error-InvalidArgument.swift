@@ -50,6 +50,7 @@ public extension SMB.Error {
         case smbConnectionReadFile
         case smbConnectionWriteFile
         case smbConnectionCopyFile
+        case smbConnectionSetSecurityDescriptor
         case smb2Flock
 
         var description: String {
@@ -93,6 +94,7 @@ public extension SMB.Error {
             case .smbConnectionReadFile: "SMB.Connection.readFile"
             case .smbConnectionWriteFile: "SMB.Connection.writeFile"
             case .smbConnectionCopyFile: "SMB.Connection.copyFile"
+            case .smbConnectionSetSecurityDescriptor: "SMB.Connection.setSecurityDescriptor"
             case .smb2Flock: "smb2_flock"
             }
         }
@@ -124,6 +126,10 @@ public extension SMB.Error {
         case directoryFileHandleMissingFileID
         case unsupportedShareEnumerationLevel(UInt32)
         case invalidLockRange(String)
+        case securityDescriptorHasNoComponents
+        case securityIdentifierAuthorityOutOfRange
+        case securityIdentifierHasTooManySubauthorities(Int)
+        case accessControlListHasTooManyEntries(Int)
 
         var description: String {
             switch self {
@@ -151,6 +157,12 @@ public extension SMB.Error {
             case .directoryFileHandleMissingFileID: "Directory file handle does not have a file id"
             case let .unsupportedShareEnumerationLevel(level): "Unsupported share enumeration level \(level)"
             case let .invalidLockRange(reason): "Invalid lock range: \(reason)"
+            case .securityDescriptorHasNoComponents: "Security descriptor has no components to update"
+            case .securityIdentifierAuthorityOutOfRange: "Security identifier authority must fit in 48 bits"
+            case let .securityIdentifierHasTooManySubauthorities(count):
+                "Security identifier has \(count) subauthorities; SMB supports at most 15"
+            case let .accessControlListHasTooManyEntries(count):
+                "Access-control list has \(count) entries; SMB supports at most \(UInt16.max)"
             }
         }
     }

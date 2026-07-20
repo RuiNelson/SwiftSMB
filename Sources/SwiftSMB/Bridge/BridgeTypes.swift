@@ -212,6 +212,30 @@ extension Bridge {
         }
     }
 
+    struct SecurityIdentifier: Equatable {
+        let revision: UInt8
+        let identifierAuthority: UInt64
+        let subauthorities: [UInt32]
+    }
+
+    struct AccessControlEntry: Equatable {
+        let kind: UInt8
+        let flags: UInt8
+        let accessMask: UInt32
+        let trustee: SecurityIdentifier
+    }
+
+    struct AccessControlList: Equatable {
+        let revision: UInt8
+        let entries: [AccessControlEntry]
+    }
+
+    struct SecurityDescriptor: Equatable {
+        let owner: SecurityIdentifier?
+        let group: SecurityIdentifier?
+        let discretionaryAccessControlList: AccessControlList?
+    }
+
     enum NodeType: Equatable {
         case file
         case directory

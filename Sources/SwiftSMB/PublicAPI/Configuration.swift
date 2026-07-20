@@ -89,6 +89,20 @@ public extension SMB {
 
     /// Connection options that affect SMB negotiation and transfer behavior.
     struct Configuration: Codable, CustomDebugStringConvertible, Equatable, Hashable, Sendable {
+        /// How SMB encryption is negotiated with the server.
+        public enum Encryption: String, Codable, Equatable, Hashable, Sendable {
+            /// Advertise encryption support and use it when the server or share requires it.
+            case automatic
+
+            /// Do not advertise or use SMB encryption.
+            ///
+            /// Connections to servers or shares that require encryption fail when this value is selected.
+            case disabled
+
+            /// Require SMB encryption and fail the connection when it cannot be negotiated.
+            case required
+        }
+
         /// The command timeout, in seconds.
         public var timeout: Int?
 
@@ -98,8 +112,38 @@ public extension SMB {
         /// The SMB signing negotiation flags.
         public var securityMode: SecurityMode?
 
-        /// Whether SMB encryption is required.
-        public var requiresEncryption: Bool?
+        private var encryptionRequirement: Bool?
+
+        /// The legacy optional Boolean representation of ``encryption``.
+        ///
+        /// `nil`, `false`, and `true` correspond to ``Encryption/automatic``, ``Encryption/disabled``, and
+        /// ``Encryption/required``, respectively.
+        @available(*, deprecated, message: "Use encryption instead.")
+        public var requiresEncryption: Bool? {
+            get { encryptionRequirement }
+            set { encryptionRequirement = newValue }
+        }
+
+        /// The SMB encryption negotiation policy.
+        public var encryption: Encryption {
+            get {
+                switch encryptionRequirement {
+                case nil: .automatic
+                case false: .disabled
+                case true: .required
+                }
+            }
+            set {
+                switch newValue {
+                case .automatic:
+                    encryptionRequirement = nil
+                case .disabled:
+                    encryptionRequirement = false
+                case .required:
+                    encryptionRequirement = true
+                }
+            }
+        }
 
         /// Whether SMB signing is required.
         public var requiresSigning: Bool?
@@ -119,7 +163,8 @@ public extension SMB {
         ///   - timeout: The command timeout, in seconds.
         ///   - dialect: The SMB dialect negotiation preference.
         ///   - securityMode: The SMB signing negotiation flags.
-        ///   - requiresEncryption: Whether SMB encryption is required.
+        ///   - requiresEncryption: The legacy optional Boolean encryption policy. `nil` selects automatic negotiation.
+        ///   - encryption: A typed encryption policy. When provided, this takes precedence over `requiresEncryption`.
         ///   - requiresSigning: Whether SMB signing is required.
         ///   - authentication: The authentication mechanism to request.
         ///   - transferBlockSize: The preferred read/write block size.
@@ -128,6 +173,7 @@ public extension SMB {
             dialect: Dialect? = nil,
             securityMode: SecurityMode? = nil,
             requiresEncryption: Bool? = nil,
+            encryption: Encryption? = nil,
             requiresSigning: Bool? = nil,
             authentication: AuthenticationMethod? = nil,
             transferBlockSize: Int? = nil
@@ -135,14 +181,27 @@ public extension SMB {
             self.timeout = timeout
             self.dialect = dialect
             self.securityMode = securityMode
-            self.requiresEncryption = requiresEncryption
+            encryptionRequirement = requiresEncryption
+            if let encryption {
+                self.encryption = encryption
+            }
             self.requiresSigning = requiresSigning
             self.authentication = authentication
             self.transferBlockSize = transferBlockSize
         }
 
         public var debugDescription: String {
-            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), requiresEncryption: \(String(describing: requiresEncryption)), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)))"
+            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), encryption: \(encryption), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)))"
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case timeout
+            case dialect
+            case securityMode
+            case encryptionRequirement = "requiresEncryption"
+            case requiresSigning
+            case authentication
+            case transferBlockSize
         }
     }
 
