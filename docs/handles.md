@@ -32,6 +32,18 @@ try connection.setTimeout(10)
 try connection.setTimeout(0)
 ```
 
+## Choosing an encryption policy
+
+``SMB/Configuration/Encryption`` represents all three `libsmb2` encryption states:
+
+- `.automatic` advertises encryption support and uses it when the server or share requires it.
+- `.disabled` does not advertise encryption; connections to encryption-only servers or shares fail.
+- `.required` requires negotiated SMB encryption.
+
+```swift
+let configuration = SMB.Configuration(encryption: .required)
+```
+
 ## Checking the negotiated dialect
 
 ``SMB.Connection.negotiatedDialect`` returns the raw SMB dialect revision the server agreed to after connecting:
@@ -53,6 +65,16 @@ default:
     break
 }
 ```
+
+## Identifying the server
+
+``SMB/Connection/serverGUID`` returns the identifier negotiated with the server as Foundation's native ``UUID``:
+
+```swift
+let serverID: UUID = try connection.serverGUID
+```
+
+The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidString`.
 
 ## Opening a file handle
 

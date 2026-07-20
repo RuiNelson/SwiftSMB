@@ -71,6 +71,19 @@ public extension SMB {
             }
         }
 
+        /// The GUID that uniquely identifies the connected SMB server.
+        ///
+        /// The value is returned as Foundation's native ``UUID`` type. SMB wire byte order is normalized before the
+        /// UUID is constructed.
+        ///
+        /// - Throws: ``SMB/Error`` if the connection is already closed.
+        public var serverGUID: UUID {
+            get throws {
+                let context = try requireContext()
+                return Bridge.getServerGUID(on: context)
+            }
+        }
+
         /// The SMB session identifier.
         ///
         /// - Throws: ``SMB/Error`` if the connection is closed or the session ID cannot be retrieved.
@@ -178,6 +191,22 @@ public extension SMB {
             let context = try requireContext()
             let int32val = timeout >= 0 ? Int32(clamping: timeout) : 0
             Bridge.setTimeout(int32val, on: context)
+        }
+
+        /// Sets the owner, group, or discretionary access-control list for an item.
+        ///
+        /// Only non-`nil` descriptor components are sent. Supplying an empty access-control list sets an empty DACL; it
+        /// does not leave the existing DACL unchanged.
+        ///
+        /// - Parameters:
+        ///   - descriptor: The security descriptor components to update.
+        ///   - path: The path to the item, relative to the share root.
+        /// - Throws: ``SMB/Error`` if the connection is closed, the descriptor is invalid, or the server rejects the
+        /// security update.
+        public func setSecurityDescriptor(_ descriptor: SecurityDescriptor, at path: String) throws {
+            let path = try SMB.validatePath(path, operation: .smbConnectionSetSecurityDescriptor)
+            let context = try requireContext()
+            try Bridge.setSecurityDescriptor(context: context, path: path, descriptor: descriptor.bridgeValue)
         }
 
         // MARK: Handles

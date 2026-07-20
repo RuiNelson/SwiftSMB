@@ -50,8 +50,26 @@ struct SMBPublicAPITests {
         #expect(configuration.timeout == 30)
         #expect(configuration.dialect == .anySMB3)
         #expect(configuration.securityMode?.contains(.signingEnabled) == true)
+        #expect(configuration.encryption == .disabled)
         #expect(configuration.authentication == .ntlmssp)
         #expect(configuration.transferBlockSize == 65536)
+    }
+
+    @Test("legacy encryption representation maps to the typed policy")
+    func legacyEncryptionRepresentationMapsToTypedPolicy() {
+        #expect(SMB.Configuration(requiresEncryption: nil).encryption == .automatic)
+        #expect(SMB.Configuration(requiresEncryption: false).encryption == .disabled)
+        #expect(SMB.Configuration(requiresEncryption: true).encryption == .required)
+    }
+
+    @Test("configuration preserves the legacy encryption coding key")
+    func configurationPreservesLegacyEncryptionCodingKey() throws {
+        let encoded = try JSONEncoder().encode(SMB.Configuration(encryption: .required))
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        #expect(object["requiresEncryption"] as? Bool == true)
+        #expect(object["encryptionRequirement"] == nil)
+        #expect(try JSONDecoder().decode(SMB.Configuration.self, from: encoded).encryption == .required)
     }
 
     @Test("public server and credentials are separate") func publicServerAndCredentialsAreSeparate() {
@@ -92,5 +110,22 @@ struct SMBPublicAPITests {
         #expect(SMB.NegotiatedDialect(rawValue: 0x0302) == .smb3_02)
         #expect(SMB.NegotiatedDialect(rawValue: 0x0311) == .smb3_11)
         #expect(SMB.NegotiatedDialect(rawValue: 0x9999) == .unknown(0x9999))
+    }
+
+    @Test("security values model an Everyone full-control DACL")
+    func securityValuesModelEveryoneFullControlDACL() {
+        let entry = SMB.AccessControlEntry(
+            kind: .allowed,
+            flags: [.objectInherit, .containerInherit],
+            accessMask: .genericAll,
+            trustee: .everyone
+        )
+        let dacl = SMB.AccessControlList(entries: [entry])
+        let descriptor = SMB.SecurityDescriptor(discretionaryAccessControlList: dacl)
+
+        #expect(SMB.SecurityIdentifier.everyone.debugDescription == "S-1-1-0")
+        #expect(descriptor.discretionaryAccessControlList?.entries == [entry])
+        #expect(entry.flags.contains(.objectInherit))
+        #expect(entry.accessMask == .genericAll)
     }
 }

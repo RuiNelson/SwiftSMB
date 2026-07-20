@@ -130,8 +130,13 @@ public extension SMB {
             Bridge.setSecurityMode(securityMode.bridgeValue, on: context)
         }
 
-        if let requiresEncryption = configuration.requiresEncryption {
-            Bridge.setSeal(requiresEncryption, on: context)
+        switch configuration.encryption {
+        case .automatic:
+            break
+        case .disabled:
+            Bridge.setSeal(false, on: context)
+        case .required:
+            Bridge.setSeal(true, on: context)
         }
 
         if let requiresSigning = configuration.requiresSigning {

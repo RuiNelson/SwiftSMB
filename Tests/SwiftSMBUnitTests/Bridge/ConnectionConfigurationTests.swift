@@ -33,6 +33,49 @@ struct ContextConfigurationTests {
             #expect(Bridge.getWorkstation(on: ctx) == "MYPC")
         }
     }
+
+    @Test("server GUID converts SMB wire byte order to UUID")
+    func serverGUIDConvertsSMBWireByteOrderToUUID() throws {
+        try withFreshContext { ctx in
+            let wireBytes: [UInt8] = [
+                0x33,
+                0x22,
+                0x11,
+                0x00,
+                0x55,
+                0x44,
+                0x77,
+                0x66,
+                0x88,
+                0x99,
+                0xAA,
+                0xBB,
+                0xCC,
+                0xDD,
+                0xEE,
+                0xFF,
+            ]
+            withUnsafeMutableBytes(of: &ctx.raw.pointee.server_guid) { buffer in
+                buffer.copyBytes(from: wireBytes)
+            }
+
+            #expect(Bridge.getServerGUID(on: ctx).uuidString == "00112233-4455-6677-8899-AABBCCDDEEFF")
+        }
+    }
+
+    @Test("typed encryption policy configures libsmb2 tri-state")
+    func typedEncryptionPolicyConfiguresLibSMB2TriState() throws {
+        try withFreshContext { ctx in
+            try SMB.configure(ctx, with: SMB.Configuration(encryption: .automatic))
+            #expect(ctx.raw.pointee.seal_requested == 0)
+
+            try SMB.configure(ctx, with: SMB.Configuration(encryption: .disabled))
+            #expect(ctx.raw.pointee.seal_requested == -1)
+
+            try SMB.configure(ctx, with: SMB.Configuration(encryption: .required))
+            #expect(ctx.raw.pointee.seal_requested == 1)
+        }
+    }
 }
 
 // MARK: - URL parsing (context required, no server connection)

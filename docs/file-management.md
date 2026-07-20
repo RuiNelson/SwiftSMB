@@ -73,6 +73,31 @@ try connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
 
 If the destination file already exists, an error is thrown. The source file must exist and the server must support the SMB2 server-side copy extension.
 
+SwiftSMB uses the native `libsmb2` resume-key and COPYCHUNK APIs, negotiates the server's copy limits, and keeps the
+file data on the server throughout the operation.
+
+## Setting access control
+
+``SMB.Connection.setSecurityDescriptor(_:at:)`` updates the non-`nil` owner, group, and DACL components of a security
+descriptor. This example grants Everyone full control:
+
+```swift
+let descriptor = SMB.SecurityDescriptor(
+    discretionaryAccessControlList: SMB.AccessControlList(entries: [
+        SMB.AccessControlEntry(
+            kind: .allowed,
+            accessMask: .genericAll,
+            trustee: .everyone
+        )
+    ])
+)
+
+try connection.setSecurityDescriptor(descriptor, at: "Shared/report.pdf")
+```
+
+An empty access-control list installs an empty DACL and therefore denies access; it does not leave the existing DACL
+unchanged. The authenticated user must have permission to change the requested owner, group, or DACL fields.
+
 ## Checking whether a path exists
 
 ``SMB.Connection.itemExists(at:)`` tells you whether something is at a path and what kind of item it is:

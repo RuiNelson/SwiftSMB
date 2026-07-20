@@ -50,4 +50,12 @@ struct SMBPublicAPIIntegrationTests {
             try connection.setTimeout(30)
         }
     }
+
+    @Test("server GUID is exposed as a native UUID")
+    func serverGUIDIsExposedAsNativeUUID() throws {
+        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? connection.disconnect() }
+
+        #expect(try connection.serverGUID != UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+    }
 }
