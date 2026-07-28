@@ -61,7 +61,9 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-/.agents
+/.agents/*
+!/.agents/skills/
+!/.agents/skills/**
 /.claude
 /.swiftpm
 opencode.json
