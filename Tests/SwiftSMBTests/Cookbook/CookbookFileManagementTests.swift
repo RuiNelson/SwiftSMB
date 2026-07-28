@@ -150,6 +150,27 @@ struct CookbookFileManagementTests {
         #expect(target == "greeting.txt")
     }
 
+    @Test("makeHardLink compiles and runs")
+    func makeHardLink() throws {
+        let connection = try cookbookConnection()
+        defer { try? connection.disconnect() }
+        let targetPath = uniquePath("cookbook-hardlink-target")
+        let linkPath = uniquePath("cookbook-hardlink")
+        defer {
+            try? connection.removeFile(at: linkPath)
+            try? connection.removeFile(at: targetPath)
+        }
+
+        try connection.dumpToFile(Data("hard link content".utf8), to: targetPath)
+        try connection.makeHardLink(at: linkPath, pointingTo: targetPath)
+
+        let targetStat = try connection.stat(at: targetPath)
+        let linkStat = try connection.stat(at: linkPath)
+        #expect(targetStat.inode == linkStat.inode)
+        #expect(targetStat.linkCount >= 2)
+        #expect(linkStat.linkCount >= 2)
+    }
+
     @Test("statFilesystem compiles and runs")
     func statFilesystem() throws {
         let connection = try cookbookConnection()

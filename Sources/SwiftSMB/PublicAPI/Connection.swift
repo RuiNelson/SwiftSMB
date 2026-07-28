@@ -380,6 +380,22 @@ public extension SMB {
             let context = try requireContext()
             try Bridge.makeLink(context: context, path: path, destination: pointingTo)
         }
+
+        /// Creates a hard link to an existing file.
+        ///
+        /// Both paths must be relative to the same share. The source file must exist, and the destination path must not
+        /// already exist.
+        ///
+        /// - Parameters:
+        ///   - path: The new hard-link path, relative to the share root.
+        ///   - existingPath: The existing file path that the new link will point to.
+        /// - Throws: ``SMB/Error`` if the hard link cannot be created.
+        public func makeHardLink(at path: String, pointingTo existingPath: String) throws {
+            let path = try SMB.validatePath(path, operation: .smb2Link)
+            let existingPath = try SMB.validatePath(existingPath, operation: .smb2Link)
+            let context = try requireContext()
+            try Bridge.makeHardLink(context: context, existingPath: existingPath, newPath: path)
+        }
         
         /// Returns metadata for a path.
         ///

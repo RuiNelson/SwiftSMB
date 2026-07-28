@@ -435,6 +435,34 @@ struct SymlinkTests {
             #expect(readTarget == targetPath)
         }
     }
+
+    @Test("create hard link") func makeHardLink() throws {
+        try withPrivateShare { ctx in
+            let targetPath = uniquePath("hardlink-target") + ".txt"
+            let linkPath = uniquePath("hardlink")
+            defer {
+                try? Bridge.unlink(context: ctx, path: linkPath)
+                try? Bridge.unlink(context: ctx, path: targetPath)
+            }
+
+            do {
+                let handle = try Bridge.open(context: ctx, path: targetPath, flags: .init(.writeOnly, options: .create))
+                defer { try? Bridge.close(context: ctx, file: handle) }
+                let data = Array("hard link content".utf8)
+                _ = try data.withUnsafeBytes { rawBuf in
+                    try Bridge.write(context: ctx, file: handle, bytes: RawSpan(_unsafeBytes: rawBuf))
+                }
+            }
+
+            try Bridge.makeHardLink(context: ctx, existingPath: targetPath, newPath: linkPath)
+
+            let targetStat = try Bridge.fileStatistics(context: ctx, path: targetPath)
+            let linkStat = try Bridge.fileStatistics(context: ctx, path: linkPath)
+            #expect(targetStat.inode == linkStat.inode)
+            #expect(targetStat.linkCount >= 2)
+            #expect(linkStat.linkCount >= 2)
+        }
+    }
 }
 
 // MARK: - Read-only share tests

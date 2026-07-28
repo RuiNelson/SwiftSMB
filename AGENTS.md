@@ -127,6 +127,22 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
 
+## Dependency Updates
+
+- `libsmb2` is a Git submodule. Synchronize the fork before updating SwiftSMB's submodule pointer:
+  ```bash
+  git -C libsmb2 fetch origin
+  git -C libsmb2 fetch upstream
+  git -C libsmb2 checkout xcode_compat
+  git -C libsmb2 merge upstream/master
+  ```
+- Preserve the fork-specific `xcode_compat` patches. If upstream reorganizes files, keep SwiftPM/Xcode compatibility fixes in the fork rather than patching generated build products in SwiftSMB.
+- After merging upstream, inspect the public C headers, especially `libsmb2/include/smb2/libsmb2.h`, `libsmb2/include/smb2/libsmb2-share-enum.h`, and `libsmb2/include/smb2/libsmb2-raw.h`, for new APIs that should be wrapped by `Sources/SwiftSMB/Bridge` and exposed under `SMB`.
+- Do not expose every upstream addition automatically. Prefer APIs that fit SwiftSMB's client-file-management scope. Large optional subsystems such as full DCE/RPC should stay out of the SwiftPM product unless there is a deliberate public API and linking decision.
+- If upstream adds non-C source files under `libsmb2/lib` or splits libraries, update `Package.swift` excludes and the fork's `include/module.modulemap` so `swift build` compiles only the intended `libsmb2` client surface.
+- Run `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test` after dependency updates. If new wrapped functionality touches real SMB server behavior, start the Docker server with `source TestServer/up.sh`, run a focused integration test.
+- Once the submodule builds and tests pass, commit and push the `libsmb2` fork branch first, then update the submodule pointer in the main SwiftSMB repository.
+
 ## Concurrency & Dispatch
 
 - **Never use `DispatchQueue.global()`.** The global concurrent queue has a limited thread pool subject to exhaustion under heavy system load. Blocking work dispatched there can hang when all threads are occupied, because a caller waiting on a semaphore or pipe may never see the dispatched block execute. Use dedicated serial dispatch queues (created with `DispatchQueue(label:)`) for all async work, especially producer/consumer patterns that block the caller for backpressure, like the transfer disk workers.

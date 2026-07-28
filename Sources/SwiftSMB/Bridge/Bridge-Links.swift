@@ -182,4 +182,28 @@ extension Bridge {
             try _makeLink(context: context, path: path, destination: destination)
         }
     }
+
+    private static func _makeHardLink(
+        context: Context,
+        existingPath: String,
+        newPath: String
+    ) throws {
+        let status = existingPath.withCString { existingPathPointer in
+            newPath.withCString { newPathPointer in
+                smb2_link(context.raw, existingPathPointer, newPathPointer)
+            }
+        }
+        try check(status, context: context, operation: "smb2_link")
+    }
+
+    /// Creates a hard link at `newPath` pointing to `existingPath`.
+    static func makeHardLink(
+        context: Context,
+        existingPath: String,
+        newPath: String
+    ) throws {
+        try Bridge.sync {
+            try _makeHardLink(context: context, existingPath: existingPath, newPath: newPath)
+        }
+    }
 }

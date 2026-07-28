@@ -53,6 +53,7 @@ let package = Package(
             path: "libsmb2",
             exclude: [
                 "lib/CMakeLists.txt",
+                "lib/libsmb2-dcerpc-full.syms",
                 "lib/libsmb2.syms",
                 "lib/Makefile.am",
                 "lib/Makefile.AMIGA",

@@ -102,6 +102,14 @@ let entries = try connection.listDirectory(at: "Anna/Inbox")
 
 In this library, just like `libsmb2` uses forward slash for separating directories. You don't need to add "/" to indicate the root of the file share.
 
+### Creating a hard link
+
+`makeHardLink(at:pointingTo:)` creates another directory entry for an existing file on the same share:
+
+```swift
+try connection.makeHardLink(at: "Archive/report-copy.pdf", pointingTo: "Anna/Inbox/report.pdf")
+```
+
 ### uploadFile
 
 `uploadFile(local:remote:...)` copies a local file to the connected share. It can create missing parent directories and, by default, stages the upload through a temporary remote file before renaming it into place:

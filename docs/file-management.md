@@ -149,6 +149,15 @@ try connection.truncateFile(at: "log.txt", toLength: 0)
 try connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
 ```
 
+## Creating a hard link
+
+``SMB.Connection.makeHardLink(at:pointingTo:)`` creates another directory entry for an existing file on the same
+share:
+
+```swift
+try connection.makeHardLink(at: "Archive/report-copy.pdf", pointingTo: "Anna/Inbox/report.pdf")
+```
+
 ## Reading a symbolic link
 
 ``SMB.Connection.readLink(at:bufferSize:)`` returns the target of a symbolic link:
