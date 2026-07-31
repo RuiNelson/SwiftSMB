@@ -1,6 +1,8 @@
 # SwiftSMB
 
 [![License](https://img.shields.io/github/license/RuiNelson/SwiftSMB)](LICENSE)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FRuiNelson%2FSwiftSMB%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/RuiNelson/SwiftSMB)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FRuiNelson%2FSwiftSMB%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/RuiNelson/SwiftSMB)
 
 [![macOS](https://img.shields.io/badge/macOS-10.15.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![macOS](https://img.shields.io/badge/macCatalyst-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
