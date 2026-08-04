@@ -2,14 +2,9 @@
 
 [![License](https://img.shields.io/github/license/RuiNelson/SwiftSMB)](LICENSE)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FRuiNelson%2FSwiftSMB%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/RuiNelson/SwiftSMB)
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FRuiNelson%2FSwiftSMB%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/RuiNelson/SwiftSMB)
 
-[![macOS](https://img.shields.io/badge/macOS-10.15.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![macOS](https://img.shields.io/badge/macCatalyst-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![iOS](https://img.shields.io/badge/iOS-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![visionOS](https://img.shields.io/badge/visionOS-1+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![watchOS](https://img.shields.io/badge/watchOS-6.2+-lightgrey?logo=apple&logoColor=white)](Package.swift)
-[![watchOS](https://img.shields.io/badge/tvOS-13.4+-lightgrey?logo=apple&logoColor=white)](Package.swift)
+
+[![iOS | macOS | visionOS | tvOS](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FRuiNelson%2FSwiftSMB%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/RuiNelson/SwiftSMB)
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](LinuxBuild/build.sh)
 [![Android](https://img.shields.io/badge/Android-28+-lightgrey?logo=android&logoColor=white)](.github/workflows/android.yml)
 
