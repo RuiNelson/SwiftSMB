@@ -154,8 +154,12 @@ extension Bridge {
                 onOperation: .smbConnectionSetSecurityDescriptor
             )
         }
-        if let owner = descriptor.owner { try validate(owner) }
-        if let group = descriptor.group { try validate(group) }
+        if let owner = descriptor.owner {
+            try validate(owner)
+        }
+        if let group = descriptor.group {
+            try validate(group)
+        }
         if let entries = descriptor.discretionaryAccessControlList?.entries {
             guard entries.count <= Int(UInt16.max) else {
                 throw SMB.Error.invalidArgument(

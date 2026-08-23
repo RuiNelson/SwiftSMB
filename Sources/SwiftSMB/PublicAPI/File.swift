@@ -182,7 +182,9 @@ public extension SMB {
             upTo: Int64? = nil,
             transferChunkSize: Int64? = nil
         ) throws -> Data {
-            if let upTo, upTo <= 0 { return Data() }
+            if let upTo, upTo <= 0 {
+                return Data()
+            }
 
             let chunkSize = try transferChunkSize ?? Int64(connection.maxReadSize)
             let context = try connection.requireContext()
