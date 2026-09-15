@@ -7,8 +7,8 @@ All examples assume you already have an open ``SMB.Connection``:
 ```swift
 let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
-let connection = try SMB.connect(server: server, credentials: credentials, share: "Documents")
-defer { try? connection.disconnect() }
+let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
+defer { try? await connection.disconnect() }
 ```
 
 ## Creating directories
@@ -17,10 +17,10 @@ defer { try? connection.disconnect() }
 
 ```swift
 // Creates "Anna" if needed, then "Inbox"
-try connection.makeDirectory(at: "Anna/Inbox", makePath: true)
+try await connection.makeDirectory(at: "Anna/Inbox", makePath: true)
 
 // Creates just "Backups" (fails if the parent does not exist)
-try connection.makeDirectory(at: "Backups")
+try await connection.makeDirectory(at: "Backups")
 ```
 
 ## Removing items
@@ -29,22 +29,22 @@ try connection.makeDirectory(at: "Backups")
 
 ```swift
 // Remove a single file
-try connection.removeItem(at: "Anna/Inbox/old_report.pdf")
+try await connection.removeItem(at: "Anna/Inbox/old_report.pdf")
 
 // Remove a directory and everything inside it
-try connection.removeItem(at: "Anna/Trash")
+try await connection.removeItem(at: "Anna/Trash")
 ```
 
 If you only want to remove an empty directory, use ``SMB.Connection.removeDirectory(at:)``:
 
 ```swift
-try connection.removeDirectory(at: "EmptyFolder")
+try await connection.removeDirectory(at: "EmptyFolder")
 ```
 
 Remove a single file or link with ``SMB.Connection.removeFile(at:)``:
 
 ```swift
-try connection.removeFile(at: "Anna/Inbox/old_report.pdf")
+try await connection.removeFile(at: "Anna/Inbox/old_report.pdf")
 ```
 
 ## Moving and renaming
@@ -53,10 +53,10 @@ try connection.removeFile(at: "Anna/Inbox/old_report.pdf")
 
 ```swift
 // Rename a file
-try connection.move(from: "draft.txt", to: "final.txt")
+try await connection.move(from: "draft.txt", to: "final.txt")
 
 // Move a file into a different folder
-try connection.move(from: "draft.txt", to: "Archive/draft.txt")
+try await connection.move(from: "draft.txt", to: "Archive/draft.txt")
 ```
 
 ## Copying files on the server
@@ -66,10 +66,10 @@ This is especially efficient for large files. The server must support server-sid
 
 ```swift
 // Duplicate a file within the same share
-try connection.copyFile(from: "Photos/vacation.jpg", to: "Photos/vacation_backup.jpg")
+try await connection.copyFile(from: "Photos/vacation.jpg", to: "Photos/vacation_backup.jpg")
 
 // Copy into a different folder
-try connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
+try await connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
 ```
 
 The source file must exist. If the destination file already exists, an error is thrown.
@@ -90,7 +90,7 @@ let descriptor = SMB.SecurityDescriptor(
     ])
 )
 
-try connection.setSecurityDescriptor(descriptor, at: "Shared/report.pdf")
+try await connection.setSecurityDescriptor(descriptor, at: "Shared/report.pdf")
 ```
 
 An empty access-control list installs an empty DACL and therefore denies access; it does not leave the existing DACL
@@ -101,7 +101,7 @@ unchanged. The authenticated user must have permission to change the requested o
 ``SMB.Connection.itemExists(at:)`` tells you whether something is at a path and what kind of item it is:
 
 ```swift
-let existence = try connection.itemExists(at: "Anna/Inbox/report.pdf")
+let existence = try await connection.itemExists(at: "Anna/Inbox/report.pdf")
 
 switch existence {
 case .false:
@@ -122,7 +122,7 @@ case .other:
 ``SMB.Connection.stat(at:)`` returns metadata for any path:
 
 ```swift
-let info = try connection.stat(at: "Anna/Inbox/report.pdf")
+let info = try await connection.stat(at: "Anna/Inbox/report.pdf")
 
 print("Size: \(info.size) bytes")
 print("Modified: \(info.modificationTime)")
@@ -138,7 +138,7 @@ if info.type == .directory {
 ``SMB.Connection.truncateFile(at:toLength:)`` resizes a file by path:
 
 ```swift
-try connection.truncateFile(at: "log.txt", toLength: 0)
+try await connection.truncateFile(at: "log.txt", toLength: 0)
 ```
 
 ## Creating a symbolic link
@@ -146,7 +146,7 @@ try connection.truncateFile(at: "log.txt", toLength: 0)
 ``SMB.Connection.makeLink(at:pointingTo:)`` creates a symbolic link at the given path:
 
 ```swift
-try connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
+try await connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
 ```
 
 ## Creating a hard link
@@ -155,7 +155,7 @@ try connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
 share:
 
 ```swift
-try connection.makeHardLink(at: "Archive/report-copy.pdf", pointingTo: "Anna/Inbox/report.pdf")
+try await connection.makeHardLink(at: "Archive/report-copy.pdf", pointingTo: "Anna/Inbox/report.pdf")
 ```
 
 ## Reading a symbolic link
@@ -163,7 +163,7 @@ try connection.makeHardLink(at: "Archive/report-copy.pdf", pointingTo: "Anna/Inb
 ``SMB.Connection.readLink(at:bufferSize:)`` returns the target of a symbolic link:
 
 ```swift
-let target = try connection.readLink(at: "shortcuts/projects")
+let target = try await connection.readLink(at: "shortcuts/projects")
 print("Points to: \(target)")
 ```
 
@@ -172,7 +172,7 @@ print("Points to: \(target)")
 ``SMB.Connection.statFilesystem(at:)`` reports space information for the share:
 
 ```swift
-let fs = try connection.statFilesystem()
+let fs = try await connection.statFilesystem()
 
 let totalBytes = UInt64(fs.blockSize) * fs.blocks
 

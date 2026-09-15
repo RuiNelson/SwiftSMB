@@ -104,6 +104,10 @@ public extension SMB {
         }
 
         /// The command timeout, in seconds.
+        ///
+        /// Commands that exceed the timeout are aborted with an I/O timeout status. `nil` or `0` disables command
+        /// timeouts. Establishing the connection always has a deadline: this value when it is positive, otherwise 30
+        /// seconds.
         public var timeout: Int?
 
         /// The SMB dialect negotiation preference.

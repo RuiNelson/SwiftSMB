@@ -25,9 +25,12 @@ extension Bridge {
     }
 
     /// Parses an SMB URL into Swift-friendly URL components.
-    static func parseURL(_ url: String, context: Context) throws -> SMB2URL {
-        try Bridge.sync {
-            try _parseURL(url, context: context)
-        }
+    ///
+    /// Parsing needs a context only for error reporting. That context is private to this call and never shared, so it
+    /// is used directly on the caller's thread instead of through its queue.
+    static func parseURL(_ url: String) throws -> SMB2URL {
+        let context = try createContext()
+        defer { _destroyContext(context) }
+        return try _parseURL(url, context: context)
     }
 }

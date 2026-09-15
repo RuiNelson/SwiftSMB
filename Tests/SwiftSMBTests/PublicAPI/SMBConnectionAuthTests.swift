@@ -13,7 +13,7 @@ import Testing
 @Suite(.tags(.integration))
 struct SMBConnectionAuthTests {
     @Test("connect with wrong password throws logon failure")
-    func connectWithWrongPasswordThrowsLogonFailure() throws {
+    func connectWithWrongPasswordThrowsLogonFailure() async throws {
         let server = SMB.Server(host: testServerHost)
         let credentials = SMB.Credentials(
             user: TestCredentials.user,
@@ -21,7 +21,7 @@ struct SMBConnectionAuthTests {
         )
 
         do {
-            _ = try SMB.connect(
+            _ = try await SMB.connect(
                 server: server,
                 credentials: credentials,
                 share: TestShare.private
@@ -40,11 +40,11 @@ struct SMBConnectionAuthTests {
     }
 
     @Test("connect without credentials to private share throws logon failure")
-    func connectWithoutCredentialsToPrivateShareThrowsLogonFailure() throws {
+    func connectWithoutCredentialsToPrivateShareThrowsLogonFailure() async throws {
         let server = SMB.Server(host: testServerHost)
 
         do {
-            _ = try SMB.connect(
+            _ = try await SMB.connect(
                 server: server,
                 share: TestShare.private
             )

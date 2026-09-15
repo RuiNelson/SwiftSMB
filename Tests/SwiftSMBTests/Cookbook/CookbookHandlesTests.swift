@@ -13,14 +13,14 @@ import Testing
 @Suite(.tags(.integration))
 struct CookbookHandlesTests {
     @Test("negotiated dialect compiles and runs")
-    func negotiatedDialect() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func negotiatedDialect() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
 
-        let rawDialect = try connection.negotiatedDialect
+        let rawDialect = try await connection.negotiatedDialect
         _ = rawDialect
 
-        switch try connection.negotiatedDialectKind {
+        switch try await connection.negotiatedDialectKind {
         case .smb3_11:
             break
         case let .unknown(rawValue):
@@ -31,229 +31,229 @@ struct CookbookHandlesTests {
     }
 
     @Test("openFile and read compiles and runs")
-    func openFileAndRead() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let file = try connection.openFile(at: "report.pdf")
-        defer { try? file.close() }
-        let data = try file.read()
+    func openFileAndRead() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        defer { try? await file.close() }
+        let data = try await file.read()
         _ = data.count
     }
 
     @Test("openFile with access mode and options compiles and runs")
-    func openFileWithAccessModeAndOptions() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func openFileWithAccessModeAndOptions() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-log") + ".txt"
-        defer { try? connection.removeFile(at: remote) }
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .readWrite,
             options: [.create, .append]
         )
-        do { try? file.close() }
+        do { try? await file.close() }
     }
 
     @Test("read upTo compiles and runs")
-    func readUpTo() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let file = try connection.openFile(at: "report.pdf")
-        defer { try? file.close() }
-        let chunk = try file.read(upTo: 65536)
+    func readUpTo() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        defer { try? await file.close() }
+        let chunk = try await file.read(upTo: 65536)
         _ = chunk.count
     }
 
     @Test("seek and read at offset compiles and runs")
-    func seekAndReadAtOffset() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let file = try connection.openFile(at: "report.pdf")
-        defer { try? file.close() }
-        let info = try file.stat()
-        try file.seek(offset: 0, from: .start)
-        let header = try file.read(upTo: 1024)
+    func seekAndReadAtOffset() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        defer { try? await file.close() }
+        let info = try await file.stat()
+        try await file.seek(offset: 0, from: .start)
+        let header = try await file.read(upTo: 1024)
         _ = header.count
-        try file.seek(offset: Int64(info.size - 1024), from: .start)
-        let footer = try file.read(upTo: 1024)
+        try await file.seek(offset: Int64(info.size - 1024), from: .start)
+        let footer = try await file.read(upTo: 1024)
         _ = footer.count
     }
 
     @Test("write and seek compiles and runs")
-    func writeAndSeek() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func writeAndSeek() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-output") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .writeOnly,
             options: [.create, .truncate]
         )
-        defer { try? file.close() }
-        try file.write(Data("Hello, World!".utf8))
-        try file.seek(offset: 4096, from: .start)
-        try file.write(Data("at offset".utf8))
+        defer { try? await file.close() }
+        try await file.write(Data("Hello, World!".utf8))
+        try await file.seek(offset: 4096, from: .start)
+        try await file.write(Data("at offset".utf8))
     }
 
     @Test("seek origins compiles and runs")
-    func seekOrigins() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func seekOrigins() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-seek") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .readWrite,
             options: [.create, .truncate]
         )
-        defer { try? file.close() }
-        try file.write(Data("0123456789".utf8))
-        try file.seek(offset: 0, from: .start)
-        try file.seek(offset: 1024, from: .current)
-        try file.seek(offset: 0, from: .end)
+        defer { try? await file.close() }
+        try await file.write(Data("0123456789".utf8))
+        try await file.seek(offset: 0, from: .start)
+        try await file.seek(offset: 1024, from: .current)
+        try await file.seek(offset: 0, from: .end)
     }
 
     @Test("truncate handle compiles and runs")
-    func truncateHandle() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func truncateHandle() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-truncate") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
-        try connection.dumpToFile(Data("1234567890".utf8), to: remote)
-        let file = try connection.openFile(at: remote, accessMode: .readWrite)
-        defer { try? file.close() }
-        try file.truncate(toLength: 1024)
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("1234567890".utf8), to: remote)
+        let file = try await connection.openFile(at: remote, accessMode: .readWrite)
+        defer { try? await file.close() }
+        try await file.truncate(toLength: 1024)
     }
 
     @Test("sync handle compiles and runs")
-    func syncHandle() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func syncHandle() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-sync") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .writeOnly,
             options: [.create, .truncate]
         )
-        defer { try? file.close() }
-        try file.write(Data("sync me".utf8))
-        try file.sync()
+        defer { try? await file.close() }
+        try await file.write(Data("sync me".utf8))
+        try await file.sync()
     }
 
     @Test("openDirectory and readNext compiles and runs")
-    func openDirectoryAndReadNext() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let directory = try connection.openDirectory(at: "Anna/Inbox")
-        defer { directory.close() }
-        while let entry = try directory.readNext() {
+    func openDirectoryAndReadNext() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        defer { await directory.close() }
+        while let entry = try await directory.readNext() {
             _ = entry.name
             _ = entry.stat.size
         }
     }
 
     @Test("openDirectory and readAll compiles and runs")
-    func openDirectoryAndReadAll() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let directory = try connection.openDirectory(at: "Anna/Inbox")
-        defer { directory.close() }
-        let entries = try directory.readAll()
+    func openDirectoryAndReadAll() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        defer { await directory.close() }
+        let entries = try await directory.readAll()
         for entry in entries {
             _ = entry.name
         }
     }
 
     @Test("directory tell and seek compiles and runs")
-    func directoryTellAndSeek() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let directory = try connection.openDirectory(at: "Anna/Inbox")
-        defer { directory.close() }
-        let mark = try directory.tell()
-        _ = try directory.readNext()
-        _ = try directory.readNext()
-        try directory.seek(to: mark)
+    func directoryTellAndSeek() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        defer { await directory.close() }
+        let mark = try await directory.tell()
+        _ = try await directory.readNext()
+        _ = try await directory.readNext()
+        try await directory.seek(to: mark)
     }
 
     @Test("directory rewind compiles and runs")
-    func directoryRewind() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let directory = try connection.openDirectory(at: "Anna/Inbox")
-        defer { directory.close() }
-        try directory.rewind()
+    func directoryRewind() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        defer { await directory.close() }
+        try await directory.rewind()
     }
 
     @Test("close handles compiles and runs")
-    func closeHandles() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let file = try connection.openFile(at: "report.pdf")
-        try file.close()
-        let directory = try connection.openDirectory(at: "Anna/Inbox")
-        directory.close()
+    func closeHandles() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        try await file.close()
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        await directory.close()
     }
 
     @Test("lock exclusive compiles and runs")
-    func lockExclusive() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func lockExclusive() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-lock") + ".txt"
-        defer { try? connection.removeFile(at: remote) }
-        try connection.dumpToFile(Data("lock test".utf8), to: remote)
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .readWrite
         )
-        defer { try? file.close() }
-        try file.lock(.exclusive, nonBlocking: false)
-        try file.unlock()
+        defer { try? await file.close() }
+        try await file.lock(.exclusive, nonBlocking: false)
+        try await file.unlock()
     }
 
     @Test("lock shared compiles and runs")
-    func lockShared() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let file = try connection.openFile(at: "report.pdf")
-        defer { try? file.close() }
-        try file.lock(.shared, nonBlocking: false)
-        let data = try file.read()
+    func lockShared() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        defer { try? await file.close() }
+        try await file.lock(.shared, nonBlocking: false)
+        let data = try await file.read()
         _ = data.count
-        try file.unlock()
+        try await file.unlock()
     }
 
     @Test("lock nonBlocking compiles and runs")
-    func lockNonBlocking() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func lockNonBlocking() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-lock-nb") + ".txt"
-        defer { try? connection.removeFile(at: remote) }
-        try connection.dumpToFile(Data("lock test".utf8), to: remote)
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .readWrite
         )
-        defer { try? file.close() }
-        try file.lock(.exclusive, nonBlocking: true)
-        try file.unlock()
+        defer { try? await file.close() }
+        try await file.lock(.exclusive, nonBlocking: true)
+        try await file.unlock()
     }
 
     @Test("lock with range compiles and runs")
-    func lockWithRange() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func lockWithRange() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
         let remote = uniquePath("cookbook-lock-range") + ".txt"
-        defer { try? connection.removeFile(at: remote) }
-        try connection.dumpToFile(Data("lock test".utf8), to: remote)
-        let file = try connection.openFile(
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("lock test".utf8), to: remote)
+        let file = try await connection.openFile(
             at: remote,
             accessMode: .readWrite
         )
-        defer { try? file.close() }
-        try file.lock(.exclusive, nonBlocking: false, range: 1024 ..< 2048)
-        try file.unlock(range: 1024 ..< 2048)
+        defer { try? await file.close() }
+        try await file.lock(.exclusive, nonBlocking: false, range: 1024 ..< 2048)
+        try await file.unlock(range: 1024 ..< 2048)
     }
 }

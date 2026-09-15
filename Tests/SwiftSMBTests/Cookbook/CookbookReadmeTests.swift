@@ -13,10 +13,10 @@ import Testing
 @Suite(.tags(.integration))
 struct CookbookReadmeTests {
     @Test("listShares compiles and runs")
-    func listSharesCompilesAndRuns() throws {
+    func listSharesCompilesAndRuns() async throws {
         let server = SMB.Server(host: cookbookServerHost)
         let credentials = SMB.Credentials(user: "Anna", password: "1987")
-        let shares = try SMB.listShares(
+        let shares = try await SMB.listShares(
             server: server,
             credentials: credentials
         )
@@ -26,41 +26,41 @@ struct CookbookReadmeTests {
     }
 
     @Test("connect compiles and runs")
-    func connectCompilesAndRuns() throws {
+    func connectCompilesAndRuns() async throws {
         let server = SMB.Server(host: cookbookServerHost)
         let credentials = SMB.Credentials(user: "Anna", password: "1987")
-        let connection = try SMB.connect(
+        let connection = try await SMB.connect(
             server: server,
             credentials: credentials,
             share: "Documents"
         )
-        defer { try? connection.disconnect() }
+        defer { try? await connection.disconnect() }
         _ = connection.isConnected
     }
 
     @Test("listDirectory compiles and runs")
-    func listDirectoryCompilesAndRuns() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
-        let entries = try connection.listDirectory(at: "Anna/Inbox")
+    func listDirectoryCompilesAndRuns() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let entries = try await connection.listDirectory(at: "Anna/Inbox")
         for entry in entries {
             _ = entry.name
         }
     }
 
     @Test("uploadFile compiles and runs")
-    func uploadFileCompilesAndRuns() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func uploadFileCompilesAndRuns() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
 
         let localURL = try cookbookTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: localURL) }
         try Data("report".utf8).write(to: localURL)
 
         let remote = uniquePath("cookbook-readme-upload") + ".pdf"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
-        try connection.uploadFile(
+        try await connection.uploadFile(
             local: localURL,
             remote: remote
         ) { completed, total, lastBlockSpeed, averageSpeed in
@@ -71,19 +71,19 @@ struct CookbookReadmeTests {
     }
 
     @Test("downloadFile compiles and runs")
-    func downloadFileCompilesAndRuns() throws {
-        let connection = try cookbookConnection()
-        defer { try? connection.disconnect() }
+    func downloadFileCompilesAndRuns() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("cookbook-readme-download") + ".pdf"
-        defer { try? connection.removeFile(at: remote) }
-        try connection.dumpToFile(Data("report".utf8), to: remote)
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("report".utf8), to: remote)
 
         let localURL = try cookbookTemporaryFileURL()
         try? FileManager.default.removeItem(at: localURL)
         defer { try? FileManager.default.removeItem(at: localURL) }
 
-        try connection.downloadFile(
+        try await connection.downloadFile(
             remote: remote,
             local: localURL
         ) { completed, total, latestSpeed, averageSpeed in

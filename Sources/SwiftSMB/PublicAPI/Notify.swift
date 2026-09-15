@@ -6,7 +6,6 @@
 // Copyright its respective authors
 //
 
-import Dispatch
 import Foundation
 
 public extension SMB {
@@ -217,112 +216,78 @@ public extension SMB {
         }
     }
 
-    /// A delegate that receives SMB directory notification callbacks.
-    protocol NotifyWatcherDelegate: AnyObject, Sendable {
-        /// Called when the server reports a batch of changes.
-        ///
-        /// - Parameters:
-        ///   - watcher: The watcher that received the changes.
-        ///   - changes: The change batch reported by the server.
-        func notifyWatcher(_ watcher: NotifyWatcher, didReceive changes: [NotifyChange])
+    /// An armed directory watcher that reports change batches as an asynchronous sequence.
+    ///
+    /// Create a watcher with ``SMB/Connection/watchDirectory(at:options:filter:)`` and iterate it with `for try await`.
+    /// The watcher is already armed when `watchDirectory` returns, so changes made after that point are reported:
+    ///
+    /// ```swift
+    /// let watcher = try await connection.watchDirectory(at: "Inbox")
+    /// for try await changes in watcher {
+    ///     for change in changes {
+    ///         print(change.action, change.name)
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// Iteration ends normally when the watcher is cancelled with ``cancel()``, when the iterating task is cancelled,
+    /// when the connection is disconnected, or when the watcher is deallocated. It ends by throwing when the server or
+    /// the network reports an error.
+    ///
+    /// Iterate a watcher from one task at a time. Change batches that arrive while nobody is iterating are buffered
+    /// until they are consumed.
+    final class NotifyWatcher: AsyncSequence, CustomDebugStringConvertible, Sendable {
+        /// A batch of changes reported by a single SMB change notification.
+        public typealias Element = [NotifyChange]
 
-        /// Called after the watcher has armed its first notification request.
+        /// An iterator over a watcher's change batches.
         ///
-        /// - Parameter watcher: The watcher that started listening for changes.
-        func notifyWatcherDidStart(_ watcher: NotifyWatcher)
+        /// The iterator keeps its watcher alive, so a watcher is not cancelled by deallocation while it is iterated.
+        public struct AsyncIterator: AsyncIteratorProtocol {
+            private let watcher: NotifyWatcher
+            private var base: AsyncThrowingStream<[NotifyChange], any Swift.Error>.Iterator
 
-        /// Called when the watcher stops because of an error.
-        ///
-        /// - Parameters:
-        ///   - watcher: The watcher that failed.
-        ///   - error: The error that stopped the watcher.
-        func notifyWatcher(_ watcher: NotifyWatcher, didFailWith error: Swift.Error)
+            init(watcher: NotifyWatcher, base: AsyncThrowingStream<[NotifyChange], any Swift.Error>.Iterator) {
+                self.watcher = watcher
+                self.base = base
+            }
 
-        /// Called when the watcher is cancelled or otherwise finishes without an error.
-        ///
-        /// - Parameter watcher: The watcher that finished.
-        func notifyWatcherDidCancel(_ watcher: NotifyWatcher)
-    }
+            /// Returns the next change batch, or `nil` once the watcher has stopped.
+            ///
+            /// - Throws: ``SMB/Error`` if the server or the network reports an error while watching.
+            public mutating func next() async throws -> [NotifyChange]? {
+                try await base.next()
+            }
+        }
 
-    /// A cancellable SMB directory notification watcher.
-    final class NotifyWatcher: CustomDebugStringConvertible, @unchecked Sendable {
         /// The path being watched, relative to the share root.
         public let path: String
 
         private let state: SMBNotifyWatcherState
-        private let callbackQueue: DispatchQueue
-        private let protectedDelegate: Protected<SMBNotifyWatcherDelegateBox>
+        private let stream: AsyncThrowingStream<[NotifyChange], any Swift.Error>
 
-        /// The object that receives watcher callbacks.
-        ///
-        /// The watcher keeps a weak reference to its delegate. Assign a new delegate if ownership changes while the
-        /// watcher is running.
-        public var delegate: (any NotifyWatcherDelegate)? {
-            get {
-                protectedDelegate.current.delegate
-            }
-            set {
-                protectedDelegate.current = SMBNotifyWatcherDelegateBox(newValue)
-            }
-        }
-
-        /// Creates a watcher around an already-open notification state.
-        init(
-            path: String,
-            state: SMBNotifyWatcherState,
-            callbacks: SMBNotifyWatcherCallbacks,
-            delegate: (any NotifyWatcherDelegate)?,
-            callbackQueue: DispatchQueue
-        ) {
+        /// Creates a watcher around an already-armed notification state and the stream it feeds.
+        init(path: String, state: SMBNotifyWatcherState, stream: AsyncThrowingStream<[NotifyChange], any Swift.Error>) {
             self.path = path
             self.state = state
-            self.callbackQueue = callbackQueue
-            protectedDelegate = Protected(
-                SMBNotifyWatcherDelegateBox(delegate),
-                label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.delegate.\(state.id)"
-            )
-            callbacks.watcher = self
-            state.start()
+            self.stream = stream
         }
 
         deinit {
             cancel()
         }
 
+        /// Returns an iterator over the change batches reported by the server.
+        public func makeAsyncIterator() -> AsyncIterator {
+            AsyncIterator(watcher: self, base: stream.makeAsyncIterator())
+        }
+
         /// Cancels the watcher.
         ///
-        /// Cancellation is idempotent. The watcher stops after any pending SMB notify request has been cancelled and
-        /// the internal directory handle has been closed.
+        /// Cancellation is idempotent and returns immediately. Iteration ends normally once any pending SMB notify
+        /// request has been cancelled and the internal directory handle has been closed.
         public func cancel() {
             state.cancel()
-        }
-
-        /// Delivers a delegate callback on the callback queue, if a delegate is still set.
-        private func deliver(_ body: @escaping @Sendable (any NotifyWatcherDelegate) -> Void) {
-            callbackQueue.async { [self] in
-                guard let delegate else { return }
-                body(delegate)
-            }
-        }
-
-        /// Receives a change batch from the watcher state.
-        func notifyReceived(_ changes: [NotifyChange]) {
-            deliver { [self] delegate in delegate.notifyWatcher(self, didReceive: changes) }
-        }
-
-        /// Receives the first-armed event from the watcher state.
-        func notifyStarted() {
-            deliver { [self] delegate in delegate.notifyWatcherDidStart(self) }
-        }
-
-        /// Receives a terminal failure from the watcher state.
-        func notifyFailed(with error: Swift.Error) {
-            deliver { [self] delegate in delegate.notifyWatcher(self, didFailWith: error) }
-        }
-
-        /// Receives normal watcher cancellation from the watcher state.
-        func notifyCancelled() {
-            deliver { [self] delegate in delegate.notifyWatcherDidCancel(self) }
         }
 
         /// A debug description of the watched path.
@@ -332,69 +297,57 @@ public extension SMB {
     }
 }
 
-public extension SMB.NotifyWatcherDelegate {
-    /// Default no-op implementation for watchers that only care about changes.
-    func notifyWatcherDidStart(_: SMB.NotifyWatcher) {
-    }
-
-    /// Default no-op implementation for watchers that only care about changes.
-    func notifyWatcher(_: SMB.NotifyWatcher, didFailWith _: Swift.Error) {
-    }
-
-    /// Default no-op implementation for watchers that only care about changes.
-    func notifyWatcherDidCancel(_: SMB.NotifyWatcher) {
-    }
-}
-
 public extension SMB.Connection {
     /// Watches a directory for SMB change notifications.
     ///
-    /// Keep the returned watcher alive for as long as you want notifications and call ``SMB/NotifyWatcher/cancel()``
-    /// when you are done. Delegate callbacks are delivered on `callbackQueue`.
+    /// The returned watcher is already armed: changes made after this method returns are reported. Iterate it with
+    /// `for try await` to receive change batches. Call ``SMB/NotifyWatcher/cancel()``, cancel the iterating task, or
+    /// release the watcher when you are done.
     ///
     /// - Parameters:
     ///   - path: The directory path, relative to the share root.
     ///   - options: Watcher options, such as recursive subtree watching.
     ///   - filter: The kinds of changes to report.
-    ///   - delegate: The object that receives notification callbacks.
-    ///   - callbackQueue: The queue used to deliver delegate callbacks.
-    /// - Returns: A cancellable directory watcher.
-    /// - Throws: ``SMB/Error`` if the connection is closed, `path` is invalid, or the directory cannot be opened for
-    /// notifications.
+    /// - Returns: An armed directory watcher.
+    /// - Throws: ``SMB/Error`` if the connection is closed, `path` is invalid, or the directory cannot be opened or
+    /// armed
+    /// for notifications.
     func watchDirectory(
         at path: String = "",
         options: SMB.NotifyOptions = [],
-        filter: SMB.NotifyFilter = .all,
-        delegate: (any SMB.NotifyWatcherDelegate)? = nil,
-        callbackQueue: DispatchQueue = .main
-    ) throws -> SMB.NotifyWatcher {
+        filter: SMB.NotifyFilter = .all
+    ) async throws -> SMB.NotifyWatcher {
         let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
         let context = try requireContext()
-        let directory = try Bridge.open(
+        let directory = try await Bridge.open(
             context: context,
             path: path,
             flags: Bridge.OpenFlags(.readOnly, options: [.directory])
         )
-        let callbacks = SMBNotifyWatcherCallbacks()
+
+        let (stream, continuation) = AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.makeStream()
         let state = SMBNotifyWatcherState(
             context: context,
             directory: directory,
             options: options.bridgeValue,
             filter: filter.bridgeValue,
-            callbacks: callbacks,
+            continuation: continuation,
             onFinish: { [weak self] id in
                 self?.unregisterNotifyWatcher(id: id)
             }
         )
 
+        do {
+            try await state.armRequest()
+        }
+        catch {
+            try? await Bridge.close(context: context, file: directory)
+            throw error
+        }
+
+        state.start()
         registerNotifyWatcher(state)
-        return SMB.NotifyWatcher(
-            path: path,
-            state: state,
-            callbacks: callbacks,
-            delegate: delegate,
-            callbackQueue: callbackQueue
-        )
+        return SMB.NotifyWatcher(path: path, state: state, stream: stream)
     }
 }
 
@@ -413,54 +366,27 @@ extension SMB.Connection {
         }
     }
 
-    /// Cancels all active watchers before closing the underlying SMB context.
-    func cancelNotifyWatchers() {
+    /// Cancels all active watchers and waits until they have released their bridge resources.
+    func cancelNotifyWatchers() async {
         let watchers = protectedNotifyWatchers.take(replacingWith: [:])
         for watcher in watchers.values {
-            watcher.cancelAndWait()
+            await watcher.cancelAndWait()
+        }
+    }
+
+    /// Cancels all active watchers without waiting. Used from `deinit`, which cannot await.
+    ///
+    /// Their cleanup is enqueued on the context queue, so it runs before any teardown enqueued afterwards.
+    func cancelNotifyWatchersInBackground() {
+        let watchers = protectedNotifyWatchers.take(replacingWith: [:])
+        for watcher in watchers.values {
+            watcher.releaseResourcesInBackground()
         }
     }
 }
 
-/// Weakly boxes a notification delegate for storage in `Protected`.
-final class SMBNotifyWatcherDelegateBox: @unchecked Sendable {
-    /// The delegate receiving public watcher callbacks.
-    weak var delegate: (any SMB.NotifyWatcherDelegate)?
-
-    /// Creates a weak delegate box.
-    init(_ delegate: (any SMB.NotifyWatcherDelegate)?) {
-        self.delegate = delegate
-    }
-}
-
-/// Routes watcher-state events back to the public watcher.
-final class SMBNotifyWatcherCallbacks: @unchecked Sendable {
-    /// The public watcher that should receive state events.
-    weak var watcher: SMB.NotifyWatcher?
-
-    /// Delivers a change batch to the public watcher.
-    func received(_ changes: [SMB.NotifyChange]) {
-        watcher?.notifyReceived(changes)
-    }
-
-    /// Delivers the first-armed event to the public watcher.
-    func started() {
-        watcher?.notifyStarted()
-    }
-
-    /// Delivers a terminal failure to the public watcher.
-    func failed(with error: Swift.Error) {
-        watcher?.notifyFailed(with: error)
-    }
-
-    /// Delivers normal cancellation to the public watcher.
-    func cancelled() {
-        watcher?.notifyCancelled()
-    }
-}
-
-/// Owns the bridge notification loop and directory handle for a watcher.
-final class SMBNotifyWatcherState: @unchecked Sendable {
+/// Owns the notification loop, the pending notify request, and the directory handle for a watcher.
+final class SMBNotifyWatcherState: Sendable {
     /// Mutable watcher state protected by `protectedState`.
     struct State {
         /// Whether cancellation has been requested.
@@ -471,6 +397,12 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
 
         /// The completed bridge result waiting to be handled by the loop.
         var completedResult: Result<[Bridge.NotifyChange], SMB.Error>?
+
+        /// Whether the pending request and directory handle have been released.
+        var didReleaseResources = false
+
+        /// The task running the notification loop.
+        var loop: Task<Void, Never>?
     }
 
     /// Stable identity used by the connection watcher registry.
@@ -488,38 +420,14 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
     /// Bridge filter used for each notification request.
     private let filter: Bridge.NotifyChangeFilter
 
-    /// Callback router for public watcher events.
-    private let callbacks: SMBNotifyWatcherCallbacks
+    /// Feeds change batches to the public watcher's stream.
+    private let continuation: AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.Continuation
 
     /// Called after cleanup so the connection can unregister this watcher.
     private let onFinish: @Sendable (UUID) -> Void
 
-    /// Serial queue that services the libsmb2 context for this watcher.
-    private let queue: DispatchQueue
-
-    /// Lifecycle flags tracked alongside `State`.
-    struct RunState {
-        /// Whether the watcher has already reported a failure.
-        var didFail = false
-
-        /// Whether the watcher has already sent its terminal callback.
-        var didFinish = false
-
-        /// Whether bridge resources have already been released.
-        var didCleanUp = false
-    }
-
-    /// Protected mutable request state.
+    /// Protected mutable state.
     private let protectedState: Protected<State>
-
-    /// Protected lifecycle flags.
-    private let protectedRunState: Protected<RunState>
-
-    /// Signals `cancelAndWait()` after cleanup completes.
-    private let cleanupSemaphore = DispatchSemaphore(value: 0)
-
-    /// Whether the first-armed delegate callback has been sent.
-    private var didStart = false
 
     /// Creates watcher state for an open directory handle.
     init(
@@ -527,114 +435,117 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         directory: Bridge.FileHandle,
         options: Bridge.NotifyChangeFlags,
         filter: Bridge.NotifyChangeFilter,
-        callbacks: SMBNotifyWatcherCallbacks,
+        continuation: AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.Continuation,
         onFinish: @escaping @Sendable (UUID) -> Void
     ) {
         self.context = context
         self.directory = directory
         self.options = options
         self.filter = filter
-        self.callbacks = callbacks
+        self.continuation = continuation
         self.onFinish = onFinish
-        queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.\(id)")
         protectedState = Protected(State(), label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.state.\(id)")
-        protectedRunState = Protected(RunState(), label: "com.ruinelson.SwiftSMB.SMB.NotifyWatcher.runState.\(id)")
-    }
 
-    /// Starts the serial notification loop.
-    func start() {
-        queue.async { [self] in
-            run()
+        // Ending the iteration early, for example by cancelling the iterating task, cancels the watcher.
+        continuation.onTermination = { [weak self] _ in
+            self?.cancel()
         }
     }
 
-    /// Requests asynchronous cancellation.
+    /// Arms a one-shot notify request and records it as pending.
+    func armRequest() async throws {
+        let request = try await Bridge.notifyChange(
+            context: context,
+            directory: directory,
+            flags: options,
+            filter: filter
+        ) { [weak self] result in
+            self?.complete(result)
+        }
+
+        protectedState.withLock { state in
+            state.pendingRequest = request
+        }
+    }
+
+    /// Starts the notification loop. The loop keeps this state alive until it finishes.
+    func start() {
+        let loop = Task {
+            await self.run()
+        }
+        protectedState.withLock { state in
+            state.loop = loop
+        }
+    }
+
+    /// Requests cancellation. The loop stops after its current bridge operation.
     func cancel() {
         protectedState.withLock { state in
             state.isCancellationRequested = true
         }
     }
 
-    /// Requests cancellation and waits until bridge resources are released.
-    func cancelAndWait() {
+    /// Requests cancellation and waits until the loop has released its bridge resources.
+    func cancelAndWait() async {
         cancel()
-        if protectedRunState.current.didCleanUp {
+        let loop = protectedState.withLock { state in
+            state.loop
+        }
+        await loop?.value
+    }
+
+    /// Requests cancellation and enqueues the release of bridge resources without waiting.
+    func releaseResourcesInBackground() {
+        cancel()
+        let claim = claimResources()
+        guard claim.claimed else {
             return
         }
-        cleanupSemaphore.wait()
+
+        if let request = claim.pendingRequest {
+            Bridge.cancelInBackground(context: context, request: request)
+        }
+        Bridge.closeInBackground(context: context, file: directory)
     }
 
-    /// Arms one-shot notify requests and services the SMB context until cancelled.
-    private func run() {
-        defer {
-            cleanUp()
-        }
-
-        while !isCancellationRequested {
-            do {
-                let request = try Bridge.notifyChange(
-                    context: context,
-                    directory: directory,
-                    flags: options,
-                    filter: filter
-                ) { [weak self] result in
-                    self?.complete(result)
+    /// Services the SMB context, delivering each completed notification and re-arming until cancelled.
+    private func run() async {
+        var failure: (any Swift.Error)?
+        do {
+            while !isCancellationRequested {
+                if let result = takeCompletedResult() {
+                    try deliver(result)
+                    try await armRequest()
                 }
-
-                guard setPendingRequest(request) else {
-                    Bridge.cancel(context: context, request: request)
-                    return
-                }
-
-                notifyStartedIfNeeded()
-
-                while !isCancellationRequested {
-                    if let result = takeCompletedResult() {
-                        try handle(result)
-                        break
-                    }
-
-                    try Bridge.serviceNotifyEvents(context: context)
+                else {
+                    try await Bridge.serviceNotifyEvents(context: context)
                 }
             }
-            catch {
-                guard !isCancellationRequested else {
-                    return
-                }
-                fail(with: error)
-                return
+        }
+        catch {
+            if !isCancellationRequested {
+                failure = error
             }
         }
+
+        await releaseResources()
+        if let failure {
+            continuation.finish(throwing: failure)
+        }
+        else {
+            continuation.finish()
+        }
+        onFinish(id)
     }
 
-    /// Whether the run loop should stop.
+    /// Whether the loop should stop.
     private var isCancellationRequested: Bool {
-        protectedState.current.isCancellationRequested
-    }
-
-    /// Stores a newly armed request unless cancellation already won the race.
-    private func setPendingRequest(_ request: Bridge.PendingRequest) -> Bool {
         protectedState.withLock { state in
-            guard !state.isCancellationRequested else {
-                return false
-            }
-
-            state.pendingRequest = request
-            return true
+            state.isCancellationRequested
         }
     }
 
-    /// Sends the first-armed delegate callback once.
-    private func notifyStartedIfNeeded() {
-        guard !didStart else {
-            return
-        }
-
-        didStart = true
-        callbacks.started()
-    }
-
-    /// Stores a completed bridge result for the run loop to consume.
+    /// Stores a completed bridge result for the loop to consume. Called on the context queue.
     private func complete(_ result: Result<[Bridge.NotifyChange], SMB.Error>) {
         protectedState.withLock { state in
             state.pendingRequest = nil
@@ -651,65 +562,38 @@ final class SMBNotifyWatcherState: @unchecked Sendable {
         }
     }
 
-    /// Takes the current pending request so it can be cancelled.
-    private func takePendingRequest() -> Bridge.PendingRequest? {
+    /// Yields a successful change batch to the stream, or throws the reported failure.
+    private func deliver(_ result: Result<[Bridge.NotifyChange], SMB.Error>) throws {
+        let changes = try result.get().map(SMB.NotifyChange.init)
+        if !changes.isEmpty {
+            continuation.yield(changes)
+        }
+    }
+
+    /// Claims the right to release bridge resources, which happens exactly once.
+    private func claimResources() -> (claimed: Bool, pendingRequest: Bridge.PendingRequest?) {
         protectedState.withLock { state in
+            guard !state.didReleaseResources else {
+                return (false, nil)
+            }
+
+            state.didReleaseResources = true
             let request = state.pendingRequest
             state.pendingRequest = nil
-            return request
+            return (true, request)
         }
     }
 
-    /// Converts a bridge result into public delegate callbacks.
-    private func handle(_ result: Result<[Bridge.NotifyChange], SMB.Error>) throws {
-        switch result {
-        case let .success(changes):
-            let publicChanges = changes.map(SMB.NotifyChange.init)
-            if !publicChanges.isEmpty {
-                callbacks.received(publicChanges)
-            }
-        case let .failure(error):
-            throw error
-        }
-    }
-
-    /// Cancels pending bridge work and closes the watcher directory handle.
-    private func cleanUp() {
-        if let request = takePendingRequest() {
-            Bridge.cancel(context: context, request: request)
-        }
-
-        try? Bridge.close(context: context, file: directory)
-        finish()
-        onFinish(id)
-        protectedRunState.withLock { state in
-            state.didCleanUp = true
-        }
-        cleanupSemaphore.signal()
-    }
-
-    /// Reports a terminal failure.
-    private func fail(with error: Swift.Error) {
-        protectedRunState.withLock { state in
-            state.didFail = true
-        }
-        callbacks.failed(with: error)
-        finish()
-    }
-
-    /// Sends the terminal cancellation callback once.
-    private func finish() {
-        let (alreadyFinished, didFail) = protectedRunState.withLock { state in
-            let alreadyFinished = state.didFinish
-            state.didFinish = true
-            return (alreadyFinished, state.didFail)
-        }
-        guard !alreadyFinished else {
+    /// Cancels the pending notify request and closes the directory handle.
+    private func releaseResources() async {
+        let claim = claimResources()
+        guard claim.claimed else {
             return
         }
 
-        if !didFail {
-            callbacks.cancelled()
+        if let request = claim.pendingRequest {
+            try? await Bridge.cancel(context: context, request: request)
         }
+        try? await Bridge.close(context: context, file: directory)
     }
 }

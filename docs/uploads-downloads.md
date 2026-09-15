@@ -7,8 +7,8 @@ All examples assume you already have an open ``SMB.Connection``:
 ```swift
 let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
-let connection = try SMB.connect(server: server, credentials: credentials, share: "Documents")
-defer { try? connection.disconnect() }
+let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
+defer { try? await connection.disconnect() }
 ```
 
 ## Uploading a local file
@@ -18,7 +18,7 @@ defer { try? connection.disconnect() }
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/Anna/Desktop/report.pdf")
 
-try connection.uploadFile(
+try await connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf"
 ) { completed, total, lastBlockSpeed, averageSpeed in
@@ -29,11 +29,13 @@ try connection.uploadFile(
 ```
 
 Return `false` from the progress closure to cancel the upload. The temporary staging file is cleaned up automatically.
+Cancelling the task that runs the upload stops it between blocks with the same cleanup, and the call throws
+`CancellationError`.
 
 You can also pass a preferred block size. Values above the server maximum are clamped automatically:
 
 ```swift
-try connection.uploadFile(
+try await connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf",
     maxBlockSize: UInt64(256 * 1024)
@@ -47,7 +49,7 @@ try connection.uploadFile(
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/Anna/Downloads/report.pdf")
 
-try connection.downloadFile(
+try await connection.downloadFile(
     remote: "Anna/Inbox/report.pdf",
     local: localURL
 ) { completed, total, lastBlockSpeed, averageSpeed in
@@ -57,13 +59,15 @@ try connection.downloadFile(
 ```
 
 Return `false` from the progress closure to cancel the download. The temporary local file is removed automatically.
+Cancelling the task that runs the download stops it between blocks with the same cleanup, and the call throws
+`CancellationError`.
 
 ## Loading a file into memory
 
 If the file is small enough to fit in memory, ``SMB.Connection.loadFile(at:chunkSize:)`` reads the entire file in one call:
 
 ```swift
-let data = try connection.loadFile(at: "Anna/Inbox/report.pdf")
+let data = try await connection.loadFile(at: "Anna/Inbox/report.pdf")
 print("Loaded \(data.count) bytes")
 ```
 
@@ -73,14 +77,14 @@ print("Loaded \(data.count) bytes")
 
 ```swift
 let payload = Data("Hello, SMB!".utf8)
-try connection.dumpToFile(payload, to: "greeting.txt")
+try await connection.dumpToFile(payload, to: "greeting.txt")
 ```
 
 You can control how the file is opened with ``SMB.File.OpenOptions``:
 
 ```swift
 // Append instead of replacing
-try connection.dumpToFile(
+try await connection.dumpToFile(
     payload,
     to: "log.txt",
     options: [.create, .append]
@@ -92,6 +96,6 @@ try connection.dumpToFile(
 Both upload and download accept an optional `maxBlockSize`. The library clamps the value to the server's maximum automatically, so you can safely request a large block size:
 
 ```swift
-let maxRead = try connection.acceptedReadBlockSize(128 * 1024 * 1024)
-let data = try connection.loadFile(at: "big.bin", chunkSize: maxRead)
+let maxRead = try await connection.acceptedReadBlockSize(128 * 1024 * 1024)
+let data = try await connection.loadFile(at: "big.bin", chunkSize: maxRead)
 ```

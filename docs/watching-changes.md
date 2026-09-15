@@ -7,74 +7,48 @@ All examples assume you already have an open ``SMB.Connection``:
 ```swift
 let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
-let connection = try SMB.connect(server: server, credentials: credentials, share: "Documents")
-defer { try? connection.disconnect() }
+let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
+defer { try? await connection.disconnect() }
 ```
 
 ## Starting a watcher
 
-``SMB.Connection.watchDirectory(at:options:filter:delegate:callbackQueue:)`` returns a ``SMB.NotifyWatcher`` that reports changes as they happen:
+``SMB.Connection.watchDirectory(at:options:filter:)`` returns a ``SMB.NotifyWatcher``, an `AsyncSequence` of change batches. The watcher is already armed when the method returns, so changes made after that point are reported:
 
 ```swift
-class MyWatcherDelegate: SMB.NotifyWatcherDelegate {
-    func notifyWatcher(
-        _ watcher: SMB.NotifyWatcher,
-        didReceive changes: [SMB.NotifyChange]
-    ) {
-        for change in changes {
-            switch change.action {
-            case .added:
-                print("Added: \(change.name)")
-            case .removed:
-                print("Removed: \(change.name)")
-            case .modified:
-                print("Modified: \(change.name)")
-            case .renamedOldName:
-                print("Renamed from: \(change.name)")
-            case .renamedNewName:
-                print("Renamed to: \(change.name)")
-            default:
-                print("Other action on: \(change.name)")
-            }
+let watcher = try await connection.watchDirectory(at: "Anna/Inbox")
+
+for try await changes in watcher {
+    for change in changes {
+        switch change.action {
+        case .added:
+            print("Added: \(change.name)")
+        case .removed:
+            print("Removed: \(change.name)")
+        case .modified:
+            print("Modified: \(change.name)")
+        case .renamedOldName:
+            print("Renamed from: \(change.name)")
+        case .renamedNewName:
+            print("Renamed to: \(change.name)")
+        default:
+            print("Other action on: \(change.name)")
         }
     }
-
-    func notifyWatcherDidStart(_ watcher: SMB.NotifyWatcher) {
-        print("Watcher is now active")
-    }
-
-    func notifyWatcher(
-        _ watcher: SMB.NotifyWatcher,
-        didFailWith error: Swift.Error
-    ) {
-        print("Watcher failed: \(error)")
-    }
-
-    func notifyWatcherDidCancel(_ watcher: SMB.NotifyWatcher) {
-        print("Watcher stopped")
-    }
 }
-
-let delegate = MyWatcherDelegate()
-let watcher = try connection.watchDirectory(
-    at: "Anna/Inbox",
-    delegate: delegate
-)
-
-// Keep watcher alive as long as you need notifications.
-// Call cancel() when done:
-// watcher.cancel()
+print("Watcher stopped")
 ```
+
+Each element is the batch of changes reported by one SMB notification. The loop ends normally when the watcher is cancelled, and throws when the server or the network reports an error.
 
 ## Filtering events
 
 You can restrict the kinds of changes the server reports with ``SMB.NotifyFilter``:
 
 ```swift
-let watcher = try connection.watchDirectory(
+let watcher = try await connection.watchDirectory(
     at: "Anna/Inbox",
-    filter: [.fileName, .directoryName, .size],
-    delegate: delegate
+    filter: [.fileName, .directoryName, .size]
 )
 ```
 
@@ -99,39 +73,43 @@ Available filters:
 Pass ``SMB.NotifyOptions.recursive`` to watch the entire subtree rooted at the requested directory:
 
 ```swift
-let watcher = try connection.watchDirectory(
+let watcher = try await connection.watchDirectory(
     at: "Anna",
-    options: .recursive,
-    delegate: delegate
+    options: .recursive
 )
 ```
 
-## Controlling the callback queue
+## Watching in the background
 
-By default delegate callbacks are delivered on the main queue. You can specify a different queue:
+A `for try await` loop suspends until the watcher stops, so run it in its own task when you need to keep doing other work:
 
 ```swift
-let queue = DispatchQueue(label: "com.example.smb-watcher")
-let watcher = try connection.watchDirectory(
-    at: "Anna/Inbox",
-    delegate: delegate,
-    callbackQueue: queue
-)
+let watchTask = Task {
+    for try await changes in watcher {
+        print("Received \(changes.count) changes")
+    }
+}
+
+// Later, when you no longer need notifications:
+watchTask.cancel()
 ```
+
+Cancelling the task that iterates the watcher also cancels the watcher.
 
 ## Cancelling a watcher
 
-Call ``SMB.NotifyWatcher.cancel()`` when you no longer need notifications. Cancellation is idempotent and safe to call multiple times:
+Call ``SMB.NotifyWatcher.cancel()`` when you no longer need notifications. Cancellation is idempotent, returns immediately, and ends the iteration normally:
 
 ```swift
 watcher.cancel()
 ```
 
-The watcher also cancels automatically when it is deallocated, but explicit cancellation is recommended so you control the timing.
+The watcher also cancels automatically when it is deallocated and nothing is iterating it, but explicit cancellation is recommended so you control the timing.
 
 ## Important notes
 
-- The watcher holds a **weak** reference to its delegate. Keep your delegate object alive for as long as the watcher is running.
-- Only one watcher callback will be in flight at a time per watcher.
+- Iterate a watcher from one task at a time.
+- Change batches that arrive while nothing is iterating are buffered until they are consumed.
 - The watcher re-arms itself automatically after each batch of changes, so it runs continuously until cancelled.
-- Watches are cancelled automatically when the parent ``SMB.Connection`` is disconnected or deallocated.
+- Watches are cancelled automatically when the parent ``SMB.Connection`` is disconnected or deallocated; iteration then ends normally.
+- A watcher takes turns with the other operations on its connection. If the same connection also runs long transfers, consider watching through a separate connection.

@@ -7,6 +7,7 @@
 //
 
 @testable import SwiftSMB
+import Foundation
 import Testing
 
 // MARK: - Server configuration
@@ -53,83 +54,75 @@ extension Tag {
 // MARK: - Context helpers
 
 @discardableResult
-func withFreshContext<T>(_ body: (Bridge.Context) throws -> T) throws -> T {
+func withFreshContext<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
     let ctx = try Bridge.createContext()
-    defer { Bridge.destroyContext(ctx) }
-    return try body(ctx)
+    defer { await Bridge.destroyContext(ctx) }
+    return try await body(ctx)
 }
 
 private func withShare<T>(
     _ shareName: String,
     credentials: (user: String, password: String)? = nil,
-    body: (Bridge.Context) throws -> T
-) throws -> T {
+    body: (Bridge.Context) async throws -> T
+) async throws -> T {
     let ctx = try Bridge.createContext()
     if let credentials {
-        Bridge.setUser(credentials.user, on: ctx)
-        Bridge.setPassword(credentials.password, on: ctx)
+        try await Bridge.setUser(credentials.user, on: ctx)
+        try await Bridge.setPassword(credentials.password, on: ctx)
     }
-    try Bridge.connectShare(context: ctx, server: testServerHost, share: shareName)
+    try await Bridge.connectShare(context: ctx, server: testServerHost, share: shareName)
     defer {
-        try? Bridge.disconnectShare(context: ctx)
-        Bridge.destroyContext(ctx)
+        try? await Bridge.disconnectShare(context: ctx)
+        await Bridge.destroyContext(ctx)
     }
-    return try body(ctx)
+    return try await body(ctx)
 }
 
 @discardableResult
-func withPublicShare<T>(_ body: (Bridge.Context) throws -> T) throws -> T {
-    try withShare(TestShare.public, body: body)
+func withPublicShare<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
+    try await withShare(TestShare.public, body: body)
 }
 
 @discardableResult
-func withPrivateShare<T>(_ body: (Bridge.Context) throws -> T) throws -> T {
-    try withShare(TestShare.private, credentials: (TestCredentials.user, TestCredentials.password), body: body)
+func withPrivateShare<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
+    try await withShare(TestShare.private, credentials: (TestCredentials.user, TestCredentials.password), body: body)
 }
 
 @discardableResult
-func withReadonlyShare<T>(_ body: (Bridge.Context) throws -> T) throws -> T {
-    try withShare(TestShare.readonly, body: body)
+func withReadonlyShare<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
+    try await withShare(TestShare.readonly, body: body)
 }
 
 // MARK: - Directory helpers
 
-func allEntries(context: Bridge.Context, directory: Bridge.DirectoryHandle) -> [Bridge.DirectoryEntry] {
+func allEntries(context: Bridge.Context, directory: Bridge.DirectoryHandle) async throws -> [Bridge.DirectoryEntry] {
     var entries: [Bridge.DirectoryEntry] = []
-    while let entry = Bridge.readDir(context: context, directory: directory) {
+    while let entry = try await Bridge.readDir(context: context, directory: directory) {
         entries.append(entry)
     }
     return entries
 }
 
-func listDirectory(context: Bridge.Context, path: String) throws -> [Bridge.DirectoryEntry] {
-    let dir = try Bridge.openDir(context: context, path: path)
-    defer { Bridge.closeDir(context: context, directory: dir) }
-    return allEntries(context: context, directory: dir)
+func listDirectory(context: Bridge.Context, path: String) async throws -> [Bridge.DirectoryEntry] {
+    let dir = try await Bridge.openDir(context: context, path: path)
+    defer { try? await Bridge.closeDir(context: context, directory: dir) }
+    return try await allEntries(context: context, directory: dir)
 }
 
 // MARK: - I/O helpers
 
-func readAllBytes(context: Bridge.Context, file: Bridge.FileHandle, chunkSize: Int = 65536) throws -> [UInt8] {
+func readAllBytes(context: Bridge.Context, file: Bridge.FileHandle, chunkSize: Int = 65536) async throws -> [UInt8] {
     var result: [UInt8] = []
-    var buffer = [UInt8](repeating: 0, count: chunkSize)
     while true {
-        let n = try buffer.withUnsafeMutableBytes { rawBuf in
-            try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
-        }
-        guard n > 0 else { break }
-        result.append(contentsOf: buffer.prefix(n))
+        let data = try await Bridge.read(context: context, file: file, count: chunkSize)
+        guard !data.isEmpty else { break }
+        result.append(contentsOf: data)
     }
     return result
 }
 
-func readSomeBytes(context: Bridge.Context, file: Bridge.FileHandle, count: Int) throws -> [UInt8] {
-    var buffer = [UInt8](repeating: 0, count: count)
-    let n = try buffer.withUnsafeMutableBytes { rawBuf in
-        try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf))
-    }
-    buffer.removeLast(count - n)
-    return buffer
+func readSomeBytes(context: Bridge.Context, file: Bridge.FileHandle, count: Int) async throws -> [UInt8] {
+    try await Array(Bridge.read(context: context, file: file, count: count))
 }
 
 func readSomeBytesAt(
@@ -137,19 +130,12 @@ func readSomeBytesAt(
     file: Bridge.FileHandle,
     count: Int,
     offset: UInt64
-) throws -> [UInt8] {
-    var buffer = [UInt8](repeating: 0, count: count)
-    let n = try buffer.withUnsafeMutableBytes { rawBuf in
-        try Bridge.read(context: context, file: file, into: MutableRawSpan(_unsafeBytes: rawBuf), offset: offset)
-    }
-    buffer.removeLast(count - n)
-    return buffer
+) async throws -> [UInt8] {
+    try await Array(Bridge.read(context: context, file: file, count: count, offset: offset))
 }
 
-func writeAllBytes(context: Bridge.Context, file: Bridge.FileHandle, data: [UInt8]) throws -> Int {
-    try data.withUnsafeBytes { rawBuf in
-        try Bridge.write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf))
-    }
+func writeAllBytes(context: Bridge.Context, file: Bridge.FileHandle, data: [UInt8]) async throws -> Int {
+    try await Bridge.write(context: context, file: file, data: Data(data))
 }
 
 func writeAllBytesAt(
@@ -157,18 +143,16 @@ func writeAllBytesAt(
     file: Bridge.FileHandle,
     data: [UInt8],
     offset: UInt64
-) throws -> Int {
-    try data.withUnsafeBytes { rawBuf in
-        try Bridge.write(context: context, file: file, bytes: RawSpan(_unsafeBytes: rawBuf), offset: offset)
-    }
+) async throws -> Int {
+    try await Bridge.write(context: context, file: file, data: Data(data), offset: offset)
 }
 
-func writeAllBytesChunked(context: Bridge.Context, file: Bridge.FileHandle, data: [UInt8]) throws -> Int {
-    let chunkSize = min(65536, Int(Bridge.getMaxWriteSize(context: context)))
+func writeAllBytesChunked(context: Bridge.Context, file: Bridge.FileHandle, data: [UInt8]) async throws -> Int {
+    let chunkSize = try await min(65536, Int(Bridge.getMaxWriteSize(context: context)))
     var offset = 0
     while offset < data.count {
         let chunk = Array(data[offset ..< min(offset + chunkSize, data.count)])
-        let n = try writeAllBytesAt(context: context, file: file, data: chunk, offset: UInt64(offset))
+        let n = try await writeAllBytesAt(context: context, file: file, data: chunk, offset: UInt64(offset))
         guard n > 0 else {
             throw SMB.Error.unknown(
                 operation: "smb2_write",

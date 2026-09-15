@@ -19,7 +19,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │       │   │   ├── Int.swift                 # Extensions to `Int`.
 │       │   │   ├── String?.swift             # Extensions to `String?`.
 │       │   │   └── SMB.Error.swift           # SMB.Error bridge factory and check() helper.
-│       │   ├── Bridge.swift                  # High-level synchronous POSIX-like bridge calls.
+│       │   ├── Bridge.swift                  # High-level async POSIX-like bridge calls on per-context queues.
 │       │   ├── BridgeTypes.swift             # Bridge structs/enums/options nested under `extension Bridge`.
 │       │   ├── Bridge-Links.swift            # Symlink read/create bridge calls.
 │       │   ├── Bridge-Locks.swift            # Byte-range lock bridge calls.
@@ -36,7 +36,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │           ├── File.swift                    # OOP file handle.
 │           ├── Directory.swift               # OOP directory handle.
 │           ├── Directory-Conv.swift          # Directory convenience methods built from primitives.
-│           ├── Notify.swift                  # Delegate-based public SMB directory notifications.
+│           ├── Notify.swift                  # AsyncSequence-based public SMB directory notifications.
 │           ├── Types.swift                   # Public value types.
 │           ├── Error.swift                   # Public error type.
 │           ├── Error-InvalidArgument.swift   # Typed invalid-argument operations and causes.
@@ -80,15 +80,21 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 - `Bridge` is a `class` (not a namespace enum) with all-static methods. All bridge types (e.g., `Context`, `FileHandle`, `OpenOptions`) are nested inside `Bridge` via `extension Bridge { ... }` in `BridgeTypes.swift`.
 - Outside the `Bridge` class, reference bridge types with the `Bridge.` prefix (e.g., `Bridge.SMB2Context`). Inside the class or its extensions, types resolve without prefix.
-- Keep `Bridge.swift` focused on the high-level synchronous POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`.
+- Keep `Bridge.swift` focused on the high-level POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`, exposed as `async` functions.
 - Bridge functions should expose Swift-shaped arguments and return values (`String`, `Bool`, `UInt64`, `Int64`, Swift structs/enums/options) and convert to C types only at the boundary.
 - Functions that correspond directly to C `get` functions should keep `get` in the Swift bridge name, even though this is not typical Swift style.
 - Do not expose raw C flags as plain integers. Use Swift `enum` or `OptionSet` types instead. Examples: `Bridge.SMB2OpenFlags`, `Bridge.SMB2SecurityMode`, `Bridge.SMB2AuthenticationMethod`.
 - C return values that signal errors through negative `errno` values or `NULL` should become `throw`.
 - Keep SMB/NT status handling granular. Public status values live under `SMB.SMBStatus` and `SMB.SMBStatusSeverity`; unknown NTSTATUS values should still preserve their raw value in `SMB.Error.unknownNTStatus`.
-- Passing `Bridge.Context` as a normal parameter is preferred for now. It is a lightweight Swift wrapper around a C pointer; avoid `inout`, `borrowing`, or `consuming` unless the type is redesigned for explicit ownership.
+- `Bridge.Context` is a `final class` that owns the C pointer, the context's serial queue, and a queue-confined liveness flag. Pass it as a normal parameter; avoid `inout`, `borrowing`, or `consuming`.
 - Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
-- `libsmb2` contexts are not safe to service concurrently. Public API calls should go through `Bridge.sync { ... }` so bridge work is serialized behind the bridge queue. Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) must also go through this path.
+- `libsmb2` contexts are not safe to service concurrently. Every bridge function that touches a shared context is `async` and runs its body on that context's serial queue through `Bridge.perform(on:_:)`. The private `_name` functions hold the synchronous C calls and must only run on the context queue, or on a context that is never shared (such as `Bridge.parseURL`'s private context). Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) follow the same rule.
+- Operations on different contexts run in parallel. `smb2_init_context` and `smb2_destroy_context` mutate process-wide libsmb2 state (the `active_contexts` list and the `srandom` seed), so they run under `Bridge.lifecycleLock`. When wrapping new libsmb2 APIs, check them for other process-wide state and serialize it the same way.
+- Known, accepted risk: the fork's SwiftPM `include/apple/config.h` and `include/linux/config.h` do not enable `HAVE_ARC4RANDOM_BUF`/`HAVE_GETRANDOM`, so `smb2_random_bytes` falls back to `random()`. `smb3_encrypt_pdu` calls it for every sealed PDU, and Darwin's `random()` is not thread-safe, so sealed connections running in parallel race on its state (the fallback also makes nonces predictable). Fixing it means enabling a strong random source in those fork config headers.
+- Never run blocking libsmb2 calls on the Swift concurrency cooperative thread pool; always hop to the context queue.
+- `smb2_connect_share` treats the command timeout as a connection window checked against `time(NULL)` before the event that completes the TCP connect is handled, so a timeout of `0` fails any connect that crosses a wall-clock second boundary ("Timeout expired and no connection exists"; seen when many connections open concurrently). `Bridge._connectShare` therefore connects with `Bridge.defaultConnectTimeoutSeconds` when the timeout is `0` and restores `0` afterwards; keep that when touching the connect path.
+- `Bridge.perform(on:_:)` throws ``SMB/Error/operationRequestedAfterConnectionClosed`` once the context has been destroyed instead of touching freed memory. It does not check task cancellation, so cleanup (closing handles, removing temporary files) still runs in cancelled tasks.
+- `deinit` cannot await. Use the `…InBackground` helpers (`teardownInBackground`, `closeInBackground`, `closeDirInBackground`, `cancelInBackground`), which enqueue on the context queue; FIFO order guarantees that handle cleanup enqueued first runs before a later teardown.
 - The bridge intentionally exposes a one-shot raw-PDU notification primitive. The public layer owns the directory handle, re-arms requests for continuous watching, cancels pending requests before close/context teardown, and services the context while the watcher is active.
 - Keep notify response decoding defensive. Do not call the recursive C `smb2_decode_filenotifychangeinformation` helper from public watcher paths unless it has been audited for malformed server data; the Swift decoder currently validates entry bounds, monotonic offsets, and an entry-count cap.
 - Retry `poll` on `EINTR` in Swift-owned service loops.
@@ -98,6 +104,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - `SMB` is a `public final class` with no public initializers. Use static methods for top-level operations such as `connect`, `listShares`, and `parseURL`.
 - Keep `SMB.Connection`, `SMB.File`, `SMB.Directory`, and `SMB.NotifyWatcher` as OOP handles nested under `SMB`.
 - Use Swift strict concurrency checking. Public handle types should conform to `Sendable`; protect mutable/internal state with `Mutex`/`NSLock`-backed wrappers such as `Protected` and `ProtectedHandle` under `Sources/SwiftSMB/PublicAPI/Util`.
+- All public operations that reach the server are `async`. Pure value operations (`SMB.parseURL`, validation, value types) stay synchronous. Long loops (`File.read`/`write`, transfers, recursive `removeItem`) call `Task.checkCancellation()` between steps.
 - Prefer friendly API behavior when it is unambiguous. For example, clamp requested transfer block sizes to the server maximum and return the accepted value from accepted block-size helpers.
 - Keep credentials out of `SMB.Configuration`; pass them to connection/listing entry points.
 - Do not expose password-file APIs publicly.
@@ -105,9 +112,9 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
 - File convenience methods are named `loadFile(at:)` and `dumpToFile(_:to:)`; avoid reintroducing the older `readFile`/`writeFile` names.
 - Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
-- File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe.
-- Public notifications are delegate-based: `SMB.Connection.watchDirectory(...)` returns `SMB.NotifyWatcher`, which calls `SMB.NotifyWatcherDelegate`. Keep the delegate weak, deliver callbacks on the requested queue, and keep watcher cancellation idempotent.
-- `SMB.NotifyWatcherDelegate.notifyWatcherDidStart(_:)` is used by tests and clients to know the first notify request has been armed; do not replace it with sleeps or timing assumptions.
+- File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe. The helpers resume awaiting callers from their queue instead of blocking them. Task cancellation is checked between blocks and throws `CancellationError`; returning `false` from the progress closure still cancels without throwing.
+- Public notifications are an `AsyncSequence`: `SMB.Connection.watchDirectory(...)` is `async` and returns an already-armed `SMB.NotifyWatcher` whose elements are `[SMB.NotifyChange]` batches. The notification loop runs in a `Task` that hops to the context queue. The iterator retains its watcher so ARC cannot cancel it mid-iteration. Cancellation (`cancel()`, cancelling the iterating task, disconnect, or deinit) is idempotent and ends iteration normally; errors end it by throwing.
+- `watchDirectory` returns only after the first notify request has been armed. Tests and clients rely on that instead of sleeps or timing assumptions.
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+.swift` for consistent debug output.
 - `Connection-Conv-Transfer.swift`'s private helpers are file-scope free functions taking `on connection: SMB.Connection` as their first argument, while `Connection-Conv.swift`'s private helpers are `private extension SMB.Connection` methods. Both styles are intentional — don't "fix" one file to match the other.
 - `SMB.Configuration.Dialect` (negotiation preference, includes `.any`/`.anySMB2`/`.anySMB3`) and `SMB.NegotiatedDialect` (the actual dialect a server negotiated, with an `.unknown(UInt16)` fallback) are intentionally separate types with different case sets — don't merge them.
@@ -126,6 +133,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Dockerfile with SAMBA configuration in `TestServer/Dockerfile`
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
+- Integration tests that wait for asynchronous events use `withTimeout(seconds:_:)` from `Tests/SwiftSMBTests/Utils` rather than sleeps.
 
 ## Dependency Updates
 
@@ -145,6 +153,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ## Concurrency & Dispatch
 
+- **Never run blocking libsmb2 or disk work on the Swift concurrency cooperative thread pool.** Hop to a dedicated serial queue and resume the caller with a checked continuation.
 - **Never use `DispatchQueue.global()`.** The global concurrent queue has a limited thread pool subject to exhaustion under heavy system load. Blocking work dispatched there can hang when all threads are occupied, because a caller waiting on a semaphore or pipe may never see the dispatched block execute. Use dedicated serial dispatch queues (created with `DispatchQueue(label:)`) for all async work, especially producer/consumer patterns that block the caller for backpressure, like the transfer disk workers.
 
 ## Code Style & Commits

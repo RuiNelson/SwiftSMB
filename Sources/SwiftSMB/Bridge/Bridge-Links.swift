@@ -44,8 +44,8 @@ extension Bridge {
         context: Context,
         path: String,
         bufferSize: Int = 16384
-    ) throws -> String {
-        try Bridge.sync {
+    ) async throws -> String {
+        try await perform(on: context) {
             try _readLink(context: context, path: path, bufferSize: bufferSize)
         }
     }
@@ -177,8 +177,8 @@ extension Bridge {
         context: Context,
         path: String,
         destination: String
-    ) throws {
-        try Bridge.sync {
+    ) async throws {
+        try await perform(on: context) {
             try _makeLink(context: context, path: path, destination: destination)
         }
     }
@@ -201,8 +201,8 @@ extension Bridge {
         context: Context,
         existingPath: String,
         newPath: String
-    ) throws {
-        try Bridge.sync {
+    ) async throws {
+        try await perform(on: context) {
             try _makeHardLink(context: context, existingPath: existingPath, newPath: newPath)
         }
     }

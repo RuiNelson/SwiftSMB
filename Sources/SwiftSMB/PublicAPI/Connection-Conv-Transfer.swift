@@ -69,7 +69,9 @@ public extension SMB.Connection {
     /// new data is appended. For non-atomic downloads, `local` is truncated to the resume offset and new data is
     /// appended directly.
     ///
-    /// If `continuation` returns `false`, the method cancels the download and returns normally.
+    /// If `continuation` returns `false`, the method cancels the download and returns normally. If the task is
+    /// cancelled, the download stops between blocks and throws `CancellationError`; cleanup is the same as for a
+    /// failure.
     ///
     /// - Parameters:
     ///   - remote: The share-relative source file path.
@@ -93,19 +95,19 @@ public extension SMB.Connection {
         maxBlockSize: UInt64? = nil,
         atomic: Bool = true,
         continuation: @escaping FileProgress
-    ) throws {
+    ) async throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
         let offset = from.offsetValue
         let operation = SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile
 
-        let remoteStat = try validateRemoteFile(
+        let remoteStat = try await validateRemoteFile(
             on: self,
             at: remote,
             minimumSize: offset,
             operation: operation
         )
         let totalBytes = remoteStat.size - offset
-        let blockSize = try transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
+        let blockSize = try await transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
 
         try assertValidLocalDestination(local, operation: operation)
 
@@ -128,9 +130,9 @@ public extension SMB.Connection {
                 try? FileManager.default.removeItem(at: tempFile)
             }
         }
-        defer { try? writer.finish() }
+        defer { try? await writer.finish() }
 
-        let result = try transferRemoteFileToWriter(
+        let result = try await transferRemoteFileToWriter(
             on: self,
             remote: remote,
             writer: writer,
@@ -141,7 +143,7 @@ public extension SMB.Connection {
             continuation: continuation
         )
 
-        try writer.finish()
+        try await writer.finish()
         guard !result.cancelled else { return }
         if let tempFile {
             try moveTempFile(tempFile, to: local)
@@ -161,7 +163,8 @@ public extension SMB.Connection {
     /// existing remote file must contain at least that many bytes; that prefix is copied into the temporary remote file
     /// before the remaining local bytes are uploaded.
     ///
-    /// If `continuation` returns `false`, the method cancels the upload and returns normally.
+    /// If `continuation` returns `false`, the method cancels the upload and returns normally. If the task is cancelled,
+    /// the upload stops between blocks and throws `CancellationError`; cleanup is the same as for a failure.
     ///
     /// - Parameters:
     ///   - local: The source file URL on local storage.
@@ -187,12 +190,12 @@ public extension SMB.Connection {
         makePath: Bool = true,
         atomic: Bool = true,
         continuation: @escaping FileProgress
-    ) throws {
+    ) async throws {
         let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
         let offset = from.offsetValue
         let operation = SMB.Error.InvalidArgumentOperation.smbConnectionUploadFile
 
-        try validateOrCreateRemoteParent(
+        try await validateOrCreateRemoteParent(
             on: self,
             for: remote,
             makePath: makePath,
@@ -208,14 +211,14 @@ public extension SMB.Connection {
         }
 
         let totalBytes = fileSize - offset
-        let blockSize = try transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
+        let blockSize = try await transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
 
         let target: String
         let openOptions: SMB.File.OpenOptions
         if atomic {
-            target = try uniqueRemoteTemporaryPath(near: remote, on: self)
+            target = try await uniqueRemoteTemporaryPath(near: remote, on: self)
             openOptions = (offset == 0) ? [.create, .exclusive] : []
-            try prepareAtomicUploadTarget(
+            try await prepareAtomicUploadTarget(
                 on: self,
                 remote: remote,
                 target: target,
@@ -232,20 +235,25 @@ public extension SMB.Connection {
         var shouldRemoveRemoteTemp = atomic
         defer {
             if shouldRemoveRemoteTemp {
-                try? removeFile(at: target)
+                try? await removeFile(at: target)
             }
         }
 
         if offset > 0 {
-            try validateRemoteFile(on: self, at: target, minimumSize: offset, operation: operation)
+            try await validateRemoteFile(on: self, at: target, minimumSize: offset, operation: operation)
         }
         else {
-            try validateRemoteDestinationForNewFile(on: self, at: target, options: openOptions, operation: operation)
+            try await validateRemoteDestinationForNewFile(
+                on: self,
+                at: target,
+                options: openOptions,
+                operation: operation
+            )
         }
 
         let reader = try ReadAheadFileReader(reading: local, offset: offset, blockSize: blockSize)
 
-        let result = try transferReaderToRemoteFile(
+        let result = try await transferReaderToRemoteFile(
             on: self,
             reader: reader,
             target: target,
@@ -258,9 +266,9 @@ public extension SMB.Connection {
         guard !result.cancelled else { return }
 
         if atomic {
-            try commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
+            try await commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
             shouldRemoveRemoteTemp = false
-            try changeAttributes(at: remote) { $0.subtracting(.temporary) }
+            try await changeAttributes(at: remote) { $0.subtracting(.temporary) }
         }
 
         _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
@@ -321,22 +329,23 @@ private func transferRemoteFileToWriter(
     totalBytes: UInt64,
     options: SMB.File.OpenOptions,
     continuation: SMB.Connection.FileProgress
-) throws -> TransferResult {
-    let file = try connection.openFile(at: remote, accessMode: .readOnly, options: options)
-    defer { try? file.close() }
+) async throws -> TransferResult {
+    let file = try await connection.openFile(at: remote, accessMode: .readOnly, options: options)
+    defer { try? await file.close() }
 
     var remoteOffset = startingOffset
     var tracker = ProgressTracker(totalBytes: totalBytes)
 
     while true {
+        try Task.checkCancellation()
         let blockStart = DispatchTime.now()
-        _ = try file.seek(offset: Int64(remoteOffset), from: .start)
-        let data = try file.read(upTo: Int64(blockSize))
+        _ = try await file.seek(offset: Int64(remoteOffset), from: .start)
+        let data = try await file.read(upTo: Int64(blockSize))
         guard !data.isEmpty else {
             return tracker.result(cancelled: false)
         }
 
-        try writer.append(data)
+        try await writer.append(data)
         remoteOffset += UInt64(data.count)
 
         guard tracker.record(bytes: UInt64(data.count), blockStart: blockStart, continuation: continuation) else {
@@ -356,21 +365,22 @@ private func transferReaderToRemoteFile(
     startingOffset: UInt64,
     totalBytes: UInt64,
     continuation: SMB.Connection.FileProgress
-) throws -> TransferResult {
-    let file = try connection.openFile(at: target, accessMode: .writeOnly, options: openOptions)
-    defer { try? file.close() }
+) async throws -> TransferResult {
+    let file = try await connection.openFile(at: target, accessMode: .writeOnly, options: openOptions)
+    defer { try? await file.close() }
 
     var remoteOffset = startingOffset
     var tracker = ProgressTracker(totalBytes: totalBytes)
 
     while true {
-        let data = try reader.next()
+        try Task.checkCancellation()
+        let data = try await reader.next()
         guard !data.isEmpty else {
             return tracker.result(cancelled: false)
         }
 
         var cancelled = false
-        try writeEntireData(data, to: file, atOffset: remoteOffset) { written, blockStart in
+        try await writeEntireData(data, to: file, atOffset: remoteOffset) { written, blockStart in
             remoteOffset += UInt64(written)
             if !tracker.record(bytes: UInt64(written), blockStart: blockStart, continuation: continuation) {
                 cancelled = true
@@ -387,7 +397,7 @@ private func transferReaderToRemoteFile(
 /// Appends downloaded blocks to a local file on a dedicated serial queue so disk writes overlap network reads.
 ///
 /// ``append(_:)`` waits for the previously queued block to reach disk before queuing the next one, bounding the
-/// buffered data to two blocks.
+/// buffered data to two blocks. Callers suspend instead of blocking while they wait.
 private final class BackgroundFileWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.disk")
     private let handle: FileHandle
@@ -431,42 +441,56 @@ private final class BackgroundFileWriter: @unchecked Sendable {
     }
 
     deinit {
-        try? finish()
+        // Queued writes retain `self`, so none are pending here.
+        if !isFinished {
+            try? handle.close()
+        }
     }
 
-    /// Queues a block for writing, blocking until the previously queued block is on disk. Throws when an earlier queued
-    /// write failed.
-    func append(_ data: Data) throws {
-        try queue.sync {
-            if let error = pendingError {
-                throw error
-            }
-        }
-        queue.async {
-            do {
-                try self.handle.write(contentsOf: data)
-            }
-            catch {
-                self.pendingError = self.pendingError ?? error
+    /// Queues a block for writing once the previously queued block is on disk. Throws when an earlier queued write
+    /// failed.
+    func append(_ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                if let error = self.pendingError {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                // Let the caller fetch the next block while this one is written.
+                continuation.resume()
+                do {
+                    try self.handle.write(contentsOf: data)
+                }
+                catch {
+                    self.pendingError = self.pendingError ?? error
+                }
             }
         }
     }
 
     /// Waits for queued writes to complete and closes the file, throwing when any of them failed. Safe to call more
     /// than once.
-    func finish() throws {
-        try queue.sync {
-            guard !isFinished else { return }
-            isFinished = true
-            do {
-                try handle.close()
+    func finish() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                continuation.resume(with: Result { try self.finishOnQueue() })
             }
-            catch {
-                pendingError = pendingError ?? error
-            }
-            if let error = pendingError {
-                throw error
-            }
+        }
+    }
+
+    /// Closes the file once and reports the first write or close error. Must run on `queue`.
+    private func finishOnQueue() throws {
+        guard !isFinished else { return }
+        isFinished = true
+        do {
+            try handle.close()
+        }
+        catch {
+            pendingError = pendingError ?? error
+        }
+        if let error = pendingError {
+            throw error
         }
     }
 }
@@ -489,8 +513,12 @@ private final class ReadAheadFileReader: @unchecked Sendable {
 
     /// Returns the next block, scheduling the read of the following block before returning. An empty block signals
     /// end-of-file. Throws when the read-ahead failed.
-    func next() throws -> Data {
-        let data = try queue.sync { buffered }.get()
+    func next() async throws -> Data {
+        let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Swift.Error>) in
+            queue.async {
+                continuation.resume(with: self.buffered)
+            }
+        }
         if !data.isEmpty {
             scheduleRead()
         }
@@ -512,8 +540,8 @@ private func validateRemoteDestinationForNewFile(
     at path: String,
     options: SMB.File.OpenOptions,
     operation: SMB.Error.InvalidArgumentOperation
-) throws {
-    switch try connection.itemExists(at: path) {
+) async throws {
+    switch try await connection.itemExists(at: path) {
     case .false:
         guard options.contains(.create) else {
             throw SMB.Error.posix(
@@ -624,9 +652,9 @@ private func prepareAtomicUploadTarget(
     offset: UInt64,
     blockSize: Int,
     operation: SMB.Error.InvalidArgumentOperation
-) throws {
+) async throws {
     guard offset > 0 else {
-        switch try connection.itemExists(at: remote) {
+        switch try await connection.itemExists(at: remote) {
         case .false, .file, .link:
             return
         case .directory, .other:
@@ -637,32 +665,33 @@ private func prepareAtomicUploadTarget(
         }
     }
 
-    _ = try validateRemoteFile(
+    _ = try await validateRemoteFile(
         on: connection,
         at: remote,
         minimumSize: offset,
         operation: operation
     )
 
-    let input = try connection.openFile(at: remote, accessMode: .readOnly)
-    defer { try? input.close() }
-    let output = try connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
-    defer { try? output.close() }
+    let input = try await connection.openFile(at: remote, accessMode: .readOnly)
+    defer { try? await input.close() }
+    let output = try await connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
+    defer { try? await output.close() }
 
-    try connection.changeAttributes(at: target) { $0.union(.temporary) }
+    try await connection.changeAttributes(at: target) { $0.union(.temporary) }
 
     var copied: UInt64 = 0
     while copied < offset {
+        try Task.checkCancellation()
         let requested = min(UInt64(blockSize), offset - copied)
-        _ = try input.seek(offset: Int64(copied), from: .start)
-        let data = try input.read(upTo: Int64(requested))
+        _ = try await input.seek(offset: Int64(copied), from: .start)
+        let data = try await input.read(upTo: Int64(requested))
         guard !data.isEmpty else {
             throw SMB.Error.invalidArgument(
                 cause: .remoteFileShorterThanResumeOffset,
                 onOperation: operation
             )
         }
-        try writeEntireData(data, to: output, atOffset: copied)
+        try await writeEntireData(data, to: output, atOffset: copied)
         copied += UInt64(data.count)
     }
 }
@@ -676,13 +705,13 @@ private func writeEntireData(
     to file: SMB.File,
     atOffset baseOffset: UInt64,
     onBlockWritten: (UInt64, DispatchTime) -> Void = { _, _ in }
-) throws {
+) async throws {
     var dataOffset = 0
     var fileOffset = baseOffset
     while dataOffset < data.count {
         let blockStart = DispatchTime.now()
-        _ = try file.seek(offset: Int64(fileOffset), from: .start)
-        let written = try file.write(data.subdata(in: dataOffset ..< data.count))
+        _ = try await file.seek(offset: Int64(fileOffset), from: .start)
+        let written = try await file.write(data.subdata(in: dataOffset ..< data.count))
         guard written > 0 else {
             throw SMB.Error.unknown(
                 operation: "smb2_write",
@@ -703,14 +732,14 @@ private func commitAtomicUpload(
     to remote: String,
     on connection: SMB.Connection,
     operation: SMB.Error.InvalidArgumentOperation
-) throws {
+) async throws {
     let backup: String?
-    switch try connection.itemExists(at: remote) {
+    switch try await connection.itemExists(at: remote) {
     case .false:
         backup = nil
     case .file, .link:
-        let backupPath = try uniqueRemoteTemporaryPath(near: remote, on: connection)
-        try connection.move(from: remote, to: backupPath)
+        let backupPath = try await uniqueRemoteTemporaryPath(near: remote, on: connection)
+        try await connection.move(from: remote, to: backupPath)
         backup = backupPath
     case .directory, .other:
         throw SMB.Error.invalidArgument(
@@ -720,17 +749,17 @@ private func commitAtomicUpload(
     }
 
     do {
-        try connection.move(from: target, to: remote)
+        try await connection.move(from: target, to: remote)
     }
     catch {
         if let backup {
-            try? connection.move(from: backup, to: remote)
+            try? await connection.move(from: backup, to: remote)
         }
         throw error
     }
 
     if let backup {
-        try? connection.removeFile(at: backup)
+        try? await connection.removeFile(at: backup)
     }
 }
 
@@ -766,8 +795,8 @@ private func validateRemoteFile(
     at path: String,
     minimumSize: UInt64,
     operation: SMB.Error.InvalidArgumentOperation
-) throws -> SMB.Stat {
-    let stat = try connection.stat(at: path)
+) async throws -> SMB.Stat {
+    let stat = try await connection.stat(at: path)
     guard stat.type == .file else {
         throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: operation)
     }
@@ -786,11 +815,11 @@ private func validateOrCreateRemoteParent(
     for path: String,
     makePath: Bool,
     operation: SMB.Error.InvalidArgumentOperation
-) throws {
+) async throws {
     let parent = path.removingLastPathComponent
     guard !parent.isEmpty else { return }
 
-    let existence = try connection.itemExists(at: parent)
+    let existence = try await connection.itemExists(at: parent)
     switch existence {
     case .directory:
         return
@@ -801,7 +830,7 @@ private func validateOrCreateRemoteParent(
                 onOperation: operation
             )
         }
-        try connection.makeDirectory(at: parent, makePath: true)
+        try await connection.makeDirectory(at: parent, makePath: true)
     case .file, .link, .other:
         throw SMB.Error.invalidArgument(
             cause: .remoteParentPathIsNotADirectory,
@@ -846,12 +875,12 @@ private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOpe
 }
 
 /// Builds a temporary remote path that does not currently exist.
-private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.Connection) throws -> String {
+private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.Connection) async throws -> String {
     for _ in 0 ..< 100 {
         let name = "partial-xfer.\(UUID().uuidString).tmp"
         let directory = remote.removingLastPathComponent
         let candidate = directory.isEmpty ? name : directory.appendingPathComponent(name)
-        if try connection.itemExists(at: candidate) == .false {
+        if try await connection.itemExists(at: candidate) == .false {
             return candidate
         }
     }

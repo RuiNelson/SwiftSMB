@@ -7,8 +7,8 @@ All examples assume you already have an open ``SMB.Connection``:
 ```swift
 let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
-let connection = try SMB.connect(server: server, credentials: credentials, share: "Documents")
-defer { try? connection.disconnect() }
+let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
+defer { try? await connection.disconnect() }
 ```
 
 ## Reading file attributes
@@ -16,7 +16,7 @@ defer { try? connection.disconnect() }
 ``SMB.Connection.attributes(at:)`` returns the SMB file attributes for a path:
 
 ```swift
-let attrs = try connection.attributes(at: "Anna/Inbox/report.pdf")
+let attrs = try await connection.attributes(at: "Anna/Inbox/report.pdf")
 
 if attrs.contains(.hidden) {
     print("File is hidden")
@@ -53,17 +53,17 @@ Available attributes include:
 
 ```swift
 // Make a file hidden and read-only
-try connection.changeAttributes(at: "report.pdf") { attrs in
+try await connection.changeAttributes(at: "report.pdf") { attrs in
     attrs.union([.hidden, .readOnly])
 }
 
 // Remove the hidden flag
-try connection.changeAttributes(at: "report.pdf") { attrs in
+try await connection.changeAttributes(at: "report.pdf") { attrs in
     attrs.subtracting(.hidden)
 }
 
 // Toggle the archive flag
-try connection.changeAttributes(at: "report.pdf") { attrs in
+try await connection.changeAttributes(at: "report.pdf") { attrs in
     attrs.symmetricDifference(.archive)
 }
 ```
@@ -78,17 +78,17 @@ The closure receives the current attributes and must return the new set.
 let now = Date()
 
 // Update only the modification time
-try connection.changeDate(at: "report.pdf", write: now)
+try await connection.changeDate(at: "report.pdf", write: now)
 
 // Update creation and last-access time
-try connection.changeDate(
+try await connection.changeDate(
     at: "report.pdf",
     creation: now,
     access: now
 )
 
 // Touch all timestamps
-try connection.changeDate(
+try await connection.changeDate(
     at: "report.pdf",
     creation: now,
     change: now,
@@ -102,7 +102,7 @@ try connection.changeDate(
 Use ``SMB.Connection.stat(at:)`` to read the current metadata:
 
 ```swift
-let info = try connection.stat(at: "report.pdf")
+let info = try await connection.stat(at: "report.pdf")
 
 print("Created:      \(info.birthTime)")
 print("Modified:     \(info.modificationTime)")
@@ -115,7 +115,7 @@ print("Meta changed: \(info.changeTime)")
 ``SMB.Connection.statFilesystem(at:)`` returns capacity and usage information for the share:
 
 ```swift
-let fs = try connection.statFilesystem()
+let fs = try await connection.statFilesystem()
 
 print("Total space:  \(UInt64(fs.blockSize) * fs.blocks)")
 print("Free space:   \(fs.freeBytes)")
@@ -129,16 +129,16 @@ print("Max filename: \(fs.maximumNameLength)")
 
 ```swift
 // Empty a log file
-try connection.truncateFile(at: "app.log", toLength: 0)
+try await connection.truncateFile(at: "app.log", toLength: 0)
 
 // Shrink a file to 1024 bytes
-try connection.truncateFile(at: "data.bin", toLength: 1024)
+try await connection.truncateFile(at: "data.bin", toLength: 1024)
 ```
 
 You can also truncate through an open file handle:
 
 ```swift
-let file = try connection.openFile(at: "data.bin", accessMode: .readWrite)
-defer { try? file.close() }
-try file.truncate(toLength: 1024)
+let file = try await connection.openFile(at: "data.bin", accessMode: .readWrite)
+defer { try? await file.close() }
+try await file.truncate(toLength: 1024)
 ```
