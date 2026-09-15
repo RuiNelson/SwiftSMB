@@ -100,7 +100,7 @@ extension Bridge {
 
         let state = MakeLinkState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { Unmanaged<MakeLinkState>.fromOpaque(callbackData).release() }
+        defer { releaseWhenFinished(state, callbackData) }
 
         try reparseBuffer.withUnsafeMutableBytes { buffer in
             try path.withCString { pathPointer in

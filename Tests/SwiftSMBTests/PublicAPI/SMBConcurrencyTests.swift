@@ -33,4 +33,35 @@ struct SMBConcurrencyTests {
             }
         }
     }
+
+    /// `disconnect()` used to disconnect, close, and destroy the context in separate queue operations; an operation
+    /// that
+    /// slipped in after the close found no connection and serviced the context forever.
+    @Test("disconnect while operations are in flight completes")
+    func disconnectWhileOperationsAreInFlightCompletes() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        let path = uniquePath("in-flight") + ".txt"
+        try await connection.dumpToFile(Data("in flight".utf8), to: path)
+
+        try await withTimeout(seconds: 20) {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for _ in 0 ..< 16 {
+                    group.addTask {
+                        for _ in 0 ..< 20 {
+                            // Each call either succeeds or throws once the connection is closed; it must never hang.
+                            _ = try? await connection.attributes(at: path)
+                        }
+                    }
+                }
+                group.addTask {
+                    try await connection.disconnect()
+                }
+                try await group.waitForAll()
+            }
+        }
+
+        let cleanup = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        try? await cleanup.removeFile(at: path)
+        try? await cleanup.disconnect()
+    }
 }

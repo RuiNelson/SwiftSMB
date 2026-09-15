@@ -66,7 +66,7 @@ extension Bridge {
 
             let state = LockState()
             let callbackData = Unmanaged.passRetained(state).toOpaque()
-            defer { Unmanaged<LockState>.fromOpaque(callbackData).release() }
+            defer { releaseWhenFinished(state, callbackData) }
 
             try withUnsafeMutablePointer(to: &request) { requestPointer in
                 guard let pdu = smb2_cmd_lock_async(

@@ -114,6 +114,26 @@ struct SMBNotifyIntegrationTests {
         try await withTimeout(seconds: 5) { try await iteration.value }
     }
 
+    @Test("an idle watcher does not delay other operations on its connection")
+    func idleWatcherDoesNotDelayOtherOperations() async throws {
+        let connection = try await publicNotifyConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = uniquePath("notify-idle")
+        try await connection.makeDirectory(at: root)
+        defer { try? await connection.removeItem(at: root) }
+
+        let watcher = try await connection.watchDirectory(at: root)
+        defer { watcher.cancel() }
+
+        let start = Date()
+        for _ in 0 ..< 40 {
+            try await connection.echo()
+        }
+        // Holding the queue in a 50 ms poll made each request wait behind the watcher (about 2 seconds here).
+        #expect(Date().timeIntervalSince(start) < 1.0)
+    }
+
     @Test("releasing a connection with an active watcher ends iteration")
     func releasingConnectionWithActiveWatcherEndsIteration() async throws {
         let setupConnection = try await publicNotifyConnection()

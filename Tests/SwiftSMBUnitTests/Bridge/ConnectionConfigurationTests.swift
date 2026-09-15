@@ -7,6 +7,7 @@
 //
 
 @testable import SwiftSMB
+import Foundation
 import SMB2
 import Testing
 
@@ -88,6 +89,21 @@ struct ContextConfigurationTests {
         }
         // Destroying twice is a no-op.
         await Bridge.destroyContext(ctx)
+    }
+
+    @Test("commands on a context without a connection fail instead of hanging")
+    func commandsOnContextWithoutConnectionFail() async throws {
+        try await withFreshContext { ctx in
+            // `getFileAttributes` services the context itself; without a connection poll() ignores the descriptor.
+            // Destroying the context afterwards runs the queued callbacks, which must not touch freed state.
+            await #expect(throws: SMB.Error.posix(
+                code: POSIXErrorCode.ENOTCONN.rawValue,
+                operation: "smb2_service",
+                message: "No connection exists"
+            )) {
+                try await Bridge.getFileAttributes(context: ctx, path: "missing")
+            }
+        }
     }
 
     @Test("separate contexts can be created and destroyed concurrently")

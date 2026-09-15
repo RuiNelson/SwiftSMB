@@ -310,8 +310,7 @@ public extension SMB.Connection {
     ///   - filter: The kinds of changes to report.
     /// - Returns: An armed directory watcher.
     /// - Throws: ``SMB/Error`` if the connection is closed, `path` is invalid, or the directory cannot be opened or
-    /// armed
-    /// for notifications.
+    /// armed for notifications.
     func watchDirectory(
         at path: String = "",
         options: SMB.NotifyOptions = [],
@@ -339,23 +338,30 @@ public extension SMB.Connection {
 
         do {
             try await state.armRequest()
+            // `armRequest` only queues the request. Requests on a connection are sent and processed in order, so once
+            // this echo returns the server has registered the notify request, and changes made after this method
+            // returns are reported.
+            try await Bridge.echo(context: context)
         }
         catch {
-            try? await Bridge.close(context: context, file: directory)
+            await state.releaseResources()
             throw error
         }
 
-        state.start()
-        registerNotifyWatcher(state)
+        registerAndStartNotifyWatcher(state)
         return SMB.NotifyWatcher(path: path, state: state, stream: stream)
     }
 }
 
 extension SMB.Connection {
-    /// Registers a watcher so it can be cancelled before context teardown.
-    func registerNotifyWatcher(_ watcher: SMBNotifyWatcherState) {
+    /// Registers a watcher so it can be cancelled before context teardown, and starts its loop.
+    ///
+    /// Both happen under the registry lock, so a loop that finishes immediately cannot unregister before it has been
+    /// registered.
+    func registerAndStartNotifyWatcher(_ watcher: SMBNotifyWatcherState) {
         protectedNotifyWatchers.withLock { watchers in
             watchers[watcher.id] = watcher
+            watcher.start()
         }
     }
 
@@ -404,6 +410,9 @@ final class SMBNotifyWatcherState: Sendable {
         /// The task running the notification loop.
         var loop: Task<Void, Never>?
     }
+
+    /// How long the loop waits, off the context queue, between polls for notification replies.
+    private static let serviceIntervalNanoseconds: UInt64 = 50_000_000
 
     /// Stable identity used by the connection watcher registry.
     let id = UUID()
@@ -478,11 +487,14 @@ final class SMBNotifyWatcherState: Sendable {
         }
     }
 
-    /// Requests cancellation. The loop stops after its current bridge operation.
+    /// Requests cancellation. The loop stops after its current bridge operation; cancelling the loop task also ends its
+    /// wait between polls early.
     func cancel() {
-        protectedState.withLock { state in
+        let loop = protectedState.withLock { state in
             state.isCancellationRequested = true
+            return state.loop
         }
+        loop?.cancel()
     }
 
     /// Requests cancellation and waits until the loop has released its bridge resources.
@@ -518,7 +530,12 @@ final class SMBNotifyWatcherState: Sendable {
                     try await armRequest()
                 }
                 else {
+                    // Service without waiting on the context queue, then wait off the queue, so other operations on
+                    // this connection are not held up behind the watcher. `cancel()` ends the wait early.
                     try await Bridge.serviceNotifyEvents(context: context)
+                    if !hasCompletedResult {
+                        try? await Task.sleep(nanoseconds: Self.serviceIntervalNanoseconds)
+                    }
                 }
             }
         }
@@ -542,6 +559,13 @@ final class SMBNotifyWatcherState: Sendable {
     private var isCancellationRequested: Bool {
         protectedState.withLock { state in
             state.isCancellationRequested
+        }
+    }
+
+    /// Whether a completed bridge result is waiting to be handled.
+    private var hasCompletedResult: Bool {
+        protectedState.withLock { state in
+            state.completedResult != nil
         }
     }
 
@@ -585,7 +609,9 @@ final class SMBNotifyWatcherState: Sendable {
     }
 
     /// Cancels the pending notify request and closes the directory handle.
-    private func releaseResources() async {
+    ///
+    /// Called when the loop ends, and by `watchDirectory` when arming fails before the loop starts.
+    func releaseResources() async {
         let claim = claimResources()
         guard claim.claimed else {
             return

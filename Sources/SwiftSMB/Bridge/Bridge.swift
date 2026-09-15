@@ -110,13 +110,30 @@ class Bridge {
         }
     }
 
+    /// Disconnects from the share, then closes and destroys the context, as one queue operation.
+    ///
+    /// Doing all three in one step means no other operation can run on a disconnected or closed context in between;
+    /// operations enqueued afterwards throw ``SMB/Error/operationRequestedAfterConnectionClosed``. The context is
+    /// destroyed even if the disconnect fails, and the disconnect error is rethrown.
+    static func shutdown(_ context: Context) async throws {
+        try await perform(on: context) {
+            try _shutdown(context)
+        }
+    }
+
     /// Disconnects, closes, and destroys a context without waiting. Used from `deinit`, which cannot await.
     static func teardownInBackground(_ context: Context) {
         performInBackground(on: context) {
-            _ = try? _disconnectShare(context: context)
+            _ = try? _shutdown(context)
+        }
+    }
+
+    private static func _shutdown(_ context: Context) throws {
+        defer {
             smb2_close_context(context.raw)
             _destroyContext(context)
         }
+        try _disconnectShare(context: context)
     }
 
     // MARK: - Configuration
@@ -415,7 +432,7 @@ class Bridge {
     ) throws -> FileHandle {
         let state = OpenState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { Unmanaged<OpenState>.fromOpaque(callbackData).release() }
+        defer { releaseWhenFinished(state, callbackData) }
 
         let status: Int32
         if opLockLevel == .lease, let leaseKey, !leaseState.isEmpty {
@@ -950,9 +967,14 @@ class Bridge {
 
     static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
         var pfd = pollfd()
-        pfd.fd = smb2_get_fd(context.raw)
 
         while !state.isFinished {
+            // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
+            // synchronous wait loop fails in this case too.
+            pfd.fd = smb2_get_fd(context.raw)
+            guard pfd.fd >= 0 else {
+                throw noConnectionError(operation: "smb2_service")
+            }
             pfd.events = Int16(smb2_which_events(context.raw))
             var rc: Int32 = 0
             repeat {
@@ -970,6 +992,27 @@ class Bridge {
                 throw SMB.Error.fromBridge(context, operation: "smb2_service")
             }
         }
+    }
+
+    /// The error thrown when a context has no connection to service.
+    static func noConnectionError(operation: String) -> SMB.Error {
+        .posix(code: POSIXErrorCode.ENOTCONN.rawValue, operation: operation, message: "No connection exists")
+    }
+
+    /// Balances `Unmanaged.passRetained(state)` for a queued command once no callback can reference `state` any more.
+    ///
+    /// A queued PDU keeps its callback data until its last callback runs, which can happen after the caller stopped
+    /// waiting — for example with `SMB2_STATUS_SHUTDOWN` when the context is destroyed after a network error. If the
+    /// operation did not finish, `state` is deliberately leaked so that such a late callback never touches freed
+    /// memory.
+    static func releaseWhenFinished<State: PendingOperationState>(
+        _ state: State,
+        _ callbackData: UnsafeMutableRawPointer
+    ) {
+        guard state.isFinished else {
+            return
+        }
+        Unmanaged<State>.fromOpaque(callbackData).release()
     }
 
     private static func _setStats(
@@ -1003,7 +1046,7 @@ class Bridge {
 
         let state = SetStatsState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { Unmanaged<SetStatsState>.fromOpaque(callbackData).release() }
+        defer { releaseWhenFinished(state, callbackData) }
 
         try path.withCString { pathPointer in
             try withUnsafeMutablePointer(to: &info) { infoPointer in
@@ -1094,7 +1137,7 @@ class Bridge {
         let state = QueryAttributesState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
 
-        defer { Unmanaged<QueryAttributesState>.fromOpaque(callbackData).release() }
+        defer { releaseWhenFinished(state, callbackData) }
 
         return try path.withCString { pathPointer in
             var cr_req = smb2_create_request(

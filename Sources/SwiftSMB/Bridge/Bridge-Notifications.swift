@@ -17,7 +17,9 @@ extension Bridge {
     // MARK: - Notify Operations
 
     private static let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF
-    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 50
+    /// By default servicing does not wait for events, so it never holds the context queue; callers wait between polls
+    /// off the queue.
+    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 0
     private static let notifyChangeEntryHeaderLength = 12
     private static let maximumNotifyChangeEntryCount = 4096
 
@@ -105,6 +107,9 @@ extension Bridge {
     ) throws {
         var pfd = pollfd()
         pfd.fd = smb2_get_fd(context.raw)
+        guard pfd.fd >= 0 else {
+            throw noConnectionError(operation: "smb2_service")
+        }
         pfd.events = Int16(smb2_which_events(context.raw))
 
         var rc: Int32 = 0

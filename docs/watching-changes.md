@@ -112,4 +112,4 @@ The watcher also cancels automatically when it is deallocated and nothing is ite
 - Change batches that arrive while nothing is iterating are buffered until they are consumed.
 - The watcher re-arms itself automatically after each batch of changes, so it runs continuously until cancelled.
 - Watches are cancelled automatically when the parent ``SMB.Connection`` is disconnected or deallocated; iteration then ends normally.
-- A watcher takes turns with the other operations on its connection. If the same connection also runs long transfers, consider watching through a separate connection.
+- A watcher checks for replies about every 50 ms without holding its connection, so other operations on the same connection are not delayed noticeably.

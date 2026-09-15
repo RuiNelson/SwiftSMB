@@ -31,6 +31,12 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
+        /// The maximum read size negotiated when connecting. It does not change afterwards.
+        private let negotiatedMaxReadSize: UInt32
+
+        /// The maximum write size negotiated when connecting. It does not change afterwards.
+        private let negotiatedMaxWriteSize: UInt32
+
         private let protectedContext = ProtectedHandle<Bridge.Context>(
             label: "com.ruinelson.SwiftSMB.SMB.Connection.context"
         )
@@ -99,31 +105,44 @@ public extension SMB {
 
         /// The maximum read size advertised by the connected server.
         ///
+        /// The value is negotiated when connecting and does not change afterwards.
+        ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxReadSize: UInt32 {
             get async throws {
-                let context = try requireContext()
-                return try await Bridge.getMaxReadSize(context: context)
+                _ = try requireContext()
+                return negotiatedMaxReadSize
             }
         }
 
         /// The maximum write size advertised by the connected server.
         ///
+        /// The value is negotiated when connecting and does not change afterwards.
+        ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxWriteSize: UInt32 {
             get async throws {
-                let context = try requireContext()
-                return try await Bridge.getMaxWriteSize(context: context)
+                _ = try requireContext()
+                return negotiatedMaxWriteSize
             }
         }
         
         // MARK: Lifecycle
         
-        /// Creates a connection around an already connected bridge context.
-        init(server: Server, share: String, configuration: Configuration, context: Bridge.Context) {
+        /// Creates a connection around an already connected bridge context and its negotiated transfer limits.
+        init(
+            server: Server,
+            share: String,
+            configuration: Configuration,
+            context: Bridge.Context,
+            maxReadSize: UInt32,
+            maxWriteSize: UInt32
+        ) {
             self.server = server
             self.share = share
             self.configuration = configuration
+            negotiatedMaxReadSize = maxReadSize
+            negotiatedMaxWriteSize = maxWriteSize
             self.context = context
         }
         
@@ -145,12 +164,7 @@ public extension SMB {
         public func disconnect() async throws {
             await cancelNotifyWatchers()
             guard let context = takeContext() else { return }
-
-            defer {
-                await Bridge.closeContext(context)
-                await Bridge.destroyContext(context)
-            }
-            try await Bridge.disconnectShare(context: context)
+            try await Bridge.shutdown(context)
         }
 
         /// Disconnects from the share after waiting for in-flight operations to complete.

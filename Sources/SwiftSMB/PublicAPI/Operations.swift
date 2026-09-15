@@ -75,7 +75,16 @@ public extension SMB {
                 share: share,
                 user: credentials?.user
             )
-            return Connection(server: server, share: share, configuration: configuration, context: context)
+            let maxReadSize = try await Bridge.getMaxReadSize(context: context)
+            let maxWriteSize = try await Bridge.getMaxWriteSize(context: context)
+            return Connection(
+                server: server,
+                share: share,
+                configuration: configuration,
+                context: context,
+                maxReadSize: maxReadSize,
+                maxWriteSize: maxWriteSize
+            )
         }
         catch {
             await Bridge.destroyContext(context)

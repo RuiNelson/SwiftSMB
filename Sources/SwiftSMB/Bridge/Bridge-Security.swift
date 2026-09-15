@@ -182,7 +182,7 @@ extension Bridge {
         let storage = SecurityDescriptorStorage(value)
         let state = SecurityDescriptorState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { Unmanaged<SecurityDescriptorState>.fromOpaque(callbackData).release() }
+        defer { releaseWhenFinished(state, callbackData) }
 
         var desiredAccess: UInt32 = 0
         var additionalInformation: UInt32 = 0
