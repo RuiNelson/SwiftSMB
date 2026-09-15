@@ -26,11 +26,15 @@ public extension SMB {
         credentials: Credentials? = nil,
         configuration: Configuration = Configuration(),
         includeHidden: Bool = false
-    ) throws -> [Share] {
-        let context = try makeConfiguredContext(configuration: configuration, credentials: credentials, server: server)
-        defer { Bridge.destroyContext(context) }
+    ) async throws -> [Share] {
+        let context = try await makeConfiguredContext(
+            configuration: configuration,
+            credentials: credentials,
+            server: server
+        )
+        defer { await Bridge.destroyContext(context) }
 
-        return try Bridge.listShares(
+        return try await Bridge.listShares(
             context: context,
             server: server.address,
             user: credentials?.user,
@@ -55,22 +59,35 @@ public extension SMB {
         credentials: Credentials? = nil,
         share: String,
         configuration: Configuration = Configuration()
-    ) throws -> Connection {
+    ) async throws -> Connection {
         try validateShareName(share, operation: .smb2ConnectShare)
 
-        let context = try makeConfiguredContext(configuration: configuration, credentials: credentials, server: server)
+        let context = try await makeConfiguredContext(
+            configuration: configuration,
+            credentials: credentials,
+            server: server
+        )
 
         do {
-            try Bridge.connectShare(
+            try await Bridge.connectShare(
                 context: context,
                 server: server.address,
                 share: share,
                 user: credentials?.user
             )
-            return Connection(server: server, share: share, configuration: configuration, context: context)
+            let maxReadSize = try await Bridge.getMaxReadSize(context: context)
+            let maxWriteSize = try await Bridge.getMaxWriteSize(context: context)
+            return Connection(
+                server: server,
+                share: share,
+                configuration: configuration,
+                context: context,
+                maxReadSize: maxReadSize,
+                maxWriteSize: maxWriteSize
+            )
         }
         catch {
-            Bridge.destroyContext(context)
+            await Bridge.destroyContext(context)
             throw error
         }
     }
@@ -81,10 +98,7 @@ public extension SMB {
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
     static func parseURL(_ string: String) throws -> ParsedURL {
-        let context = try Bridge.createContext()
-        defer { Bridge.destroyContext(context) }
-
-        let parsedURL = try ParsedURL(Bridge.parseURL(string, context: context))
+        let parsedURL = try ParsedURL(Bridge.parseURL(string))
         try validateShareName(parsedURL.share, operation: .smb2ParseURL)
         if let path = parsedURL.path {
             try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
@@ -97,21 +111,21 @@ public extension SMB {
         configuration: Configuration,
         credentials: Credentials?,
         server: Server
-    ) throws -> Bridge.Context {
+    ) async throws -> Bridge.Context {
         let context = try Bridge.createContext()
         do {
-            try configure(context, with: configuration)
-            configureCredentials(credentials, server: server, on: context)
+            try await configure(context, with: configuration)
+            try await configureCredentials(credentials, server: server, on: context)
             return context
         }
         catch {
-            Bridge.destroyContext(context)
+            await Bridge.destroyContext(context)
             throw error
         }
     }
 
     /// Applies negotiation options to a context before connection.
-    internal static func configure(_ context: Bridge.Context, with configuration: Configuration) throws {
+    internal static func configure(_ context: Bridge.Context, with configuration: Configuration) async throws {
         if let timeout = configuration.timeout {
             guard timeout >= 0, timeout <= Int(Int32.max) else {
                 throw Error.invalidArgument(
@@ -119,32 +133,32 @@ public extension SMB {
                     onOperation: .smb2SetTimeout
                 )
             }
-            Bridge.setTimeout(Int32(timeout), on: context)
+            try await Bridge.setTimeout(Int32(timeout), on: context)
         }
 
         if let dialect = configuration.dialect {
-            Bridge.setVersion(dialect.bridgeValue, on: context)
+            try await Bridge.setVersion(dialect.bridgeValue, on: context)
         }
 
         if let securityMode = configuration.securityMode {
-            Bridge.setSecurityMode(securityMode.bridgeValue, on: context)
+            try await Bridge.setSecurityMode(securityMode.bridgeValue, on: context)
         }
 
         switch configuration.encryption {
         case .automatic:
             break
         case .disabled:
-            Bridge.setSeal(false, on: context)
+            try await Bridge.setSeal(false, on: context)
         case .required:
-            Bridge.setSeal(true, on: context)
+            try await Bridge.setSeal(true, on: context)
         }
 
         if let requiresSigning = configuration.requiresSigning {
-            Bridge.setSign(requiresSigning, on: context)
+            try await Bridge.setSign(requiresSigning, on: context)
         }
 
         if let authentication = configuration.authentication {
-            Bridge.setAuthentication(authentication.bridgeValue, on: context)
+            try await Bridge.setAuthentication(authentication.bridgeValue, on: context)
         }
     }
 
@@ -153,18 +167,18 @@ public extension SMB {
         _ credentials: Credentials?,
         server: Server,
         on context: Bridge.Context
-    ) {
+    ) async throws {
         if let user = credentials?.user {
-            Bridge.setUser(user, on: context)
+            try await Bridge.setUser(user, on: context)
         }
         if let password = credentials?.password {
-            Bridge.setPassword(password, on: context)
+            try await Bridge.setPassword(password, on: context)
         }
         if let domain = credentials?.domain ?? server.domain {
-            Bridge.setDomain(domain, on: context)
+            try await Bridge.setDomain(domain, on: context)
         }
         if let workstation = credentials?.workstation {
-            Bridge.setWorkstation(workstation, on: context)
+            try await Bridge.setWorkstation(workstation, on: context)
         }
     }
 }

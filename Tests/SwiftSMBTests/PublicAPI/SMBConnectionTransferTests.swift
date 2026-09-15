@@ -10,6 +10,12 @@ import Foundation
 import SwiftSMB
 import Testing
 
+/// The size of the large-transfer fixtures, in bytes.
+///
+/// Kept in a constant: comparing an optional against an arithmetic expression in `#expect` triggers a false
+/// AddressSanitizer `stack-buffer-overflow` with the Swift 6.4 toolchain.
+private let hundredMegabytes: UInt64 = 100 * 1024 * 1024
+
 final class SendableBox<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) {
@@ -20,26 +26,26 @@ final class SendableBox<Value>: @unchecked Sendable {
 @Suite(.tags(.integration))
 struct SMBConnectionTransferTests {
     @Test("leading slash in remote path is ignored")
-    func leadingSlashInRemotePathIsIgnored() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func leadingSlashInRemotePathIsIgnored() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("leading-slash") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        try connection.dumpToFile(Data("ok".utf8), to: "/" + path)
+        try await connection.dumpToFile(Data("ok".utf8), to: "/" + path)
 
-        #expect(try connection.loadFile(at: path) == Data("ok".utf8))
-        #expect(try connection.loadFile(at: "/" + path) == Data("ok".utf8))
+        await #expect(try connection.loadFile(at: path) == Data("ok".utf8))
+        await #expect(try connection.loadFile(at: "/" + path) == Data("ok".utf8))
     }
 
     @Test("upload file writes remote file")
-    func uploadFileWritesRemoteFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func uploadFileWritesRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
@@ -49,57 +55,58 @@ struct SMBConnectionTransferTests {
 
         let progress = SendableBox<[UInt64]>([])
         let latestSpeeds = SendableBox<[Double]>([])
-        try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, total, latestSpeed, _ in
-            progress.value.append(transferred)
-            latestSpeeds.value.append(latestSpeed)
-            #expect(total == UInt64(expected.count))
-            return true
-        }
+        try await connection
+            .uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, total, latestSpeed, _ in
+                progress.value.append(transferred)
+                latestSpeeds.value.append(latestSpeed)
+                #expect(total == UInt64(expected.count))
+                return true
+            }
 
-        #expect(try connection.loadFile(at: remote) == expected)
+        await #expect(try connection.loadFile(at: remote) == expected)
         #expect(progress.value.last == UInt64(expected.count))
         #expect(latestSpeeds.value.last == 0)
     }
 
     @Test("atomic upload replaces existing remote file")
-    func atomicUploadReplacesExistingRemoteFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func atomicUploadReplacesExistingRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-replace") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.dumpToFile(Data([0xAA, 0xBB, 0xCC]), to: remote)
+        try await connection.dumpToFile(Data([0xAA, 0xBB, 0xCC]), to: remote)
 
         let expected = Data((0 ..< 11).map { UInt8(80 + $0) })
         try expected.write(to: local)
 
-        try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { _, _, _, _ in true }
+        try await connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { _, _, _, _ in true }
 
-        #expect(try connection.loadFile(at: remote) == expected)
+        await #expect(try connection.loadFile(at: remote) == expected)
     }
 
     @Test("download file writes local file")
-    func downloadFileWritesLocalFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func downloadFileWritesLocalFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("download") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         try? FileManager.default.removeItem(at: local)
         defer { try? FileManager.default.removeItem(at: local) }
 
         let expected = Data((0 ..< 19).map { UInt8(255 - $0) })
-        try connection.dumpToFile(expected, to: remote)
+        try await connection.dumpToFile(expected, to: remote)
 
         let progress = SendableBox<[UInt64]>([])
         let latestSpeeds = SendableBox<[Double]>([])
-        try connection
+        try await connection
             .downloadFile(remote: remote, local: local, maxBlockSize: 5) { transferred, total, latestSpeed, _ in
                 progress.value.append(transferred)
                 latestSpeeds.value.append(latestSpeed)
@@ -113,22 +120,22 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("download with offset resumes into local file")
-    func downloadWithOffsetResumesIntoLocalFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func downloadWithOffsetResumesIntoLocalFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("download-resume") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
         let expected = Data((0 ..< 10).map { UInt8($0) })
-        try connection.dumpToFile(expected, to: remote)
+        try await connection.dumpToFile(expected, to: remote)
         try expected.prefix(4).write(to: local)
 
         let totals = SendableBox<[UInt64]>([])
-        try connection
+        try await connection
             .downloadFile(
                 remote: remote,
                 local: local,
@@ -145,22 +152,22 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("upload with offset resumes from local file")
-    func uploadWithOffsetResumesFromLocalFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func uploadWithOffsetResumesFromLocalFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-resume") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
         let expected = Data((0 ..< 10).map { UInt8($0) })
         try expected.write(to: local)
-        try connection.dumpToFile(expected.prefix(4), to: remote)
+        try await connection.dumpToFile(expected.prefix(4), to: remote)
 
         let totals = SendableBox<[UInt64]>([])
-        try connection
+        try await connection
             .uploadFile(
                 local: local,
                 remote: remote,
@@ -172,17 +179,17 @@ struct SMBConnectionTransferTests {
                 return true
             }
 
-        #expect(try connection.loadFile(at: remote) == expected)
+        await #expect(try connection.loadFile(at: remote) == expected)
         #expect(totals.value.last == 6)
     }
 
     @Test("nonatomic upload writes remote file")
-    func nonatomicUploadWritesRemoteFile() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func nonatomicUploadWritesRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-direct") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
@@ -190,7 +197,7 @@ struct SMBConnectionTransferTests {
         let expected = Data((0 ..< 9).map { UInt8(42 + $0) })
         try expected.write(to: local)
 
-        try connection.uploadFile(
+        try await connection.uploadFile(
             local: local,
             remote: remote,
             options: [.create, .truncate],
@@ -198,19 +205,19 @@ struct SMBConnectionTransferTests {
             atomic: false
         ) { _, _, _, _ in true }
 
-        #expect(try connection.loadFile(at: remote) == expected)
+        await #expect(try connection.loadFile(at: remote) == expected)
     }
 
     @Test("empty files transfer successfully")
-    func emptyFilesTransferSuccessfully() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func emptyFilesTransferSuccessfully() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let uploadRemote = uniquePath("empty-upload") + ".bin"
         let downloadRemote = uniquePath("empty-download") + ".bin"
         defer {
-            try? connection.removeFile(at: uploadRemote)
-            try? connection.removeFile(at: downloadRemote)
+            try? await connection.removeFile(at: uploadRemote)
+            try? await connection.removeFile(at: downloadRemote)
         }
 
         let uploadLocal = try localTemporaryFileURL()
@@ -222,7 +229,7 @@ struct SMBConnectionTransferTests {
         }
 
         let uploadProgress = SendableBox<[UInt64]>([])
-        try connection
+        try await connection
             .uploadFile(
                 local: uploadLocal,
                 remote: uploadRemote,
@@ -233,12 +240,12 @@ struct SMBConnectionTransferTests {
                 #expect(latestSpeed == 0)
                 return true
             }
-        #expect(try connection.stat(at: uploadRemote).size == 0)
+        await #expect(try connection.stat(at: uploadRemote).size == 0)
         #expect(uploadProgress.value == [0])
 
-        try connection.dumpToFile(Data(), to: downloadRemote)
+        try await connection.dumpToFile(Data(), to: downloadRemote)
         let downloadProgress = SendableBox<[UInt64]>([])
-        try connection
+        try await connection
             .downloadFile(
                 remote: downloadRemote,
                 local: downloadLocal,
@@ -254,20 +261,20 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("download cancellation does not throw")
-    func downloadCancellationDoesNotThrow() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func downloadCancellationDoesNotThrow() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("download-cancel") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         try? FileManager.default.removeItem(at: local)
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.dumpToFile(Data((0 ..< 12).map { UInt8($0) }), to: remote)
+        try await connection.dumpToFile(Data((0 ..< 12).map { UInt8($0) }), to: remote)
 
-        try connection.downloadFile(remote: remote, local: local, maxBlockSize: 4) { transferred, _, _, _ in
+        try await connection.downloadFile(remote: remote, local: local, maxBlockSize: 4) { transferred, _, _, _ in
             transferred < 4
         }
 
@@ -275,43 +282,43 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("upload cancellation does not throw")
-    func uploadCancellationDoesNotThrow() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func uploadCancellationDoesNotThrow() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-cancel") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
         try Data((0 ..< 12).map { UInt8($0) }).write(to: local)
 
-        try connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, _, _, _ in
+        try await connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, _, _, _ in
             transferred < 4
         }
 
-        #expect(throws: (any Error).self) {
-            try connection.stat(at: remote)
+        await #expect(throws: (any Error).self) {
+            try await connection.stat(at: remote)
         }
     }
 
     @Test("download offset requires local prefix")
-    func downloadOffsetRequiresLocalPrefix() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func downloadOffsetRequiresLocalPrefix() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("download-short-prefix") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
-        try connection.dumpToFile(Data((0 ..< 8).map { UInt8($0) }), to: remote)
+        try await connection.dumpToFile(Data((0 ..< 8).map { UInt8($0) }), to: remote)
         try Data([0xAA, 0xBB]).write(to: local)
 
-        #expect(throws: (any Error).self) {
-            try connection
+        await #expect(throws: (any Error).self) {
+            try await connection
                 .downloadFile(remote: remote, local: local, from: .offset(byte: 4), maxBlockSize: 4) { _, _, _, _ in
                     true
                 }
@@ -319,21 +326,21 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("upload offset requires remote prefix")
-    func uploadOffsetRequiresRemotePrefix() throws {
-        let connection = try publicConnection()
-        defer { try? connection.disconnect() }
+    func uploadOffsetRequiresRemotePrefix() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-short-prefix") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
 
         try Data((0 ..< 8).map { UInt8($0) }).write(to: local)
-        try connection.dumpToFile(Data([0xAA, 0xBB]), to: remote)
+        try await connection.dumpToFile(Data([0xAA, 0xBB]), to: remote)
 
-        #expect(throws: (any Error).self) {
-            try connection
+        await #expect(throws: (any Error).self) {
+            try await connection
                 .uploadFile(local: local, remote: remote, from: .offset(byte: 4), maxBlockSize: 4) { _, _, _, _ in
                     true
                 }
@@ -341,16 +348,16 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("upload 100MB file")
-    func upload100MBFile() throws {
-        let connection = try SMB.connect(
+    func upload100MBFile() async throws {
+        let connection = try await SMB.connect(
             server: SMB.Server(host: testServerHost),
             share: TestShare.public,
             configuration: SMB.Configuration()
         )
-        defer { try? connection.disconnect() }
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("upload-100mb") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         defer { try? FileManager.default.removeItem(at: local) }
@@ -363,54 +370,54 @@ struct SMBConnectionTransferTests {
         try handle.close()
 
         let progress = SendableBox<[UInt64]>([])
-        try connection.uploadFile(local: local, remote: remote) { transferred, total, _, _ in
+        try await connection.uploadFile(local: local, remote: remote) { transferred, total, _, _ in
             progress.value.append(transferred)
-            #expect(total == 100 * 1024 * 1024)
+            #expect(total == hundredMegabytes)
             return true
         }
 
-        let remoteStat = try connection.stat(at: remote)
-        #expect(remoteStat.size == 100 * 1024 * 1024)
-        #expect(progress.value.last == 100 * 1024 * 1024)
+        let remoteStat = try await connection.stat(at: remote)
+        #expect(remoteStat.size == hundredMegabytes)
+        #expect(progress.value.last == hundredMegabytes)
 
-        let file = try connection.openFile(at: remote, accessMode: .readOnly)
-        defer { try? file.close() }
-        let firstChunk = try file.read(upTo: 1024)
-        _ = try file.seek(offset: Int64(100 * 1024 * 1024 - 1024), from: .start)
-        let lastChunk = try file.read(upTo: 1024)
+        let file = try await connection.openFile(at: remote, accessMode: .readOnly)
+        defer { try? await file.close() }
+        let firstChunk = try await file.read(upTo: 1024)
+        _ = try await file.seek(offset: Int64(100 * 1024 * 1024 - 1024), from: .start)
+        let lastChunk = try await file.read(upTo: 1024)
         #expect(firstChunk == chunk)
         #expect(lastChunk == chunk)
     }
 
     @Test("download 100MB file")
-    func download100MBFile() throws {
-        let connection = try SMB.connect(
+    func download100MBFile() async throws {
+        let connection = try await SMB.connect(
             server: SMB.Server(host: testServerHost),
             share: TestShare.public,
             configuration: SMB.Configuration()
         )
-        defer { try? connection.disconnect() }
+        defer { try? await connection.disconnect() }
 
         let remote = uniquePath("download-100mb") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         let local = try localTemporaryFileURL()
         try? FileManager.default.removeItem(at: local)
         defer { try? FileManager.default.removeItem(at: local) }
 
         let data = Data(repeating: 0xCD, count: 100 * 1024 * 1024)
-        try connection.dumpToFile(data, to: remote)
+        try await connection.dumpToFile(data, to: remote)
 
         let progress = SendableBox<[UInt64]>([])
-        try connection.downloadFile(remote: remote, local: local) { transferred, total, _, _ in
+        try await connection.downloadFile(remote: remote, local: local) { transferred, total, _, _ in
             progress.value.append(transferred)
-            #expect(total == 100 * 1024 * 1024)
+            #expect(total == hundredMegabytes)
             return true
         }
 
         let localSize = try (FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.uint64Value
-        #expect(localSize == 100 * 1024 * 1024)
-        #expect(progress.value.last == 100 * 1024 * 1024)
+        #expect(localSize == hundredMegabytes)
+        #expect(progress.value.last == hundredMegabytes)
 
         let handle = try FileHandle(forReadingFrom: local)
         defer { try? handle.close() }
@@ -422,13 +429,13 @@ struct SMBConnectionTransferTests {
     }
 
     @Test("interrupted upload and download resume to the original file")
-    func interruptedUploadAndDownloadResume() throws {
-        let connection = try SMB.connect(
+    func interruptedUploadAndDownloadResume() async throws {
+        let connection = try await SMB.connect(
             server: SMB.Server(host: testServerHost),
             share: TestShare.public,
             configuration: SMB.Configuration()
         )
-        defer { try? connection.disconnect() }
+        defer { try? await connection.disconnect() }
 
         let fileSize = 25 * 1024 * 1024
         let blockSize: UInt64 = 1024 * 1024
@@ -445,11 +452,11 @@ struct SMBConnectionTransferTests {
         try sourceHandle.close()
 
         let remote = uniquePath("interrupted-upload") + ".bin"
-        defer { try? connection.removeFile(at: remote) }
+        defer { try? await connection.removeFile(at: remote) }
 
         // Upload, interrupting partway through.
         let uploaded = SendableBox<UInt64>(0)
-        try connection
+        try await connection
             .uploadFile(
                 local: source,
                 remote: remote,
@@ -463,10 +470,10 @@ struct SMBConnectionTransferTests {
 
         #expect(uploaded.value > 0)
         #expect(uploaded.value < UInt64(fileSize))
-        #expect(try connection.stat(at: remote).size == uploaded.value)
+        await #expect(try connection.stat(at: remote).size == uploaded.value)
 
         // Resume the upload from where it left off.
-        try connection
+        try await connection
             .uploadFile(
                 local: source,
                 remote: remote,
@@ -475,7 +482,7 @@ struct SMBConnectionTransferTests {
                 atomic: false
             ) { _, _, _, _ in true }
 
-        #expect(try connection.stat(at: remote).size == UInt64(fileSize))
+        await #expect(try connection.stat(at: remote).size == UInt64(fileSize))
 
         // Download, interrupting partway through.
         let destination = try localTemporaryFileURL()
@@ -483,7 +490,7 @@ struct SMBConnectionTransferTests {
         defer { try? FileManager.default.removeItem(at: destination) }
 
         let downloaded = SendableBox<UInt64>(0)
-        try connection
+        try await connection
             .downloadFile(
                 remote: remote,
                 local: destination,
@@ -501,7 +508,7 @@ struct SMBConnectionTransferTests {
         #expect(partialSize == downloaded.value)
 
         // Resume the download from where it left off.
-        try connection
+        try await connection
             .downloadFile(
                 remote: remote,
                 local: destination,
@@ -514,8 +521,8 @@ struct SMBConnectionTransferTests {
     }
 }
 
-private func publicConnection() throws -> SMB.Connection {
-    try SMB.connect(
+private func publicConnection() async throws -> SMB.Connection {
+    try await SMB.connect(
         server: SMB.Server(host: testServerHost),
         share: TestShare.public,
         configuration: SMB.Configuration(transferBlockSize: 4)

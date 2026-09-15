@@ -12,99 +12,99 @@ import Testing
 
 @Suite(.tags(.integration))
 struct SMBConnectionFileTests {
-    @Test("copyFile copies known file") func copyFileCopiesKnownFile() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("copyFile copies known file") func copyFileCopiesKnownFile() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let destPath = uniquePath("copy") + ".txt"
-        defer { try? connection.removeFile(at: destPath) }
+        defer { try? await connection.removeFile(at: destPath) }
 
-        try connection.copyFile(from: TestContent.helloPath, to: destPath)
+        try await connection.copyFile(from: TestContent.helloPath, to: destPath)
 
-        let data = try connection.loadFile(at: destPath)
+        let data = try await connection.loadFile(at: destPath)
         #expect(Array(data) == TestContent.helloBytes)
     }
 
-    @Test("write accepts a Data slice with non-zero start index") func writeAcceptsDataSlice() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("write accepts a Data slice with non-zero start index") func writeAcceptsDataSlice() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("slice") + ".bin"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
         let full = Data("prefix-payload".utf8)
         let slice = full[full.index(full.startIndex, offsetBy: 7)...]
         #expect(slice.startIndex != 0)
 
-        let file = try connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
+        let file = try await connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
         // Chunk size 3 forces multiple write iterations over the slice.
-        try file.write(slice, transferChunkSize: 3)
-        try file.close()
+        try await file.write(slice, transferChunkSize: 3)
+        try await file.close()
 
-        #expect(try connection.loadFile(at: path) == Data("payload".utf8))
+        await #expect(try connection.loadFile(at: path) == Data("payload".utf8))
     }
 
-    @Test("write rejects a non-positive chunk size") func writeRejectsNonPositiveChunkSize() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("write rejects a non-positive chunk size") func writeRejectsNonPositiveChunkSize() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("badchunk") + ".bin"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        let file = try connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
-        defer { try? file.close() }
+        let file = try await connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .truncate])
+        defer { try? await file.close() }
 
-        #expect(throws: SMB.Error.self) {
-            try file.write(Data("x".utf8), transferChunkSize: 0)
+        await #expect(throws: SMB.Error.self) {
+            try await file.write(Data("x".utf8), transferChunkSize: 0)
         }
-        #expect(throws: SMB.Error.self) {
-            try file.write(Data("x".utf8), transferChunkSize: -1)
+        await #expect(throws: SMB.Error.self) {
+            try await file.write(Data("x".utf8), transferChunkSize: -1)
         }
     }
 
-    @Test("copyFile throws when destination exists") func copyFileThrowsWhenDestinationExists() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("copyFile throws when destination exists") func copyFileThrowsWhenDestinationExists() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let destPath = uniquePath("copy") + ".txt"
-        defer { try? connection.removeFile(at: destPath) }
+        defer { try? await connection.removeFile(at: destPath) }
 
-        try connection.dumpToFile(Data("WRONG CONTENT".utf8), to: destPath)
+        try await connection.dumpToFile(Data("WRONG CONTENT".utf8), to: destPath)
 
-        #expect(throws: SMB.Error.self) {
-            try connection.copyFile(from: TestContent.helloPath, to: destPath)
+        await #expect(throws: SMB.Error.self) {
+            try await connection.copyFile(from: TestContent.helloPath, to: destPath)
         }
     }
 
-    @Test("copyFile copies empty file") func copyFileCopiesEmptyFile() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("copyFile copies empty file") func copyFileCopiesEmptyFile() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let sourcePath = uniquePath("empty_source") + ".txt"
         let destPath = uniquePath("empty_dest") + ".txt"
         defer {
-            try? connection.removeFile(at: sourcePath)
-            try? connection.removeFile(at: destPath)
+            try? await connection.removeFile(at: sourcePath)
+            try? await connection.removeFile(at: destPath)
         }
 
-        try connection.dumpToFile(Data(), to: sourcePath)
+        try await connection.dumpToFile(Data(), to: sourcePath)
 
-        try connection.copyFile(from: sourcePath, to: destPath)
+        try await connection.copyFile(from: sourcePath, to: destPath)
 
-        let stat = try connection.stat(at: destPath)
+        let stat = try await connection.stat(at: destPath)
         #expect(stat.type == .file)
         #expect(stat.size == 0)
     }
 
-    @Test("copyFile copies file larger than the server chunk limit") func copyFileCopiesLargeFile() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("copyFile copies file larger than the server chunk limit") func copyFileCopiesLargeFile() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let sourcePath = uniquePath("copy_large_src") + ".bin"
         let destPath = uniquePath("copy_large_dst") + ".bin"
         defer {
-            try? connection.removeFile(at: sourcePath)
-            try? connection.removeFile(at: destPath)
+            try? await connection.removeFile(at: sourcePath)
+            try? await connection.removeFile(at: destPath)
         }
 
         // Samba caps COPYCHUNK at 1 MiB per chunk, so this size forces the limit renegotiation path and an uneven final
@@ -113,38 +113,38 @@ struct SMBConnectionFileTests {
         for index in stride(from: 0, to: content.count, by: 4096) {
             content[index] = UInt8(truncatingIfNeeded: index >> 12)
         }
-        try connection.dumpToFile(content, to: sourcePath)
+        try await connection.dumpToFile(content, to: sourcePath)
 
-        try connection.copyFile(from: sourcePath, to: destPath)
+        try await connection.copyFile(from: sourcePath, to: destPath)
 
-        #expect(try connection.loadFile(at: destPath) == content)
+        await #expect(try connection.loadFile(at: destPath) == content)
     }
 
-    @Test("copyFile throws for nonexistent source") func copyFileThrowsForNonexistentSource() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("copyFile throws for nonexistent source") func copyFileThrowsForNonexistentSource() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let destPath = uniquePath("copy") + ".txt"
-        defer { try? connection.removeFile(at: destPath) }
+        defer { try? await connection.removeFile(at: destPath) }
 
-        #expect(throws: SMB.Error.self) {
-            try connection.copyFile(from: "nonexistent_\(uniquePath()).txt", to: destPath)
+        await #expect(throws: SMB.Error.self) {
+            try await connection.copyFile(from: "nonexistent_\(uniquePath()).txt", to: destPath)
         }
     }
 
-    @Test("changeDate preserves file attributes") func changeDatePreservesFileAttributes() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    @Test("changeDate preserves file attributes") func changeDatePreservesFileAttributes() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("dates") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        try connection.dumpToFile(Data("visible file".utf8), to: path)
-        let before = try connection.attributes(at: path)
+        try await connection.dumpToFile(Data("visible file".utf8), to: path)
+        let before = try await connection.attributes(at: path)
 
-        try connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
+        try await connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
 
-        let after = try connection.attributes(at: path)
+        let after = try await connection.attributes(at: path)
         #expect(after == before)
         #expect(!after.contains(.hidden))
         #expect(!after.contains(.system))
@@ -153,18 +153,18 @@ struct SMBConnectionFileTests {
     }
 
     @Test("changeDate with all timestamps preserves file attributes")
-    func changeDateAllTimestampsPreserveAttributes() throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    func changeDateAllTimestampsPreserveAttributes() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("dates_all") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        try connection.dumpToFile(Data("all timestamps".utf8), to: path)
-        let before = try connection.attributes(at: path)
+        try await connection.dumpToFile(Data("all timestamps".utf8), to: path)
+        let before = try await connection.attributes(at: path)
 
         let epoch = Date(timeIntervalSince1970: 1_704_067_200)
-        try connection.changeDate(
+        try await connection.changeDate(
             at: path,
             creation: epoch,
             change: epoch.addingTimeInterval(60),
@@ -172,7 +172,7 @@ struct SMBConnectionFileTests {
             access: epoch.addingTimeInterval(180)
         )
 
-        let after = try connection.attributes(at: path)
+        let after = try await connection.attributes(at: path)
         #expect(after == before)
         #expect(!after.contains(.hidden))
         #expect(!after.contains(.system))
@@ -180,71 +180,71 @@ struct SMBConnectionFileTests {
     }
 
     @Test("changeDate on authenticated share preserves attributes")
-    func changeDateAuthenticatedPreservesAttributes() throws {
-        let connection = try SMB.connect(
+    func changeDateAuthenticatedPreservesAttributes() async throws {
+        let connection = try await SMB.connect(
             server: SMB.Server(host: testServerHost),
             credentials: .init(user: TestCredentials.user, password: TestCredentials.password),
             share: TestShare.private
         )
-        defer { try? connection.disconnect() }
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("auth_dates") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        try connection.dumpToFile(Data("authenticated file".utf8), to: path)
-        let before = try connection.attributes(at: path)
+        try await connection.dumpToFile(Data("authenticated file".utf8), to: path)
+        let before = try await connection.attributes(at: path)
 
-        try connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
+        try await connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
 
-        let after = try connection.attributes(at: path)
+        let after = try await connection.attributes(at: path)
         #expect(after == before)
         #expect(!after.contains(SMB.FileAttributes.hidden))
         #expect(!after.contains(SMB.FileAttributes.system))
     }
 
     @Test("changeDate preserves archive attribute") func changeDatePreservesArchiveAttribute()
-    throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("archive") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
-        try connection.dumpToFile(Data("archive test".utf8), to: path)
-        let before = try connection.attributes(at: path)
+        try await connection.dumpToFile(Data("archive test".utf8), to: path)
+        let before = try await connection.attributes(at: path)
 
         // Newly created files typically have the archive bit set
-        try connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
+        try await connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
 
-        let after = try connection.attributes(at: path)
+        let after = try await connection.attributes(at: path)
         #expect(after.contains(.archive) == before.contains(.archive))
         #expect(after == before)
     }
 
     @Test("file remains readable after changeDate") func fileRemainsReadableAfterChangeDate()
-    throws {
-        let connection = try publicFileConnection()
-        defer { try? connection.disconnect() }
+    async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("readback") + ".txt"
-        defer { try? connection.removeFile(at: path) }
+        defer { try? await connection.removeFile(at: path) }
 
         let content = Data("still readable after date change".utf8)
-        try connection.dumpToFile(content, to: path)
+        try await connection.dumpToFile(content, to: path)
 
-        try connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
+        try await connection.changeDate(at: path, creation: Date(timeIntervalSince1970: 1_704_067_200))
 
-        let readBack = try connection.loadFile(at: path)
+        let readBack = try await connection.loadFile(at: path)
         #expect(readBack == content)
 
-        let stat = try connection.stat(at: path)
+        let stat = try await connection.stat(at: path)
         #expect(stat.type == .file)
         #expect(stat.size == content.count)
     }
 }
 
-private func publicFileConnection() throws -> SMB.Connection {
-    try SMB.connect(
+private func publicFileConnection() async throws -> SMB.Connection {
+    try await SMB.connect(
         server: SMB.Server(host: testServerHost),
         share: TestShare.public
     )

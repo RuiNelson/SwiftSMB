@@ -12,14 +12,14 @@ import Testing
 @Suite(.tags(.integration))
 struct SMBSecurityTests {
     @Test("sets an Everyone full-control DACL")
-    func setsEveryoneFullControlDACL() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        defer { try? connection.disconnect() }
+    func setsEveryoneFullControlDACL() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? await connection.disconnect() }
 
         let path = uniquePath("security") + ".txt"
-        let file = try connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .exclusive])
-        try file.close()
-        defer { try? connection.removeFile(at: path) }
+        let file = try await connection.openFile(at: path, accessMode: .writeOnly, options: [.create, .exclusive])
+        try await file.close()
+        defer { try? await connection.removeFile(at: path) }
 
         let descriptor = SMB.SecurityDescriptor(
             discretionaryAccessControlList: SMB.AccessControlList(entries: [
@@ -30,6 +30,6 @@ struct SMBSecurityTests {
                 ),
             ])
         )
-        try connection.setSecurityDescriptor(descriptor, at: path)
+        try await connection.setSecurityDescriptor(descriptor, at: path)
     }
 }

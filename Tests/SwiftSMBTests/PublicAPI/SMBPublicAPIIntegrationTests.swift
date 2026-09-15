@@ -13,27 +13,27 @@ import Testing
 @Suite(.tags(.integration))
 struct SMBPublicAPIIntegrationTests {
     @Test("connection timeout can be changed after connect")
-    func connectionTimeoutCanBeChangedAfterConnect() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        defer { try? connection.disconnect() }
+    func connectionTimeoutCanBeChangedAfterConnect() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? await connection.disconnect() }
 
-        try connection.setTimeout(45)
-        #expect(try Bridge.getTimeout(on: connection.requireContext()) == 45)
+        try await connection.setTimeout(45)
+        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == 45)
 
-        try connection.setTimeout(-1)
-        #expect(try Bridge.getTimeout(on: connection.requireContext()) == 0)
+        try await connection.setTimeout(-1)
+        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == 0)
 
-        try connection.setTimeout(Int.max)
-        #expect(try Bridge.getTimeout(on: connection.requireContext()) == Int32.max)
+        try await connection.setTimeout(Int.max)
+        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == Int32.max)
     }
 
     @Test("negotiated dialect kind matches raw negotiated dialect")
-    func negotiatedDialectKindMatchesRawNegotiatedDialect() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        defer { try? connection.disconnect() }
+    func negotiatedDialectKindMatchesRawNegotiatedDialect() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? await connection.disconnect() }
 
-        let rawDialect = try connection.negotiatedDialect
-        let dialectKind = try connection.negotiatedDialectKind
+        let rawDialect = try await connection.negotiatedDialect
+        let dialectKind = try await connection.negotiatedDialectKind
 
         #expect(dialectKind == SMB.NegotiatedDialect(rawValue: rawDialect))
         if case .unknown = dialectKind {
@@ -42,20 +42,29 @@ struct SMBPublicAPIIntegrationTests {
     }
 
     @Test("connection timeout throws after disconnect")
-    func connectionTimeoutThrowsAfterDisconnect() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        try connection.disconnect()
+    func connectionTimeoutThrowsAfterDisconnect() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        try await connection.disconnect()
 
-        #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
-            try connection.setTimeout(30)
+        await #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
+            try await connection.setTimeout(30)
         }
     }
 
     @Test("server GUID is exposed as a native UUID")
-    func serverGUIDIsExposedAsNativeUUID() throws {
-        let connection = try SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
-        defer { try? connection.disconnect() }
+    func serverGUIDIsExposedAsNativeUUID() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? await connection.disconnect() }
 
-        #expect(try connection.serverGUID != UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+        await #expect(try connection.serverGUID != UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+    }
+
+    @Test("default configuration keeps command timeouts disabled after connect")
+    func defaultConfigurationKeepsCommandTimeoutsDisabledAfterConnect() async throws {
+        let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
+        defer { try? await connection.disconnect() }
+
+        // The connect deadline applied while connecting must not leak into command timeouts.
+        #expect(try await Bridge.getTimeout(on: connection.requireContext()) == 0)
     }
 }

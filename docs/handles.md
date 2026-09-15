@@ -7,8 +7,8 @@ All examples assume you already have an open ``SMB.Connection``:
 ```swift
 let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
-let connection = try SMB.connect(server: server, credentials: credentials, share: "Documents")
-defer { try? connection.disconnect() }
+let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
+defer { try? await connection.disconnect() }
 ```
 
 ## Adjusting command timeouts
@@ -16,7 +16,7 @@ defer { try? connection.disconnect() }
 Pass ``SMB.Configuration.timeout`` when connecting to apply a timeout from the start:
 
 ```swift
-let connection = try SMB.connect(
+let connection = try await SMB.connect(
     server: server,
     credentials: credentials,
     share: "Documents",
@@ -25,11 +25,12 @@ let connection = try SMB.connect(
 ```
 
 Use ``SMB.Connection.setTimeout(_:)`` to change the timeout for subsequent operations on an existing connection. Pass
-`0` to disable command timeouts.
+`0` to disable command timeouts. Establishing a connection always has a deadline: the configured timeout when it is
+positive, otherwise 30 seconds.
 
 ```swift
-try connection.setTimeout(10)
-try connection.setTimeout(0)
+try await connection.setTimeout(10)
+try await connection.setTimeout(0)
 ```
 
 ## Choosing an encryption policy
@@ -49,14 +50,14 @@ let configuration = SMB.Configuration(encryption: .required)
 ``SMB.Connection.negotiatedDialect`` returns the raw SMB dialect revision the server agreed to after connecting:
 
 ```swift
-let rawDialect = try connection.negotiatedDialect
+let rawDialect = try await connection.negotiatedDialect
 ```
 
 ``SMB.Connection.negotiatedDialectKind`` maps that raw value to ``SMB.NegotiatedDialect``, a typed enum covering the
 known SMB2/SMB3 dialects with a `.unknown(UInt16)` fallback for revisions this library doesn't recognize yet:
 
 ```swift
-switch try connection.negotiatedDialectKind {
+switch try await connection.negotiatedDialectKind {
 case .smb3_11:
     print("Connected using SMB 3.1.1")
 case .unknown(let rawValue):
@@ -71,7 +72,7 @@ default:
 ``SMB/Connection/serverGUID`` returns the identifier negotiated with the server as Foundation's native ``UUID``:
 
 ```swift
-let serverID: UUID = try connection.serverGUID
+let serverID: UUID = try await connection.serverGUID
 ```
 
 The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidString`.
@@ -81,8 +82,8 @@ The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidStri
 ``SMB.Connection.openFile(at:accessMode:options:)`` returns an ``SMB.File`` handle:
 
 ```swift
-let file = try connection.openFile(at: "Anna/Inbox/report.pdf")
-defer { try? file.close() }
+let file = try await connection.openFile(at: "Anna/Inbox/report.pdf")
+defer { try? await file.close() }
 ```
 
 ### Access modes
@@ -102,7 +103,7 @@ Combine flags from ``SMB.File.OpenOptions``:
 - `.synchronous` — open in synchronous mode
 
 ```swift
-let file = try connection.openFile(
+let file = try await connection.openFile(
     at: "Anna/Inbox/log.txt",
     accessMode: .readWrite,
     options: [.create, .append]
@@ -114,26 +115,26 @@ let file = try connection.openFile(
 Read from the current offset until end of file:
 
 ```swift
-let file = try connection.openFile(at: "report.pdf")
-defer { try? file.close() }
+let file = try await connection.openFile(at: "report.pdf")
+defer { try? await file.close() }
 
-let data = try file.read()
+let data = try await file.read()
 ```
 
 Read a specific number of bytes from the current offset:
 
 ```swift
-let chunk = try file.read(upTo: 65536)
+let chunk = try await file.read(upTo: 65536)
 ```
 
 Read at an explicit offset using `seek` first:
 
 ```swift
-let info = try file.stat()
-try file.seek(offset: 0, from: .start)
-let header = try file.read(upTo: 1024)
-try file.seek(offset: Int64(info.size - 1024), from: .start)
-let footer = try file.read(upTo: 1024)
+let info = try await file.stat()
+try await file.seek(offset: 0, from: .start)
+let header = try await file.read(upTo: 1024)
+try await file.seek(offset: Int64(info.size - 1024), from: .start)
+let footer = try await file.read(upTo: 1024)
 ```
 
 ## Writing to a file handle
@@ -141,21 +142,21 @@ let footer = try file.read(upTo: 1024)
 Write all data:
 
 ```swift
-let file = try connection.openFile(
+let file = try await connection.openFile(
     at: "output.bin",
     accessMode: .writeOnly,
     options: [.create, .truncate]
 )
-defer { try? file.close() }
+defer { try? await file.close() }
 
-try file.write(largeData)
+try await file.write(largeData)
 ```
 
 Write at a specific offset using `seek`:
 
 ```swift
-try file.seek(offset: 4096, from: .start)
-try file.write(data)
+try await file.seek(offset: 4096, from: .start)
+try await file.write(data)
 ```
 
 ## Seeking
@@ -164,13 +165,13 @@ try file.write(data)
 
 ```swift
 // Seek to the beginning
-try file.seek(offset: 0, from: .start)
+try await file.seek(offset: 0, from: .start)
 
 // Skip ahead 1024 bytes
-try file.seek(offset: 1024, from: .current)
+try await file.seek(offset: 1024, from: .current)
 
 // Seek to the end
-try file.seek(offset: 0, from: .end)
+try await file.seek(offset: 0, from: .end)
 ```
 
 The method returns the new absolute offset.
@@ -178,7 +179,7 @@ The method returns the new absolute offset.
 ## File metadata from a handle
 
 ```swift
-let info = try file.stat()
+let info = try await file.stat()
 print("Size: \(info.size)")
 print("Modified: \(info.modificationTime)")
 ```
@@ -186,13 +187,13 @@ print("Modified: \(info.modificationTime)")
 ## Truncating a file handle
 
 ```swift
-try file.truncate(toLength: 1024)
+try await file.truncate(toLength: 1024)
 ```
 
 ## Flushing writes
 
 ```swift
-try file.sync()
+try await file.sync()
 ```
 
 ## Opening a directory handle
@@ -200,8 +201,8 @@ try file.sync()
 ``SMB.Connection.openDirectory(at:)`` returns an ``SMB.Directory`` handle:
 
 ```swift
-let directory = try connection.openDirectory(at: "Anna/Inbox")
-defer { directory.close() }
+let directory = try await connection.openDirectory(at: "Anna/Inbox")
+defer { await directory.close() }
 ```
 
 ## Reading directory entries
@@ -209,7 +210,7 @@ defer { directory.close() }
 Read one entry at a time:
 
 ```swift
-while let entry = try directory.readNext() {
+while let entry = try await directory.readNext() {
     print("\(entry.name) — \(entry.stat.size) bytes")
 }
 ```
@@ -217,7 +218,7 @@ while let entry = try directory.readNext() {
 Or read all remaining entries at once:
 
 ```swift
-let entries = try directory.readAll()
+let entries = try await directory.readAll()
 ```
 
 ## Directory stream positioning
@@ -225,20 +226,20 @@ let entries = try directory.readAll()
 You can bookmark a position and return to it later:
 
 ```swift
-let mark = try directory.tell()
+let mark = try await directory.tell()
 
 // Read some entries...
-_ = try directory.readNext()
-_ = try directory.readNext()
+_ = try await directory.readNext()
+_ = try await directory.readNext()
 
 // Go back
-try directory.seek(to: mark)
+try await directory.seek(to: mark)
 ```
 
 Rewind to the beginning:
 
 ```swift
-try directory.rewind()
+try await directory.rewind()
 ```
 
 ## Closing handles
@@ -246,13 +247,13 @@ try directory.rewind()
 Close a file handle when you are done:
 
 ```swift
-try file.close()
+try await file.close()
 ```
 
 Close a directory handle:
 
 ```swift
-directory.close()
+await directory.close()
 ```
 
 ## Locking a file handle
@@ -260,40 +261,40 @@ directory.close()
 Acquire an exclusive (write) lock on the entire file:
 
 ```swift
-let file = try connection.openFile(
+let file = try await connection.openFile(
     at: "Anna/Inbox/draft.txt",
     accessMode: .readWrite,
 )
-defer { try? file.close() }
+defer { try? await file.close() }
 
-try file.lock(.exclusive, nonBlocking: false)
+try await file.lock(.exclusive, nonBlocking: false)
 // ... perform exclusive writes ...
-try file.unlock()
+try await file.unlock()
 ```
 
 Acquire a shared (read) lock that allows concurrent readers:
 
 ```swift
-let file = try connection.openFile(at: "report.pdf")
-defer { try? file.close() }
+let file = try await connection.openFile(at: "report.pdf")
+defer { try? await file.close() }
 
-try file.lock(.shared, nonBlocking: false)
-let data = try file.read()
-try file.unlock()
+try await file.lock(.shared, nonBlocking: false)
+let data = try await file.read()
+try await file.unlock()
 ```
 
 Set `nonBlocking` to `true` to fail immediately when the lock conflicts with an existing one, instead of waiting:
 
 ```swift
-try file.lock(.exclusive, nonBlocking: true)
+try await file.lock(.exclusive, nonBlocking: true)
 ```
 
 Lock a specific byte range instead of the entire file:
 
 ```swift
-try file.lock(.exclusive, nonBlocking: false, range: 1024..<2048)
+try await file.lock(.exclusive, nonBlocking: false, range: 1024..<2048)
 // ... work within the locked range ...
-try file.unlock(range: 1024..<2048)
+try await file.unlock(range: 1024..<2048)
 ```
 
 Only one mode can be active at a time—shared and exclusive are mutually exclusive. The lock is associated with the open handle and is automatically released when the file is closed.
@@ -303,13 +304,13 @@ Only one mode can be active at a time—shared and exclusive are mutually exclus
 Close a file handle when you are done:
 
 ```swift
-try file.close()
+try await file.close()
 ```
 
 Close a directory handle:
 
 ```swift
-directory.close()
+await directory.close()
 ```
 
 Both handles close automatically when they go out of scope, but explicit close is recommended in tight loops or when you open many handles.

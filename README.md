@@ -22,7 +22,8 @@ Use it when your app or service needs to browse Windows, Samba, NAS, or other SM
 
 ## Cookbook
 
-The examples below list shares and transfer local files through an SMB share:
+The examples below list shares and transfer local files through an SMB share. Every operation that talks to the server
+is `async`, so call them from an asynchronous context with `try await`:
 
 ```swift
 import Foundation
@@ -37,7 +38,7 @@ let credentials = SMB.Credentials(user: "Anna", password: "1987")
 `listShares(server:credentials:...)` connects to the server, asks it for its disk shares, and disconnects before returning:
 
 ```swift
-let shares = try SMB.listShares(
+let shares = try await SMB.listShares(
     server: server,
     credentials: credentials
 )
@@ -54,20 +55,23 @@ By default, hidden shares are filtered out. Pass `includeHidden: true` if you ne
 Use one of the returned share names to open a connection:
 
 ```swift
-let connection = try SMB.connect(
+let connection = try await SMB.connect(
     server: server,
     credentials: credentials,
     share: "Documents"
 )
-defer { try? connection.disconnect() }
+defer { try? await connection.disconnect() }
 
-let serverID: UUID = try connection.serverGUID
+let serverID: UUID = try await connection.serverGUID
 ```
+
+Operations on a connection run one at a time, in the order they were requested. Open separate connections to run
+operations in parallel.
 
 Set a command timeout when connecting if you want `libsmb2` to abort operations that take too long:
 
 ```swift
-let connection = try SMB.connect(
+let connection = try await SMB.connect(
     server: server,
     credentials: credentials,
     share: "Documents",
@@ -75,11 +79,13 @@ let connection = try SMB.connect(
 )
 ```
 
+Establishing the connection always has a deadline: the configured timeout when it is positive, otherwise 30 seconds.
+
 You can also change the timeout for subsequent operations on an existing connection:
 
 ```swift
-try connection.setTimeout(10)
-try connection.setTimeout(0) // Disable command timeouts
+try await connection.setTimeout(10)
+try await connection.setTimeout(0) // Disable command timeouts
 ```
 
 Encryption has three explicit policies: `.automatic` advertises support and uses encryption when required by the
@@ -94,7 +100,7 @@ let configuration = SMB.Configuration(encryption: .required)
 `listDirectory(at:)` returns an array with the entries in a directory:
 
 ```swift
-let entries = try connection.listDirectory(at: "Anna/Inbox")
+let entries = try await connection.listDirectory(at: "Anna/Inbox")
 ```
 
 In this library, just like `libsmb2` uses forward slash for separating directories. You don't need to add "/" to indicate the root of the file share.
@@ -106,7 +112,7 @@ In this library, just like `libsmb2` uses forward slash for separating directori
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/Anna/Desktop/report.pdf")
 
-try connection.uploadFile(
+try await connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf"
 ) { completed, total, lastBlockSpeed, averageSpeedSinceTheStartOfTheTransfer in
@@ -116,7 +122,8 @@ try connection.uploadFile(
 }
 ```
 
-Return `false` from the progress closure to cancel the upload.
+Return `false` from the progress closure to cancel the upload. Cancelling the task that runs the upload also stops it,
+and the call then throws `CancellationError`.
 
 ### downloadFile
 
@@ -125,7 +132,7 @@ Return `false` from the progress closure to cancel the upload.
 ```swift
 let localURL = URL(fileURLWithPath: "/Users/alice/Downloads/report.pdf")
 
-try connection.downloadFile(
+try await connection.downloadFile(
     remote: "Anna/Inbox/report.pdf",
     local: localURL
 ) { completed, total, latestSpeed, averageSpeed in
@@ -134,7 +141,8 @@ try connection.downloadFile(
 }
 ```
 
-Return `false` from the progress closure to cancel the download.
+Return `false` from the progress closure to cancel the download. Cancelling the task that runs the download also stops
+it, and the call then throws `CancellationError`.
 
 ### More advanced cookbooks
 

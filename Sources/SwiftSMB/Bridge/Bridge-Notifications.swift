@@ -17,7 +17,9 @@ extension Bridge {
     // MARK: - Notify Operations
 
     private static let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF
-    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 50
+    /// By default servicing does not wait for events, so it never holds the context queue; callers wait between polls
+    /// off the queue.
+    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 0
     private static let notifyChangeEntryHeaderLength = 12
     private static let maximumNotifyChangeEntryCount = 4096
 
@@ -70,8 +72,8 @@ extension Bridge {
         flags: NotifyChangeFlags = [],
         filter: NotifyChangeFilter = .all,
         handler: @escaping NotifyChangeHandler
-    ) throws -> PendingRequest {
-        try Bridge.sync {
+    ) async throws -> PendingRequest {
+        try await perform(on: context) {
             try _notifyChange(context: context, directory: directory, flags: flags, filter: filter, handler: handler)
         }
     }
@@ -86,8 +88,15 @@ extension Bridge {
     }
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.
-    static func cancel(context: Context, request: PendingRequest) {
-        Bridge.sync {
+    static func cancel(context: Context, request: PendingRequest) async throws {
+        try await perform(on: context) {
+            _cancel(context: context, request: request)
+        }
+    }
+
+    /// Cancels a pending raw SMB2 request without waiting. Used from `deinit`, which cannot await.
+    static func cancelInBackground(context: Context, request: PendingRequest) {
+        performInBackground(on: context) {
             _cancel(context: context, request: request)
         }
     }
@@ -98,6 +107,9 @@ extension Bridge {
     ) throws {
         var pfd = pollfd()
         pfd.fd = smb2_get_fd(context.raw)
+        guard pfd.fd >= 0 else {
+            throw noConnectionError(operation: "smb2_service")
+        }
         pfd.events = Int16(smb2_which_events(context.raw))
 
         var rc: Int32 = 0
@@ -123,8 +135,8 @@ extension Bridge {
     static func serviceNotifyEvents(
         context: Context,
         timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
-    ) throws {
-        try Bridge.sync {
+    ) async throws {
+        try await perform(on: context) {
             try _serviceNotifyEvents(context: context, timeoutMilliseconds: timeoutMilliseconds)
         }
     }
@@ -152,10 +164,8 @@ extension Bridge {
             return
         }
 
-        let context = Context(raw: rawContext)
-
         guard status == 0 else {
-            handler(.failure(notifyChangeError(context: context, status: status, operation: state.operation)))
+            handler(.failure(notifyChangeError(rawContext: rawContext, status: status, operation: state.operation)))
             return
         }
 
@@ -164,13 +174,10 @@ extension Bridge {
             return
         }
 
-        handler(decodeNotifyChanges(context: context, commandData: commandData))
+        handler(decodeNotifyChanges(commandData: commandData))
     }
 
-    private static func decodeNotifyChanges(
-        context: Context,
-        commandData: UnsafeMutableRawPointer
-    ) -> Result<[NotifyChange], SMB.Error> {
+    private static func decodeNotifyChanges(commandData: UnsafeMutableRawPointer) -> Result<[NotifyChange], SMB.Error> {
         let reply = commandData.assumingMemoryBound(to: smb2_change_notify_reply.self).pointee
 
         guard reply.output_buffer_length > 0, let output = reply.output else {
@@ -257,12 +264,12 @@ extension Bridge {
     }
 
     private static func notifyChangeError(
-        context: Context,
+        rawContext: UnsafeMutablePointer<smb2_context>,
         status: Int32,
         operation: String
     ) -> SMB.Error {
         let rawStatus = UInt32(bitPattern: status)
-        let message = smb2_get_error(context.raw).map(String.init(cString:)) ?? ""
+        let message = smb2_get_error(rawContext).map(String.init(cString:)) ?? ""
 
         if let knownStatus = SMB.SMBStatus(rawValue: rawStatus) {
             return .ntStatus(knownStatus, posixCode: nil, operation: operation, message: message)

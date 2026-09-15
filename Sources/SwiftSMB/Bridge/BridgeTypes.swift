@@ -13,15 +13,29 @@ import Foundation
 import SMB2
 
 extension Bridge {
-    struct Context {
+    /// A libsmb2 context and the serial queue that owns it.
+    ///
+    /// libsmb2 contexts are not safe to service concurrently, so once a context is shared every call that touches `raw`
+    /// runs on `queue` (see ``Bridge/perform(on:_:)``). Different contexts run in parallel.
+    final class Context: @unchecked Sendable {
         let raw: UnsafeMutablePointer<smb2_context>
+
+        /// The serial queue that owns `raw`.
+        let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.bridge.context")
+
+        /// Whether `raw` has not been destroyed yet. Confined to `queue`.
+        var isAlive = true
+
+        init(raw: UnsafeMutablePointer<smb2_context>) {
+            self.raw = raw
+        }
     }
 
-    struct FileHandle {
+    struct FileHandle: @unchecked Sendable {
         let raw: OpaquePointer
     }
 
-    struct FileID: Equatable {
+    struct FileID: Equatable, Sendable {
         var raw: smb2_file_id
 
         static let allOnes = FileID((
@@ -56,7 +70,7 @@ extension Bridge {
         }
     }
 
-    enum AuthenticationMethod: Equatable {
+    enum AuthenticationMethod: Equatable, Sendable {
         case automatic
         case ntlmssp
         case kerberos
@@ -73,14 +87,14 @@ extension Bridge {
         }
     }
 
-    struct SecurityMode: OptionSet, Equatable {
+    struct SecurityMode: OptionSet, Equatable, Sendable {
         let rawValue: UInt16
 
         static let signingEnabled = SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
         static let signingRequired = SecurityMode(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
 
-    enum OpenAccessMode: Equatable {
+    enum OpenAccessMode: Equatable, Sendable {
         case readOnly
         case writeOnly
         case readWrite
@@ -97,7 +111,7 @@ extension Bridge {
         }
     }
 
-    struct OpenOptions: OptionSet, Equatable {
+    struct OpenOptions: OptionSet, Equatable, Sendable {
         let rawValue: Int32
 
         static let synchronous = OpenOptions(rawValue: O_SYNC)
@@ -108,7 +122,7 @@ extension Bridge {
         static let directory = OpenOptions(rawValue: O_DIRECTORY)
     }
 
-    struct OpenFlags: Equatable {
+    struct OpenFlags: Equatable, Sendable {
         let accessMode: OpenAccessMode
         let options: OpenOptions
 
@@ -125,7 +139,7 @@ extension Bridge {
         }
     }
 
-    enum OpLockLevel: UInt8, Equatable {
+    enum OpLockLevel: UInt8, Equatable, Sendable {
         case none = 0x00
         case levelII = 0x01
         case exclusive = 0x08
@@ -133,7 +147,7 @@ extension Bridge {
         case lease = 0xFF
     }
 
-    struct LeaseState: OptionSet, Equatable {
+    struct LeaseState: OptionSet, Equatable, Sendable {
         let rawValue: UInt32
 
         static let readCaching = LeaseState(rawValue: 0x01)
@@ -141,11 +155,11 @@ extension Bridge {
         static let writeCaching = LeaseState(rawValue: 0x04)
     }
 
-    struct DirectoryHandle {
+    struct DirectoryHandle: @unchecked Sendable {
         let raw: UnsafeMutablePointer<smb2dir>
     }
 
-    enum ShareEnumerationLevel: Equatable {
+    enum ShareEnumerationLevel: Equatable, Sendable {
         case namesOnly
         case detailed
 
@@ -159,7 +173,7 @@ extension Bridge {
         }
     }
 
-    enum ShareKind: Equatable, Hashable {
+    enum ShareKind: Equatable, Hashable, Sendable {
         case diskTree
         case printQueue
         case device
@@ -182,7 +196,7 @@ extension Bridge {
         }
     }
 
-    struct ShareAttributes: OptionSet, Equatable, Hashable {
+    struct ShareAttributes: OptionSet, Equatable, Hashable, Sendable {
         let rawValue: UInt32
 
         static let temporary = ShareAttributes(rawValue: UInt32(SRVSVC_SHARE_TYPE_TEMPORARY))
@@ -197,7 +211,7 @@ extension Bridge {
         }
     }
 
-    struct Share: Equatable, Hashable {
+    struct Share: Equatable, Hashable, Sendable {
         let name: String
         let kind: ShareKind?
         let attributes: ShareAttributes
@@ -212,31 +226,31 @@ extension Bridge {
         }
     }
 
-    struct SecurityIdentifier: Equatable {
+    struct SecurityIdentifier: Equatable, Sendable {
         let revision: UInt8
         let identifierAuthority: UInt64
         let subauthorities: [UInt32]
     }
 
-    struct AccessControlEntry: Equatable {
+    struct AccessControlEntry: Equatable, Sendable {
         let kind: UInt8
         let flags: UInt8
         let accessMask: UInt32
         let trustee: SecurityIdentifier
     }
 
-    struct AccessControlList: Equatable {
+    struct AccessControlList: Equatable, Sendable {
         let revision: UInt8
         let entries: [AccessControlEntry]
     }
 
-    struct SecurityDescriptor: Equatable {
+    struct SecurityDescriptor: Equatable, Sendable {
         let owner: SecurityIdentifier?
         let group: SecurityIdentifier?
         let discretionaryAccessControlList: AccessControlList?
     }
 
-    enum NodeType: Equatable {
+    enum NodeType: Equatable, Sendable {
         case file
         case directory
         case link
@@ -256,7 +270,7 @@ extension Bridge {
         }
     }
 
-    struct Stat: Equatable {
+    struct Stat: Equatable, Sendable {
         let type: NodeType
         let linkCount: UInt32
         let inode: UInt64
@@ -286,7 +300,7 @@ extension Bridge {
         }
     }
 
-    struct VFSStat: Equatable {
+    struct VFSStat: Equatable, Sendable {
         let blockSize: UInt32
         let fragmentSize: UInt32
         let blocks: UInt64
@@ -314,7 +328,7 @@ extension Bridge {
         }
     }
 
-    struct DirectoryEntry: Equatable {
+    struct DirectoryEntry: Equatable, Sendable {
         let name: String
         let stat: Stat
 
@@ -324,13 +338,13 @@ extension Bridge {
         }
     }
 
-    struct NotifyChangeFlags: OptionSet, Equatable {
+    struct NotifyChangeFlags: OptionSet, Equatable, Sendable {
         let rawValue: UInt16
 
         static let watchTree = NotifyChangeFlags(rawValue: UInt16(SMB2_CHANGE_NOTIFY_WATCH_TREE))
     }
 
-    struct NotifyChangeFilter: OptionSet, Equatable {
+    struct NotifyChangeFilter: OptionSet, Equatable, Sendable {
         let rawValue: UInt32
 
         static let fileName = NotifyChangeFilter(rawValue: UInt32(SMB2_CHANGE_NOTIFY_FILE_NOTIFY_CHANGE_FILE_NAME))
@@ -370,7 +384,7 @@ extension Bridge {
         ]
     }
 
-    enum NotifyChangeAction: Equatable {
+    enum NotifyChangeAction: Equatable, Sendable {
         case added
         case removed
         case modified
@@ -405,7 +419,7 @@ extension Bridge {
         }
     }
 
-    struct NotifyChange: Equatable {
+    struct NotifyChange: Equatable, Sendable {
         let action: NotifyChangeAction
         let name: String
 
@@ -422,7 +436,7 @@ extension Bridge {
 
     typealias NotifyChangeHandler = @Sendable (Result<[NotifyChange], SMB.Error>) -> Void
 
-    struct SMB2URL: Equatable {
+    struct SMB2URL: Equatable, Sendable {
         let domain: String?
         let user: String?
         let server: String
@@ -438,7 +452,7 @@ extension Bridge {
         }
     }
 
-    struct PendingRequest {
+    struct PendingRequest: Sendable {
         let state: PendingRequestState
     }
 

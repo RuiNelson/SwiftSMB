@@ -18,6 +18,9 @@ public extension SMB {
     ///
     /// A connection owns the underlying `libsmb2` context and provides methods for file, directory, and metadata
     /// operations on a single connected share.
+    ///
+    /// Operations on one connection run one at a time, in the order they were requested, on a queue owned by the
+    /// connection. Use separate connections to run operations in parallel.
     final class Connection: CustomDebugStringConvertible, Sendable {
         /// The server this connection is attached to.
         public let server: Server
@@ -27,6 +30,12 @@ public extension SMB {
 
         /// The configuration used to create the connection.
         public let configuration: Configuration
+
+        /// The maximum read size negotiated when connecting. It does not change afterwards.
+        private let negotiatedMaxReadSize: UInt32
+
+        /// The maximum write size negotiated when connecting. It does not change afterwards.
+        private let negotiatedMaxWriteSize: UInt32
 
         private let protectedContext = ProtectedHandle<Bridge.Context>(
             label: "com.ruinelson.SwiftSMB.SMB.Connection.context"
@@ -56,9 +65,9 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var negotiatedDialect: UInt16 {
-            get throws {
+            get async throws {
                 let context = try requireContext()
-                return Bridge.getDialect(on: context)
+                return try await Bridge.getDialect(on: context)
             }
         }
 
@@ -66,8 +75,8 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var negotiatedDialectKind: NegotiatedDialect {
-            get throws {
-                try NegotiatedDialect(rawValue: negotiatedDialect)
+            get async throws {
+                try await NegotiatedDialect(rawValue: negotiatedDialect)
             }
         }
 
@@ -78,9 +87,9 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var serverGUID: UUID {
-            get throws {
+            get async throws {
                 let context = try requireContext()
-                return Bridge.getServerGUID(on: context)
+                return try await Bridge.getServerGUID(on: context)
             }
         }
 
@@ -88,94 +97,99 @@ public extension SMB {
         ///
         /// - Throws: ``SMB/Error`` if the connection is closed or the session ID cannot be retrieved.
         public var sessionID: UInt64 {
-            get throws {
+            get async throws {
                 let context = try requireContext()
-                return try Bridge.getSessionID(context: context)
+                return try await Bridge.getSessionID(context: context)
             }
         }
 
         /// The maximum read size advertised by the connected server.
         ///
+        /// The value is negotiated when connecting and does not change afterwards.
+        ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxReadSize: UInt32 {
-            get throws {
-                let context = try requireContext()
-                return Bridge.getMaxReadSize(context: context)
+            get async throws {
+                _ = try requireContext()
+                return negotiatedMaxReadSize
             }
         }
 
         /// The maximum write size advertised by the connected server.
         ///
+        /// The value is negotiated when connecting and does not change afterwards.
+        ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public var maxWriteSize: UInt32 {
-            get throws {
-                let context = try requireContext()
-                return Bridge.getMaxWriteSize(context: context)
+            get async throws {
+                _ = try requireContext()
+                return negotiatedMaxWriteSize
             }
         }
         
         // MARK: Lifecycle
         
-        /// Creates a connection around an already connected bridge context.
-        init(server: Server, share: String, configuration: Configuration, context: Bridge.Context) {
+        /// Creates a connection around an already connected bridge context and its negotiated transfer limits.
+        init(
+            server: Server,
+            share: String,
+            configuration: Configuration,
+            context: Bridge.Context,
+            maxReadSize: UInt32,
+            maxWriteSize: UInt32
+        ) {
             self.server = server
             self.share = share
             self.configuration = configuration
+            negotiatedMaxReadSize = maxReadSize
+            negotiatedMaxWriteSize = maxWriteSize
             self.context = context
         }
         
         deinit {
-            cancelNotifyWatchers()
+            // `deinit` cannot await. Watcher cleanup and teardown are enqueued on the context queue in this order.
+            cancelNotifyWatchersInBackground()
             if let context = takeContext() {
-                try? Bridge.disconnectShare(context: context)
-                Bridge.closeContext(context)
-                Bridge.destroyContext(context)
+                Bridge.teardownInBackground(context)
             }
         }
 
         /// Disconnects from the share and destroys the underlying context.
         ///
-        /// Calling this method more than once is allowed. After disconnection, operations on this connection or handles
-        /// created from it throw ``SMB/Error/invalidArgument(operation:message:)``.
+        /// Active directory watchers are cancelled first. Calling this method more than once is allowed. After
+        /// disconnection, operations on this connection or handles created from it throw
+        /// ``SMB/Error/operationRequestedAfterConnectionClosed``.
         ///
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
-        public func disconnect() throws {
-            cancelNotifyWatchers()
+        public func disconnect() async throws {
+            await cancelNotifyWatchers()
             guard let context = takeContext() else { return }
-
-            do {
-                try Bridge.disconnectShare(context: context)
-            }
-            catch {
-                Bridge.closeContext(context)
-                Bridge.destroyContext(context)
-                throw error
-            }
-            Bridge.closeContext(context)
-            Bridge.destroyContext(context)
+            try await Bridge.shutdown(context)
         }
 
-        /// Disconnects from the share after waiting for all in-flight operations to complete.
+        /// Disconnects from the share after waiting for in-flight operations to complete.
         ///
-        /// This method blocks the calling thread until all bridge operations (file reads, writes, directory listings,
-        /// metadata queries, etc.) have finished, then disconnects.
+        /// Operations already requested on this connection (file reads, writes, directory listings, metadata queries,
+        /// etc.) finish before the share is disconnected.
         ///
         /// Calling this method more than once is allowed.
         ///
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
-        public func disconnectGracefully() throws {
-            Bridge.waitForAllOperationsToEnd()
-            try disconnect()
+        public func disconnectGracefully() async throws {
+            if let context {
+                await Bridge.waitForPendingOperations(on: context)
+            }
+            try await disconnect()
         }
 
         /// Sends an SMB echo request and returns the round-trip latency.
         ///
         /// - Returns: The elapsed time, in seconds.
         /// - Throws: ``SMB/Error`` if the connection is closed or the echo request fails.
-        @discardableResult public func echo() throws -> Double {
+        @discardableResult public func echo() async throws -> Double {
             let context = try requireContext()
             let start = DispatchTime.now()
-            try Bridge.echo(context: context)
+            try await Bridge.echo(context: context)
             let end = DispatchTime.now()
             return Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
         }
@@ -187,10 +201,10 @@ public extension SMB {
         ///
         /// - Parameter timeout: The timeout interval, in seconds.
         /// - Throws: ``SMB/Error`` if the connection is already closed.
-        public func setTimeout(_ timeout: Int) throws {
+        public func setTimeout(_ timeout: Int) async throws {
             let context = try requireContext()
             let int32val = timeout >= 0 ? Int32(clamping: timeout) : 0
-            Bridge.setTimeout(int32val, on: context)
+            try await Bridge.setTimeout(int32val, on: context)
         }
 
         /// Sets the owner, group, or discretionary access-control list for an item.
@@ -203,10 +217,10 @@ public extension SMB {
         ///   - path: The path to the item, relative to the share root.
         /// - Throws: ``SMB/Error`` if the connection is closed, the descriptor is invalid, or the server rejects the
         /// security update.
-        public func setSecurityDescriptor(_ descriptor: SecurityDescriptor, at path: String) throws {
+        public func setSecurityDescriptor(_ descriptor: SecurityDescriptor, at path: String) async throws {
             let path = try SMB.validatePath(path, operation: .smbConnectionSetSecurityDescriptor)
             let context = try requireContext()
-            try Bridge.setSecurityDescriptor(context: context, path: path, descriptor: descriptor.bridgeValue)
+            try await Bridge.setSecurityDescriptor(context: context, path: path, descriptor: descriptor.bridgeValue)
         }
 
         // MARK: Handles
@@ -225,7 +239,7 @@ public extension SMB {
             accessMode: File.AccessMode = .readOnly,
             options: File.OpenOptions = [],
             opLock: File.OpLock = .none
-        ) throws -> File {
+        ) async throws -> File {
             let path = try SMB.validatePath(path, operation: .smb2Open)
             let context = try requireContext()
 
@@ -240,7 +254,7 @@ public extension SMB {
                 leaseKey = nil
             }
 
-            let handle = try Bridge.open(
+            let handle = try await Bridge.open(
                 context: context,
                 path: path,
                 flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
@@ -261,10 +275,10 @@ public extension SMB {
         /// - Parameter path: The directory path, relative to the share root.
         /// - Returns: An open directory handle.
         /// - Throws: ``SMB/Error`` if the directory cannot be opened.
-        public func openDirectory(at path: String = "") throws -> Directory {
+        public func openDirectory(at path: String = "") async throws -> Directory {
             let path = try SMB.validatePath(path, operation: .smb2Opendir, allowRoot: true)
             let context = try requireContext()
-            let handle = try Bridge.openDir(context: context, path: path)
+            let handle = try await Bridge.openDir(context: context, path: path)
             return Directory(connection: self, path: path, handle: handle)
         }
         
@@ -277,22 +291,22 @@ public extension SMB {
         ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before creating
         /// `path`.
         /// - Throws: ``SMB/Error`` if the directory cannot be created.
-        public func makeDirectory(at path: String, makePath: Bool = false) throws {
+        public func makeDirectory(at path: String, makePath: Bool = false) async throws {
             let path = try SMB.validatePath(path, operation: .smb2Mkdir)
             
             if makePath {
                 // check if directory is in the root of the share
                 guard path.pathComponents.count > 1 else {
-                    try makeDirectory(at: path, makePath: false)
+                    try await makeDirectory(at: path, makePath: false)
                     return
                 }
                 
                 // create previous directory if it doesn't exist
                 let previous = path.removingLastPathComponent
                 
-                switch try itemExists(at: previous) {
+                switch try await itemExists(at: previous) {
                 case .false:
-                    try makeDirectory(at: previous, makePath: true)
+                    try await makeDirectory(at: previous, makePath: true)
                 case .directory:
                     break
                 case .file, .link, .other:
@@ -305,27 +319,27 @@ public extension SMB {
             }
             
             let context = try requireContext()
-            try Bridge.makeDir(context: context, path: path)
+            try await Bridge.makeDir(context: context, path: path)
         }
 
         /// Removes an empty directory.
         ///
         /// - Parameter path: The directory path, relative to the share root.
         /// - Throws: ``SMB/Error`` if the directory cannot be removed.
-        public func removeDirectory(at path: String) throws {
+        public func removeDirectory(at path: String) async throws {
             let path = try SMB.validatePath(path, operation: .smb2Rmdir)
             let context = try requireContext()
-            try Bridge.removeDir(context: context, path: path)
+            try await Bridge.removeDir(context: context, path: path)
         }
 
         /// Removes a file or link.
         ///
         /// - Parameter path: The path to remove, relative to the share root.
         /// - Throws: ``SMB/Error`` if the path cannot be removed.
-        public func removeFile(at path: String) throws {
+        public func removeFile(at path: String) async throws {
             let path = try SMB.validatePath(path, operation: .smb2Unlink)
             let context = try requireContext()
-            try Bridge.unlink(context: context, path: path)
+            try await Bridge.unlink(context: context, path: path)
         }
 
         /// Moves or renames a share entry.
@@ -334,11 +348,11 @@ public extension SMB {
         ///   - oldPath: The current path, relative to the share root.
         ///   - newPath: The destination path, relative to the share root.
         /// - Throws: ``SMB/Error`` if the move fails.
-        public func move(from oldPath: String, to newPath: String) throws {
+        public func move(from oldPath: String, to newPath: String) async throws {
             let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
             let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
             let context = try requireContext()
-            try Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
+            try await Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
         }
 
         /// Truncates a file by path.
@@ -347,10 +361,10 @@ public extension SMB {
         ///   - path: The file path, relative to the share root.
         ///   - length: The target file length, in bytes.
         /// - Throws: ``SMB/Error`` if the file cannot be truncated.
-        public func truncateFile(at path: String, toLength length: UInt64) throws {
+        public func truncateFile(at path: String, toLength length: UInt64) async throws {
             let path = try SMB.validatePath(path, operation: .smb2Truncate)
             let context = try requireContext()
-            try Bridge.truncate(context: context, path: path, length: length)
+            try await Bridge.truncate(context: context, path: path, length: length)
         }
 
         /// Reads the destination of a symbolic link.
@@ -360,10 +374,10 @@ public extension SMB {
         ///   - bufferSize: The maximum number of bytes to read for the target.
         /// - Returns: The link target path.
         /// - Throws: ``SMB/Error`` if the link cannot be read.
-        public func readLink(at path: String, bufferSize: Int = 16384) throws -> String {
+        public func readLink(at path: String, bufferSize: Int = 16384) async throws -> String {
             let path = try SMB.validatePath(path, operation: .smb2Readlink)
             let context = try requireContext()
-            return try Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
+            return try await Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
         }
         
         /// Creates a symbolic link at the given path.
@@ -372,13 +386,13 @@ public extension SMB {
         ///   - path: The link path, relative to the share root.
         ///   - pointingTo: The target path that the link will point to.
         /// - Throws: ``SMB/Error`` if the link cannot be created.
-        public func makeLink(at path: String, pointingTo: String) throws {
+        public func makeLink(at path: String, pointingTo: String) async throws {
             let path = try SMB.validatePath(path, operation: .smb2MakeLink)
             guard !pointingTo.isEmpty else {
                 throw SMB.Error.invalidArgument(cause: .pathMustNotBeEmpty, onOperation: .smb2MakeLink)
             }
             let context = try requireContext()
-            try Bridge.makeLink(context: context, path: path, destination: pointingTo)
+            try await Bridge.makeLink(context: context, path: path, destination: pointingTo)
         }
 
         /// Creates a hard link to an existing file.
@@ -390,11 +404,11 @@ public extension SMB {
         ///   - path: The new hard-link path, relative to the share root.
         ///   - existingPath: The existing file path that the new link will point to.
         /// - Throws: ``SMB/Error`` if the hard link cannot be created.
-        public func makeHardLink(at path: String, pointingTo existingPath: String) throws {
+        public func makeHardLink(at path: String, pointingTo existingPath: String) async throws {
             let path = try SMB.validatePath(path, operation: .smb2Link)
             let existingPath = try SMB.validatePath(existingPath, operation: .smb2Link)
             let context = try requireContext()
-            try Bridge.makeHardLink(context: context, existingPath: existingPath, newPath: path)
+            try await Bridge.makeHardLink(context: context, existingPath: existingPath, newPath: path)
         }
         
         /// Returns metadata for a path.
@@ -402,10 +416,10 @@ public extension SMB {
         /// - Parameter path: The path to inspect, relative to the share root.
         /// - Returns: File metadata.
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
-        public func stat(at path: String) throws -> Stat {
+        public func stat(at path: String) async throws -> Stat {
             let path = try SMB.validatePath(path, operation: .smb2Stat, allowRoot: true)
             let context = try requireContext()
-            return try Stat(Bridge.fileStatistics(context: context, path: path))
+            return try await Stat(Bridge.fileStatistics(context: context, path: path))
         }
         
         /// Returns whether an item exists at a path, and what kind of item it is.
@@ -419,9 +433,9 @@ public extension SMB {
         /// - Parameter path: The item path to inspect, relative to the share root.
         /// - Returns: The existence and kind of the item at `path`.
         /// - Throws: ``SMB/Error`` if the connection is closed, metadata cannot be read, or `path` is invalid.
-        public func itemExists(at path: String) throws -> SMB.ItemExistence {
+        public func itemExists(at path: String) async throws -> SMB.ItemExistence {
             do {
-                let stat = try stat(at: path)
+                let stat = try await stat(at: path)
                 return SMB.ItemExistence(stat.type)
             }
             catch let error as SMB.Error {
@@ -451,10 +465,10 @@ public extension SMB {
             change: Date? = nil,
             write: Date? = nil,
             access: Date? = nil
-        ) throws {
+        ) async throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
-            try Bridge.setStats(
+            try await Bridge.setStats(
                 context: context,
                 path: path,
                 creationTime: creation,
@@ -469,10 +483,10 @@ public extension SMB {
         /// - Parameter path: The path to the file or directory, relative to the share root.
         /// - Returns: The current file attributes.
         /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the query.
-        public func attributes(at path: String) throws -> FileAttributes {
+        public func attributes(at path: String) async throws -> FileAttributes {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
             let context = try requireContext()
-            let raw = try Bridge.getFileAttributes(context: context, path: path)
+            let raw = try await Bridge.getFileAttributes(context: context, path: path)
             return FileAttributes(rawValue: raw)
         }
 
@@ -488,14 +502,14 @@ public extension SMB {
         public func changeAttributes(
             at path: String,
             _ change: (FileAttributes) -> FileAttributes
-        ) throws {
+        ) async throws {
             let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
             let context = try requireContext()
-            let current = try attributes(at: path)
+            let current = try await attributes(at: path)
             let new = change(current)
             // On the wire, FileAttributes 0 means "leave unchanged" (MS-FSCC); clearing every flag must be sent as
             // FILE_ATTRIBUTE_NORMAL instead.
-            try Bridge.setStats(
+            try await Bridge.setStats(
                 context: context,
                 path: path,
                 fileAttributes: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue
@@ -507,10 +521,10 @@ public extension SMB {
         /// - Parameter path: A path on the share.
         /// - Returns: Filesystem statistics reported by the server.
         /// - Throws: ``SMB/Error`` if statistics cannot be read.
-        public func statFilesystem(at path: String = "") throws -> FilesystemStat {
+        public func statFilesystem(at path: String = "") async throws -> FilesystemStat {
             let path = try SMB.validatePath(path, operation: .smb2Statvfs, allowRoot: true)
             let context = try requireContext()
-            return try FilesystemStat(Bridge.statVFS(context: context, path: path))
+            return try await FilesystemStat(Bridge.statVFS(context: context, path: path))
         }
 
         /// Returns the live bridge context or throws if the connection is closed.

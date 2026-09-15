@@ -14,7 +14,7 @@ extension Bridge {
     // MARK: - Lock Flags
 
     /// SMB2 lock element flags.
-    struct LockFlags: Equatable {
+    struct LockFlags: Equatable, Sendable {
         static let shared = LockFlags(rawValue: 0x0000_0001)
         static let exclusive = LockFlags(rawValue: 0x0000_0002)
         static let unlock = LockFlags(rawValue: 0x0000_0004)
@@ -66,7 +66,7 @@ extension Bridge {
 
             let state = LockState()
             let callbackData = Unmanaged.passRetained(state).toOpaque()
-            defer { Unmanaged<LockState>.fromOpaque(callbackData).release() }
+            defer { releaseWhenFinished(state, callbackData) }
 
             try withUnsafeMutablePointer(to: &request) { requestPointer in
                 guard let pdu = smb2_cmd_lock_async(
@@ -96,8 +96,8 @@ extension Bridge {
         flags: LockFlags,
         offset: UInt64 = 0,
         length: UInt64 = UInt64.max
-    ) throws {
-        try Bridge.sync {
+    ) async throws {
+        try await perform(on: context) {
             try _lock(context: context, file: file, flags: flags, offset: offset, length: length)
         }
     }
@@ -108,7 +108,7 @@ extension Bridge {
         file: FileHandle,
         offset: UInt64 = 0,
         length: UInt64 = UInt64.max
-    ) throws {
-        try lock(context: context, file: file, flags: .unlock, offset: offset, length: length)
+    ) async throws {
+        try await lock(context: context, file: file, flags: .unlock, offset: offset, length: length)
     }
 }

@@ -14,8 +14,8 @@ let cookbookServer = SMB.Server(host: cookbookServerHost)
 let cookbookCredentials = SMB.Credentials(user: "Anna", password: "1987")
 let cookbookShare = "Documents"
 
-func cookbookConnection() throws -> SMB.Connection {
-    try SMB.connect(
+func cookbookConnection() async throws -> SMB.Connection {
+    try await SMB.connect(
         server: cookbookServer,
         credentials: cookbookCredentials,
         share: cookbookShare
