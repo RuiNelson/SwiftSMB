@@ -210,17 +210,6 @@ source TestServer/up.sh
 swift test
 ```
 
-### Xcode
-
-Open the folder, then disable **Code Coverage** on the test plan:
-
-1. Menu: Product -> Scheme -> SwiftSMB-Package
-2. Menu: Product -> Scheme -> Edit Scheme...
-3. Test Plans list should have an *Autocreated* test plan, click on the **little encircled arrow**
-4. Tab *Configurations*
-5. Set *Code Coverage* to **Off**
-6. If it still doesn't compile, do the same thing on the other schemes
-
 ## Licensing
 
 SwiftSMB is distributed under the Apache License, version 2.0. A copy of the license is included in [LICENSE](LICENSE).
