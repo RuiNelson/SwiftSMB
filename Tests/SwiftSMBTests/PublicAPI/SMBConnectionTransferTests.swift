@@ -10,6 +10,12 @@ import Foundation
 import SwiftSMB
 import Testing
 
+/// The size of the large-transfer fixtures, in bytes.
+///
+/// Kept in a constant: comparing an optional against an arithmetic expression in `#expect` triggers a false
+/// AddressSanitizer `stack-buffer-overflow` with the Swift 6.4 toolchain.
+private let hundredMegabytes: UInt64 = 100 * 1024 * 1024
+
 final class SendableBox<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) {
@@ -366,13 +372,13 @@ struct SMBConnectionTransferTests {
         let progress = SendableBox<[UInt64]>([])
         try await connection.uploadFile(local: local, remote: remote) { transferred, total, _, _ in
             progress.value.append(transferred)
-            #expect(total == 100 * 1024 * 1024)
+            #expect(total == hundredMegabytes)
             return true
         }
 
         let remoteStat = try await connection.stat(at: remote)
-        #expect(remoteStat.size == 100 * 1024 * 1024)
-        #expect(progress.value.last == 100 * 1024 * 1024)
+        #expect(remoteStat.size == hundredMegabytes)
+        #expect(progress.value.last == hundredMegabytes)
 
         let file = try await connection.openFile(at: remote, accessMode: .readOnly)
         defer { try? await file.close() }
@@ -405,13 +411,13 @@ struct SMBConnectionTransferTests {
         let progress = SendableBox<[UInt64]>([])
         try await connection.downloadFile(remote: remote, local: local) { transferred, total, _, _ in
             progress.value.append(transferred)
-            #expect(total == 100 * 1024 * 1024)
+            #expect(total == hundredMegabytes)
             return true
         }
 
         let localSize = try (FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.uint64Value
-        #expect(localSize == 100 * 1024 * 1024)
-        #expect(progress.value.last == 100 * 1024 * 1024)
+        #expect(localSize == hundredMegabytes)
+        #expect(progress.value.last == hundredMegabytes)
 
         let handle = try FileHandle(forReadingFrom: local)
         defer { try? handle.close() }

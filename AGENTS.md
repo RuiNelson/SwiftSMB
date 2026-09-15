@@ -138,7 +138,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
 - Integration tests that wait for asynchronous events use `withTimeout(seconds:_:)` from `Tests/SwiftSMBTests/Utils` rather than sleeps.
-- AddressSanitizer: SwiftPM does not link the ASan runtime into the dynamic `libsmb2` product, so pass it explicitly: `RT=$(xcrun clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib); swift test --sanitize=address -Xlinker "$RT" -Xlinker -rpath -Xlinker "$(dirname "$RT")"`. The Swift 6.4 toolchain reports a false `stack-buffer-overflow` (a 9-byte read in `_convertToAnyHashable`) for `#expect` on `Optional<UInt64>`; add `-Xswiftc -sanitize-recover=address -Xcc -fsanitize-recover=address` and `ASAN_OPTIONS=halt_on_error=0` to keep going past it.
+- AddressSanitizer (macOS): run `asan.sh`; extra arguments go to `swift test` (for example `zsh asan.sh --filter SMBNotify`). SwiftPM does not link the ASan runtime into the dynamic `libsmb2` product, so the script passes it to the linker. The Swift 6.4 toolchain reports a false `stack-buffer-overflow` (a 9-byte read in `_convertToAnyHashable`) when `#expect` compares an optional against an arithmetic expression, such as `#expect(optionalSize == 100 * 1024 * 1024)`; precompute the expected value in a constant instead.
 
 ## Dependency Updates
 
