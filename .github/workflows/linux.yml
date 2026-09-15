@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: swift:6.3-noble
+      image: swift:6.4-noble
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -23,7 +23,7 @@ jobs:
       enable_windows_checks: false
       enable_android_sdk_build: true
       enable_android_sdk_checks: false
-      android_sdk_versions: '["6.3"]'
+      android_sdk_versions: '["6.4"]'
       android_ndk_versions: '["r27d"]'
       android_sdk_triples: '["aarch64-unknown-linux-android28"]'
       android_sdk_pre_build_command: |
