@@ -53,6 +53,31 @@ struct CookbookWatchingChangesTests {
         #expect(!received.isEmpty)
     }
 
+    @Test("notifyEnumDir recovery compiles and runs")
+    func notifyEnumDirRecovery() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = uniquePath("cookbook-notify-enum")
+        try await connection.makeDirectory(at: root)
+        defer { try? await connection.removeItem(at: root) }
+
+        let watcher = try await connection.watchDirectory(at: root)
+        watcher.cancel()
+
+        var rescanned: [SMB.DirectoryEntry]?
+        do {
+            for try await changes in watcher {
+                print(changes)
+            }
+        }
+        catch SMB.Error.ntStatus(.notifyEnumDir, _, _, _) {
+            rescanned = try await connection.listDirectory(at: root)
+        }
+        // A cancelled watcher ends normally, so the recovery branch is not taken here.
+        #expect(rescanned == nil)
+    }
+
     @Test("watchDirectory with filter compiles and runs")
     func watchDirectoryWithFilter() async throws {
         let connection = try await cookbookConnection()

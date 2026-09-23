@@ -132,6 +132,38 @@ struct SMBConnectionFileTests {
         }
     }
 
+    @Test("copyFile rejects a directory source without creating the destination")
+    func copyFileRejectsDirectorySource() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let destPath = uniquePath("copy-dir") + ".txt"
+        defer { try? await connection.removeFile(at: destPath) }
+
+        await #expect(throws: SMB.Error.invalidArgument(
+            cause: .remotePathIsNotAFile,
+            onOperation: .smbConnectionCopyFile
+        )) {
+            try await connection.copyFile(from: TestContent.testdirPath, to: destPath)
+        }
+        await #expect(try connection.itemExists(at: destPath) == .false)
+    }
+
+    @Test("makeLink rejects a destination too long for a reparse buffer")
+    func makeLinkRejectsOverlongDestination() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let linkPath = uniquePath("long-link")
+        defer { try? await connection.removeFile(at: linkPath) }
+
+        // 17,000 UTF-16 code units, stored twice (substitute and print name), overflow the 16-bit reparse data length.
+        let destination = String(repeating: "a", count: 17000)
+        await #expect(throws: SMB.Error.self) {
+            try await connection.makeLink(at: linkPath, pointingTo: destination)
+        }
+    }
+
     @Test("changeDate preserves file attributes") func changeDatePreservesFileAttributes() async throws {
         let connection = try await publicFileConnection()
         defer { try? await connection.disconnect() }

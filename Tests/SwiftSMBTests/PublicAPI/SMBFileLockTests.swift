@@ -114,6 +114,37 @@ struct SMBFileLockTests {
         }
     }
 
+    @Test("lock conflict after an unrelated failure reports the lock status")
+    func lockConflictAfterUnrelatedFailureReportsLockStatus() async throws {
+        let owner = try await publicFileConnection()
+        let contender = try await publicFileConnection()
+        defer { try? await owner.disconnect() }
+        defer { try? await contender.disconnect() }
+
+        let path = uniquePath("public-lock-stale") + ".txt"
+        defer { try? await owner.removeFile(at: path) }
+
+        try await owner.dumpToFile(Data("lock test".utf8), to: path)
+        let ownerFile = try await owner.openFile(at: path, accessMode: .readWrite)
+        defer { try? await ownerFile.close() }
+        let contenderFile = try await contender.openFile(at: path, accessMode: .readWrite)
+        defer { try? await contenderFile.close() }
+        try await ownerFile.lock(.exclusive, nonBlocking: true)
+
+        // A failed open leaves STATUS_OBJECT_NAME_NOT_FOUND in the libsmb2 context; it must not leak into the next
+        // error.
+        _ = try? await contender.openFile(at: uniquePath("missing") + ".txt")
+
+        do {
+            try await contenderFile.lock(.exclusive, nonBlocking: true)
+            Issue.record("Expected the conflicting lock to fail")
+        }
+        catch let SMB.Error.ntStatus(status, _, _, message) {
+            #expect(status == .lockNotGranted)
+            #expect(!message.contains("Open failed"))
+        }
+    }
+
     @Test("public lock with empty range throws") func publicLockWithEmptyRangeThrows() async throws {
         let connection = try await publicFileConnection()
         defer { try? await connection.disconnect() }

@@ -208,6 +208,71 @@ struct SMBConnectionTransferTests {
         await #expect(try connection.loadFile(at: remote) == expected)
     }
 
+    @Test("nonatomic upload with default options creates the remote file")
+    func nonatomicUploadWithDefaultOptionsCreatesRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("upload-direct-new") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let expected = Data((0 ..< 9).map { UInt8($0) })
+        try expected.write(to: local)
+
+        try await connection.uploadFile(local: local, remote: remote, atomic: false) { _, _, _, _ in true }
+
+        await #expect(try connection.loadFile(at: remote) == expected)
+    }
+
+    @Test("nonatomic upload with default options replaces a longer remote file")
+    func nonatomicUploadWithDefaultOptionsReplacesLongerRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("upload-direct-shorter") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data(repeating: 0xEE, count: 32), to: remote)
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let expected = Data((0 ..< 9).map { UInt8($0) })
+        try expected.write(to: local)
+
+        try await connection.uploadFile(local: local, remote: remote, atomic: false) { _, _, _, _ in true }
+
+        await #expect(try connection.loadFile(at: remote) == expected)
+    }
+
+    @Test("nonatomic resumed upload keeps the remote prefix even with truncate")
+    func nonatomicResumedUploadKeepsRemotePrefix() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("upload-direct-resume") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let expected = Data((0 ..< 16).map { UInt8($0) })
+        try await connection.dumpToFile(expected.prefix(8), to: remote)
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+        try expected.write(to: local)
+
+        try await connection.uploadFile(
+            local: local,
+            remote: remote,
+            from: .offset(byte: 8),
+            options: [.create, .truncate],
+            atomic: false
+        ) { _, _, _, _ in true }
+
+        await #expect(try connection.loadFile(at: remote) == expected)
+    }
+
     @Test("empty files transfer successfully")
     func emptyFilesTransferSuccessfully() async throws {
         let connection = try await publicConnection()
@@ -323,6 +388,58 @@ struct SMBConnectionTransferTests {
                     true
                 }
         }
+    }
+
+    @Test("failed atomic download resume leaves no local temporary file")
+    func failedAtomicDownloadResumeLeavesNoLocalTemporaryFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let local = directory.appendingPathComponent("partial.bin")
+        try Data([0xAA, 0xBB]).write(to: local)
+
+        await #expect(throws: SMB.Error.invalidArgument(
+            cause: .localFileShorterThanResumeOffset,
+            onOperation: .smbConnectionDownloadFile
+        )) {
+            try await connection
+                .downloadFile(remote: TestContent.helloPath, local: local, from: .offset(byte: 4)) { _, _, _, _ in
+                    true
+                }
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["partial.bin"])
+    }
+
+    @Test("cancelled atomic upload resume leaves no remote temporary file")
+    func cancelledAtomicUploadResumeLeavesNoRemoteTemporaryFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let directory = uniquePath("upload-resume-cancel")
+        try await connection.makeDirectory(at: directory)
+        defer { try? await connection.removeItem(at: directory) }
+        let remote = directory + "/file.bin"
+        try await connection.dumpToFile(Data(repeating: 7, count: 16), to: remote)
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+        try Data(repeating: 7, count: 32).write(to: local)
+
+        // Cancelled up front, the upload first stops in the loop that seeds the temporary file with the remote prefix.
+        let upload = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await connection.uploadFile(local: local, remote: remote, from: .offset(byte: 8)) { _, _, _, _ in true }
+        }
+        await #expect(throws: CancellationError.self) {
+            try await upload.value
+        }
+
+        let names = try await connection.listDirectory(at: directory).map(\.name).filter { $0 != "." && $0 != ".." }
+        #expect(names == ["file.bin"])
     }
 
     @Test("upload offset requires remote prefix")

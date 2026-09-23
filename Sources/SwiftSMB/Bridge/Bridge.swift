@@ -46,9 +46,20 @@ class Bridge {
                     continuation.resume(throwing: SMB.Error.operationRequestedAfterConnectionClosed)
                     return
                 }
+                clearError(on: context)
                 continuation.resume(with: Result { try body() })
             }
         }
+    }
+
+    /// Clears the context's last error string and NT status. Must run on the context queue.
+    ///
+    /// libsmb2 keeps both until another failure overwrites them, and ``SMB/Error/fromBridge(_:operation:status:)``
+    /// prefers the NT status over the status an operation reports. Clearing them before each operation keeps a failure
+    /// from being reported with the status and message of an earlier, unrelated one.
+    private static func clearError(on context: Context) {
+        context.raw.pointee.nterror = 0
+        withUnsafeMutableBytes(of: &context.raw.pointee.error_string) { $0[0] = 0 }
     }
 
     /// Enqueues `body` on the context's serial queue without waiting for it. Used from `deinit`, which cannot await.
@@ -1333,6 +1344,10 @@ class Bridge {
             context: context,
             operation: "smb2_stat"
         )
+        // A directory reports size 0, which the empty-file shortcut below would silently "copy" to an empty file.
+        guard stat.smb2_type != SMB2_TYPE_DIRECTORY else {
+            throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: .smbConnectionCopyFile)
+        }
         let fileSize = stat.smb2_size
 
         guard fileSize > 0 else {

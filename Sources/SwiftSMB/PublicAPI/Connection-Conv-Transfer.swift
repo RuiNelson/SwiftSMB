@@ -111,24 +111,23 @@ public extension SMB.Connection {
 
         try assertValidLocalDestination(local, operation: operation)
 
-        let tempFile: URL?
-        let writer: BackgroundFileWriter
-        if atomic {
-            let temp = try createUniqueLocalTempFile(near: local, operation: operation)
-            tempFile = temp
-            if offset > 0 {
-                try copyLocalPrefix(from: local, to: temp, byteCount: offset, operation: operation)
-            }
-            writer = try BackgroundFileWriter(appendingTo: temp)
-        }
-        else {
-            tempFile = nil
-            writer = try BackgroundFileWriter(writingDirectlyTo: local, offset: offset, operation: operation)
-        }
+        let tempFile = atomic ? try createUniqueLocalTempFile(near: local, operation: operation) : nil
+        // Registered before anything else can fail, so the temporary file never outlives a failed download.
         defer {
             if let tempFile {
                 try? FileManager.default.removeItem(at: tempFile)
             }
+        }
+
+        let writer: BackgroundFileWriter
+        if let tempFile {
+            if offset > 0 {
+                try copyLocalPrefix(from: local, to: tempFile, byteCount: offset, operation: operation)
+            }
+            writer = try BackgroundFileWriter(appendingTo: tempFile)
+        }
+        else {
+            writer = try BackgroundFileWriter(writingDirectlyTo: local, offset: offset, operation: operation)
         }
         defer { try? await writer.finish() }
 
@@ -159,9 +158,10 @@ public extension SMB.Connection {
     /// cancellation or failure may leave a partially written remote file. Local disk reads happen on a background queue
     /// one block ahead, so they overlap the network writes.
     ///
-    /// To resume a partial upload, pass an offset with ``FromArgument/offset(byte:)``. For atomic resumed uploads, the
-    /// existing remote file must contain at least that many bytes; that prefix is copied into the temporary remote file
-    /// before the remaining local bytes are uploaded.
+    /// To resume a partial upload, pass an offset with ``FromArgument/offset(byte:)``. The existing remote file must
+    /// contain at least that many bytes. For atomic resumed uploads, that prefix is copied into the temporary remote
+    /// file before the remaining local bytes are uploaded. Resumed uploads never truncate `remote`, so
+    /// ``SMB/File/OpenOptions/truncate`` is ignored when the offset is not zero.
     ///
     /// If `continuation` returns `false`, the method cancels the upload and returns normally. If the task is cancelled,
     /// the upload stops between blocks and throws `CancellationError`; cleanup is the same as for a failure.
@@ -170,7 +170,8 @@ public extension SMB.Connection {
     ///   - local: The source file URL on local storage.
     ///   - remote: The share-relative destination file path.
     ///   - from: The byte offset at which uploading should begin.
-    ///   - options: Options used when opening `remote` for a non-atomic upload.
+    ///   - options: Options used when opening `remote` for a non-atomic upload. The default creates the file if needed
+    /// and truncates any existing content, so `remote` ends up identical to `local`.
     ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum write size
     /// are clamped.
     ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
@@ -185,7 +186,7 @@ public extension SMB.Connection {
         local: URL,
         remote: String,
         from: FromArgument = .beginning,
-        options: SMB.File.OpenOptions = [],
+        options: SMB.File.OpenOptions = [.create, .truncate],
         maxBlockSize: UInt64? = nil,
         makePath: Bool = true,
         atomic: Bool = true,
@@ -213,11 +214,24 @@ public extension SMB.Connection {
         let totalBytes = fileSize - offset
         let blockSize = try await transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
 
-        let target: String
-        let openOptions: SMB.File.OpenOptions
+        let target = atomic ? try await uniqueRemoteTemporaryPath(near: remote, on: self) : remote
+        let openOptions: SMB.File.OpenOptions = if atomic {
+            (offset == 0) ? [.create, .exclusive] : []
+        }
+        else {
+            // Truncating on open would discard the prefix a resumed upload continues from.
+            (offset == 0) ? options : options.subtracting(.truncate)
+        }
+
+        // Registered before the temporary file can be created, so it is removed even if seeding it fails.
+        var shouldRemoveRemoteTemp = atomic
+        defer {
+            if shouldRemoveRemoteTemp {
+                try? await removeFile(at: target)
+            }
+        }
+
         if atomic {
-            target = try await uniqueRemoteTemporaryPath(near: remote, on: self)
-            openOptions = (offset == 0) ? [.create, .exclusive] : []
             try await prepareAtomicUploadTarget(
                 on: self,
                 remote: remote,
@@ -226,17 +240,6 @@ public extension SMB.Connection {
                 blockSize: blockSize,
                 operation: operation
             )
-        }
-        else {
-            target = remote
-            openOptions = options
-        }
-
-        var shouldRemoveRemoteTemp = atomic
-        defer {
-            if shouldRemoveRemoteTemp {
-                try? await removeFile(at: target)
-            }
         }
 
         if offset > 0 {

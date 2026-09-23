@@ -41,6 +41,22 @@ print("Watcher stopped")
 
 Each element is the batch of changes reported by one SMB notification. The loop ends normally when the watcher is cancelled, and throws when the server or the network reports an error.
 
+If the server can no longer list the individual changes, typically because too many happened at once, the loop throws
+``SMB.Error`` with ``SMB.SMBStatus.notifyEnumDir``. Re-read the directory to pick up what changed, then start a new
+watcher:
+
+```swift
+do {
+    for try await changes in watcher {
+        handle(changes)
+    }
+}
+catch SMB.Error.ntStatus(.notifyEnumDir, _, _, _) {
+    let entries = try await connection.listDirectory(at: "Inbox")
+    rescan(entries)
+}
+```
+
 ## Filtering events
 
 You can restrict the kinds of changes the server reports with ``SMB.NotifyFilter``:

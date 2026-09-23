@@ -72,7 +72,8 @@ try await connection.copyFile(from: "Photos/vacation.jpg", to: "Photos/vacation_
 try await connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
 ```
 
-The source file must exist. If the destination file already exists, an error is thrown.
+The source file must exist and must not be a directory. If the destination file already exists, an error is thrown. If
+the copy fails partway, the partially written destination is removed, so the call can simply be retried.
 
 ## Setting access control
 

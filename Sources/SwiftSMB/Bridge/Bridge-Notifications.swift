@@ -59,7 +59,9 @@ extension Bridge {
             throw SMB.Error.fromBridge(context, operation: "smb2_cmd_change_notify_async")
         }
 
-        state.didCreateRequest(raw: rawPDU, callbackData: callbackData)
+        // A notify request legitimately waits until something changes. With the command timeout libsmb2 stamps on every
+        // PDU, it would fail with STATUS_IO_TIMEOUT after that many idle seconds.
+        rawPDU.pointee.timeout = 0
         smb2_queue_pdu(context.raw, rawPDU)
 
         return PendingRequest(state: state)
@@ -78,13 +80,15 @@ extension Bridge {
         }
     }
 
-    private static func _cancel(context: Context, request: PendingRequest) {
-        guard let cancellation = request.state.cancel() else {
-            return
-        }
-
-        smb2_free_pdu(context.raw, cancellation.raw)
-        Unmanaged<PendingRequestState>.fromOpaque(cancellation.callbackData).release()
+    /// Marks a pending request cancelled so that its completion is ignored.
+    ///
+    /// The PDU is deliberately not freed: libsmb2 may already be sending it or receiving its reply (`smb2->pdu`), and
+    /// freeing it then would leave libsmb2 with a dangling pointer. The request completes on its own — the server
+    /// answers pending notify requests with `STATUS_NOTIFY_CLEANUP` when their directory handle is closed, and
+    /// destroying the context completes any that remain with `SMB2_STATUS_SHUTDOWN` — and its callback then only
+    /// releases the retained state.
+    private static func _cancel(context _: Context, request: PendingRequest) {
+        request.state.cancel()
     }
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.
