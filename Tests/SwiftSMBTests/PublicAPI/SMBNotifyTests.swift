@@ -136,11 +136,10 @@ struct SMBNotifyIntegrationTests {
 
     @Test("a watcher outlives the connection's command timeout")
     func watcherOutlivesCommandTimeout() async throws {
-        let watcherConnection = try await SMB.connect(
-            server: SMB.Server(host: testServerHost),
-            share: TestShare.public,
-            configuration: SMB.Configuration(timeout: 1)
-        )
+        // Set the timeout after connecting: libsmb2 checks the connect deadline against whole wall-clock seconds, so a
+        // 1-second connection window can expire almost immediately.
+        let watcherConnection = try await publicNotifyConnection()
+        try await watcherConnection.setTimeout(1)
         let writerConnection = try await publicNotifyConnection()
         defer { try? await watcherConnection.disconnect() }
         defer { try? await writerConnection.disconnect() }
