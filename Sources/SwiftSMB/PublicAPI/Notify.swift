@@ -232,7 +232,9 @@ public extension SMB {
     ///
     /// Iteration ends normally when the watcher is cancelled with ``cancel()``, when the iterating task is cancelled,
     /// when the connection is disconnected, or when the watcher is deallocated. It ends by throwing when the server or
-    /// the network reports an error.
+    /// the network reports an error. When the server can no longer list individual changes, typically because too many
+    /// happened at once, iteration throws ``SMB/Error/ntStatus(_:posixCode:operation:message:)`` with
+    /// ``SMB/SMBStatus/notifyEnumDir``: re-read the directory and start a new watcher.
     ///
     /// Iterate a watcher from one task at a time. Change batches that arrive while nobody is iterating are buffered
     /// until they are consumed.

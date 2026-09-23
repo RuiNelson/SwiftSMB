@@ -119,14 +119,15 @@ public extension SMB.Connection {
 
     /// Copies a file from one path to another on the connected share using server-side copy.
     ///
-    /// Data is copied directly on the server without transferring through the client. The source file must exist. If
-    /// the destination file already exists, an error is thrown.
+    /// Data is copied directly on the server without transferring through the client. The source file must exist and
+    /// must not be a directory. If the destination file already exists, an error is thrown. If the copy fails after the
+    /// destination was created, the partial destination file is removed.
     ///
     /// - Parameters:
     ///   - sourcePath: The source file path, relative to the share root.
     ///   - destinationPath: The destination file path, relative to the share root.
-    /// - Throws: ``SMB/Error`` if the source cannot be opened, the destination already exists, or the server does not
-    /// support server-side copy.
+    /// - Throws: ``SMB/Error`` if the source cannot be opened or is a directory, the destination already exists, or the
+    /// server does not support server-side copy.
     func copyFile(from sourcePath: String, to destinationPath: String) async throws {
         let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
         let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
@@ -148,11 +149,19 @@ public extension SMB.Connection {
             )
         }
 
-        try await Bridge.serverSideCopy(
-            context: context,
-            sourcePath: sourcePath,
-            destinationPath: destinationPath
-        )
+        do {
+            try await Bridge.serverSideCopy(
+                context: context,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath
+            )
+        }
+        catch {
+            // The destination did not exist before, so anything there now is a partial copy. Leaving it would also
+            // make a retry fail because the destination exists.
+            try? await removeFile(at: destinationPath)
+            throw error
+        }
     }
 
     /// Returns a read block size accepted by the server.

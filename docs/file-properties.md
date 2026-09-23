@@ -110,6 +110,9 @@ print("Accessed:     \(info.accessTime)")
 print("Meta changed: \(info.changeTime)")
 ```
 
+Timestamps before 1970-01-01, including the zero timestamp some servers report for an unknown time, are not
+represented correctly: `libsmb2` converts them with unsigned arithmetic, so they read back as dates far in the future.
+
 ## Filesystem statistics
 
 ``SMB.Connection.statFilesystem(at:)`` returns capacity and usage information for the share:

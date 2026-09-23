@@ -82,6 +82,15 @@ extension Bridge {
         let substituteNameData = destination.data(using: .utf16LittleEndian) ?? Data()
         let printNameData = substituteNameData
 
+        // The reparse data length is a 16-bit field; a longer target would trap in the UInt16 conversions below.
+        guard 12 + substituteNameData.count + printNameData.count <= Int(UInt16.max) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.ENAMETOOLONG.rawValue,
+                operation: "FSCTL_SET_REPARSE_POINT",
+                message: "Link destination is too long"
+            )
+        }
+
         var reparseBuffer = [UInt8]()
         reparseBuffer.reserveCapacity(20 + substituteNameData.count + printNameData.count)
 

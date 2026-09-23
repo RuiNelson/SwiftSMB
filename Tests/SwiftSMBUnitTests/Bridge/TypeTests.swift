@@ -610,3 +610,30 @@ struct SMBServerAddressTests {
         #expect(SMB.Server(host: "[fe80::1]", port: 44445).address == "[fe80::1]:44445")
     }
 }
+
+// MARK: - SMB.FilesystemStat
+
+struct SMBFilesystemStatTests {
+    private func filesystemStat(blockSize: UInt32, freeBlocks: UInt64, availableBlocks: UInt64) -> SMB.FilesystemStat {
+        var raw = smb2_statvfs()
+        raw.f_bsize = blockSize
+        raw.f_frsize = blockSize
+        raw.f_bfree = freeBlocks
+        raw.f_bavail = availableBlocks
+        return SMB.FilesystemStat(Bridge.VFSStat(raw))
+    }
+
+    @Test("byte counts multiply blocks by block size") func byteCountsMultiplyBlocksByBlockSize() {
+        let stat = filesystemStat(blockSize: 4096, freeBlocks: 10, availableBlocks: 5)
+
+        #expect(stat.freeBytes == 40960)
+        #expect(stat.availableBytes == 20480)
+    }
+
+    @Test("byte counts saturate instead of trapping on overflow") func byteCountsSaturateOnOverflow() {
+        let stat = filesystemStat(blockSize: 4096, freeBlocks: .max, availableBlocks: .max / 2)
+
+        #expect(stat.freeBytes == .max)
+        #expect(stat.availableBytes == .max)
+    }
+}

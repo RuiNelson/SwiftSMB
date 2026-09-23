@@ -542,6 +542,10 @@ public extension SMB {
         case bufferOverflow = 0x8000_0005
         case stoppedOnSymlink = 0x8000_002D
 
+        /// The server could not list the changes for a directory watcher, typically because there were too many to
+        /// fit in its reply. The watcher ends with this status; re-read the directory and watch it again.
+        case notifyEnumDir = 0x0000_010C
+
         public var name: String {
             switch self {
             case .success:
@@ -1566,6 +1570,8 @@ public extension SMB {
                 "SMB2_STATUS_BUFFER_OVERFLOW"
             case .stoppedOnSymlink:
                 "SMB2_STATUS_STOPPED_ON_SYMLINK"
+            case .notifyEnumDir:
+                "SMB2_STATUS_NOTIFY_ENUM_DIR"
             }
         }
         

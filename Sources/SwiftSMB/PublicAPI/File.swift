@@ -214,6 +214,7 @@ public extension SMB {
         /// - Parameters:
         ///   - data: The bytes to write.
         ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum write size.
+        /// Values above the server maximum are clamped.
         /// - Returns: The total number of bytes written.
         /// - Throws: ``SMB/Error`` if the write fails or no progress is made, or `CancellationError` if the task is
         /// cancelled between chunks. Chunks written before cancellation stay written.
@@ -222,12 +223,10 @@ public extension SMB {
             _ data: Data,
             transferChunkSize: Int64? = nil
         ) async throws -> Int64 {
-            let chunkSize: Int64 = if let transferChunkSize {
-                transferChunkSize
-            }
-            else {
-                try await Int64(connection.maxWriteSize)
-            }
+            let maxWriteSize = try await Int64(connection.maxWriteSize)
+            // The server accepts at most `maxWriteSize` bytes per write, so a larger chunk would only be copied again,
+            // minus the accepted prefix, on every iteration.
+            let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
             guard chunkSize > 0 else {
                 throw SMB.Error.invalidArgument(
                     cause: .blockSizeMustBeGreaterThanZero,

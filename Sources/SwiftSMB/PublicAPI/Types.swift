@@ -259,6 +259,10 @@ public extension SMB {
     }
 
     /// Metadata for a file, directory, or link.
+    ///
+    /// Timestamps before 1970-01-01, including the zero timestamp some servers report for an unknown time, are not
+    /// represented correctly: `libsmb2` converts them with unsigned arithmetic, so they read back as dates far in the
+    /// future.
     struct Stat: Equatable, CustomDebugStringConvertible, Sendable {
         /// The node type.
         public let type: NodeType
@@ -373,13 +377,23 @@ public extension SMB {
         public let maximumNameLength: UInt32
 
         /// The number of free bytes on the filesystem.
+        ///
+        /// Saturates at `UInt64.max` if the server reports values whose product does not fit.
         public var freeBytes: UInt64 {
-            UInt64(blockSize) * freeBlocks
+            Self.byteCount(blocks: freeBlocks, blockSize: blockSize)
         }
 
         /// The number of bytes available to the current user.
+        ///
+        /// Saturates at `UInt64.max` if the server reports values whose product does not fit.
         public var availableBytes: UInt64 {
-            UInt64(blockSize) * availableBlocks
+            Self.byteCount(blocks: availableBlocks, blockSize: blockSize)
+        }
+
+        /// Multiplies server-reported values without trapping on overflow.
+        private static func byteCount(blocks: UInt64, blockSize: UInt32) -> UInt64 {
+            let (bytes, overflow) = blocks.multipliedReportingOverflow(by: UInt64(blockSize))
+            return overflow ? .max : bytes
         }
 
         /// Creates a public filesystem stat value from a bridge value.

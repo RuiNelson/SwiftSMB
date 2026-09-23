@@ -461,8 +461,6 @@ extension Bridge {
         let handler: NotifyChangeHandler
 
         private let lock = NSLock()
-        private var raw: UnsafeMutablePointer<smb2_pdu>?
-        private var callbackData: UnsafeMutableRawPointer?
         private var isFinished = false
 
         init(
@@ -473,32 +471,15 @@ extension Bridge {
             self.handler = handler
         }
 
-        func didCreateRequest(
-            raw: UnsafeMutablePointer<smb2_pdu>,
-            callbackData: UnsafeMutableRawPointer
-        ) {
+        /// Marks the request cancelled, so that its eventual completion does not call `handler`.
+        func cancel() {
             lock.lock()
             defer { lock.unlock() }
-
-            self.raw = raw
-            self.callbackData = callbackData
-        }
-
-        func cancel() -> (raw: UnsafeMutablePointer<smb2_pdu>, callbackData: UnsafeMutableRawPointer)? {
-            lock.lock()
-            defer { lock.unlock() }
-
-            guard !isFinished, let raw, let callbackData else {
-                return nil
-            }
 
             isFinished = true
-            self.raw = nil
-            self.callbackData = nil
-
-            return (raw, callbackData)
         }
 
+        /// Marks the request completed and returns `handler`, or `nil` if it was already cancelled or completed.
         func complete() -> NotifyChangeHandler? {
             lock.lock()
             defer { lock.unlock() }
@@ -508,9 +489,6 @@ extension Bridge {
             }
 
             isFinished = true
-            raw = nil
-            callbackData = nil
-
             return handler
         }
     }

@@ -134,6 +134,57 @@ struct SMBNotifyIntegrationTests {
         #expect(Date().timeIntervalSince(start) < 1.0)
     }
 
+    @Test("a watcher outlives the connection's command timeout")
+    func watcherOutlivesCommandTimeout() async throws {
+        let watcherConnection = try await SMB.connect(
+            server: SMB.Server(host: testServerHost),
+            share: TestShare.public,
+            configuration: SMB.Configuration(timeout: 1)
+        )
+        let writerConnection = try await publicNotifyConnection()
+        defer { try? await watcherConnection.disconnect() }
+        defer { try? await writerConnection.disconnect() }
+
+        let root = uniquePath("notify-timeout")
+        try await writerConnection.makeDirectory(at: root)
+        defer { try? await writerConnection.removeItem(at: root) }
+
+        let watcher = try await watcherConnection.watchDirectory(at: root, filter: [.fileName])
+        defer { watcher.cancel() }
+
+        // Stay idle past the 1-second command timeout; the pending notify request used to fail with STATUS_IO_TIMEOUT.
+        try await Task.sleep(nanoseconds: 2_500_000_000)
+        try await writerConnection.dumpToFile(Data("late".utf8), to: root + "/late.txt")
+
+        let changes = try await firstBatch(from: watcher)
+        #expect(changes?.contains { $0.name.hasSuffix("late.txt") } == true)
+    }
+
+    @Test("a connection keeps working after its watcher is cancelled")
+    func connectionKeepsWorkingAfterWatcherCancellation() async throws {
+        let connection = try await publicNotifyConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = uniquePath("notify-reuse")
+        try await connection.makeDirectory(at: root)
+        defer { try? await connection.removeItem(at: root) }
+
+        for index in 0 ..< 5 {
+            let watcher = try await connection.watchDirectory(at: root)
+            let iteration = Task {
+                for try await _ in watcher {
+                }
+            }
+            try await connection.dumpToFile(Data("\(index)".utf8), to: root + "/file-\(index).txt")
+            watcher.cancel()
+            try await withTimeout(seconds: 5) { try await iteration.value }
+        }
+
+        // The cancelled requests complete when their directory handles close; their replies must not disturb later
+        // operations.
+        #expect(try await connection.listDirectory(at: root).count(where: { $0.name.hasPrefix("file-") }) == 5)
+    }
+
     @Test("releasing a connection with an active watcher ends iteration")
     func releasingConnectionWithActiveWatcherEndsIteration() async throws {
         let setupConnection = try await publicNotifyConnection()

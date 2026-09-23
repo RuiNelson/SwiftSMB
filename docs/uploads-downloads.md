@@ -32,6 +32,10 @@ Return `false` from the progress closure to cancel the upload. The temporary sta
 Cancelling the task that runs the upload stops it between blocks with the same cleanup, and the call throws
 `CancellationError`.
 
+Pass `atomic: false` to write straight to the destination instead. By default the destination is created if needed
+and any existing content is truncated, so it ends up identical to the local file; a failed or cancelled transfer can
+leave it partially written. When resuming with `from: .offset(byte:)`, the existing content is never truncated.
+
 You can also pass a preferred block size. Values above the server maximum are clamped automatically:
 
 ```swift
