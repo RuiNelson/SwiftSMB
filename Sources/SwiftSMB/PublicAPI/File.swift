@@ -54,6 +54,9 @@ public extension SMB {
             public static let truncate = OpenOptions(rawValue: 1 << 3)
 
             /// Append writes to the end of the file.
+            ///
+            /// Each write refreshes the file's current length. Writers on separate connections must coordinate
+            /// access, for example with an exclusive file lock, to prevent concurrent append writes from overlapping.
             public static let append = OpenOptions(rawValue: 1 << 4)
 
             /// Creates an open options value from a raw bitfield.
@@ -154,7 +157,7 @@ public extension SMB {
 
         /// A Boolean value indicating whether the file handle is still open.
         public var isOpen: Bool {
-            handle != nil
+            handle != nil && connection.isConnected
         }
 
         /// Closes the file handle.
@@ -182,29 +185,31 @@ public extension SMB {
             upTo: Int64? = nil,
             transferChunkSize: Int64? = nil
         ) async throws -> Data {
-            if let upTo, upTo <= 0 {
-                return Data()
+            try await connection.withOperation {
+                if let upTo, upTo <= 0 {
+                    return Data()
+                }
+
+                // Clamps to the server maximum and rejects non-positive sizes.
+                let chunkSize = try await connection
+                    .acceptedReadBlockSize(transferChunkSize.map { Int(clamping: $0) } ?? .max)
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Read)
+
+                var result = Data()
+                var remaining = upTo
+
+                while remaining == nil || remaining! > 0 {
+                    try Task.checkCancellation()
+                    let byteCount = remaining.map { Int(min($0, Int64(chunkSize))) } ?? chunkSize
+                    let data = try await Bridge.read(context: context, file: handle, count: byteCount)
+                    guard !data.isEmpty else { break }
+                    result.append(data)
+                    remaining = remaining.map { $0 - Int64(data.count) }
+                }
+
+                return result
             }
-
-            // Clamps to the server maximum and rejects non-positive sizes.
-            let chunkSize = try await connection
-                .acceptedReadBlockSize(transferChunkSize.map { Int(clamping: $0) } ?? .max)
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Read)
-
-            var result = Data()
-            var remaining = upTo
-
-            while remaining == nil || remaining! > 0 {
-                try Task.checkCancellation()
-                let byteCount = remaining.map { Int(min($0, Int64(chunkSize))) } ?? chunkSize
-                let data = try await Bridge.read(context: context, file: handle, count: byteCount)
-                guard !data.isEmpty else { break }
-                result.append(data)
-                remaining = remaining.map { $0 - Int64(data.count) }
-            }
-
-            return result
         }
 
         /// Writes bytes to the file.
@@ -223,42 +228,45 @@ public extension SMB {
             _ data: Data,
             transferChunkSize: Int64? = nil
         ) async throws -> Int64 {
-            let maxWriteSize = try await Int64(connection.maxWriteSize)
-            // The server accepts at most `maxWriteSize` bytes per write, so a larger chunk would only be copied again,
-            // minus the accepted prefix, on every iteration.
-            let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
-            guard chunkSize > 0 else {
-                throw SMB.Error.invalidArgument(
-                    cause: .blockSizeMustBeGreaterThanZero,
-                    onOperation: .smb2Write
-                )
-            }
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Write)
-
-            // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
-            let maxChunk = Int(min(chunkSize, Int64(data.count)))
-            var written: Int64 = 0
-
-            while written < data.count {
-                try Task.checkCancellation()
-                let start = data.startIndex + Int(written)
-                let end = min(start + maxChunk, data.endIndex)
-                let count = try await Bridge.write(
-                    context: context,
-                    file: handle,
-                    data: data.subdata(in: start ..< end)
-                )
-                guard count > 0 else {
-                    throw SMB.Error.unknown(
-                        operation: "smb2_write",
-                        message: "Write made no progress before all data was written"
+            try await connection.withOperation {
+                let maxWriteSize = try await Int64(connection.maxWriteSize)
+                // The server accepts at most `maxWriteSize` bytes per write, so a larger chunk would only be copied
+                // again,
+                // minus the accepted prefix, on every iteration.
+                let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
+                guard chunkSize > 0 else {
+                    throw SMB.Error.invalidArgument(
+                        cause: .blockSizeMustBeGreaterThanZero,
+                        onOperation: .smb2Write
                     )
                 }
-                written += Int64(count)
-            }
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Write)
 
-            return written
+                // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
+                let maxChunk = Int(min(chunkSize, Int64(data.count)))
+                var written: Int64 = 0
+
+                while written < data.count {
+                    try Task.checkCancellation()
+                    let start = data.startIndex + Int(written)
+                    let end = min(start + maxChunk, data.endIndex)
+                    let count = try await Bridge.write(
+                        context: context,
+                        file: handle,
+                        data: data.subdata(in: start ..< end)
+                    )
+                    guard count > 0 else {
+                        throw SMB.Error.unknown(
+                            operation: "smb2_write",
+                            message: "Write made no progress before all data was written"
+                        )
+                    }
+                    written += Int64(count)
+                }
+
+                return written
+            }
         }
 
         /// Moves the current file offset.
@@ -270,18 +278,22 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if seeking fails.
         @discardableResult
         public func seek(offset: Int64, from origin: SeekOrigin) async throws -> UInt64 {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Lseek)
-            return try await Bridge.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Lseek)
+                return try await Bridge.seek(context: context, file: handle, offset: offset, whence: origin.bridgeValue)
+            }
         }
 
         /// Flushes pending writes for the file.
         ///
         /// - Throws: ``SMB/Error`` if the sync operation fails.
         public func sync() async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Fsync)
-            try await Bridge.sync(context: context, file: handle)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Fsync)
+                try await Bridge.sync(context: context, file: handle)
+            }
         }
 
         /// Truncates the file to a length in bytes.
@@ -289,9 +301,11 @@ public extension SMB {
         /// - Parameter length: The target file length.
         /// - Throws: ``SMB/Error`` if truncation fails.
         public func truncate(toLength length: UInt64) async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Ftruncate)
-            try await Bridge.truncate(context: context, file: handle, length: length)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Ftruncate)
+                try await Bridge.truncate(context: context, file: handle, length: length)
+            }
         }
 
         /// Returns metadata for the open file.
@@ -299,9 +313,11 @@ public extension SMB {
         /// - Returns: File metadata reported by the server.
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
         public func stat() async throws -> Stat {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Fstat)
-            return try await Stat(Bridge.fileStatistics(context: context, file: handle))
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Fstat)
+                return try await Stat(Bridge.fileStatistics(context: context, file: handle))
+            }
         }
         
         /// Releases a byte-range lock previously acquired on the file.
@@ -312,10 +328,12 @@ public extension SMB {
         /// without a range).
         /// - Throws: ``SMB/Error`` if the file is closed or the server reports an error.
         public func unlock(range: Range<Int64>? = nil) async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Flock)
-            let (offset, length) = try Self.validateLockRange(range)
-            try await Bridge.unlock(context: context, file: handle, offset: offset, length: length)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Flock)
+                let (offset, length) = try Self.validateLockRange(range)
+                try await Bridge.unlock(context: context, file: handle, offset: offset, length: length)
+            }
         }
 
         /// The type of byte-range lock to acquire.
@@ -414,19 +432,21 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the file is closed, the lock range is invalid, the lock conflicts with an
         /// existing lock, or the server reports an error.
         public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Int64>? = nil) async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Flock)
-            var flags: Bridge.LockFlags = switch mode {
-            case .shared:
-                .shared
-            case .exclusive:
-                .exclusive
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Flock)
+                var flags: Bridge.LockFlags = switch mode {
+                case .shared:
+                    .shared
+                case .exclusive:
+                    .exclusive
+                }
+                if nonBlocking {
+                    flags = Bridge.LockFlags(rawValue: flags.rawValue | Bridge.LockFlags.failImmediately.rawValue)
+                }
+                let (offset, length) = try Self.validateLockRange(range)
+                try await Bridge.lock(context: context, file: handle, flags: flags, offset: offset, length: length)
             }
-            if nonBlocking {
-                flags = Bridge.LockFlags(rawValue: flags.rawValue | Bridge.LockFlags.failImmediately.rawValue)
-            }
-            let (offset, length) = try Self.validateLockRange(range)
-            try await Bridge.lock(context: context, file: handle, flags: flags, offset: offset, length: length)
         }
 
         private static func validateLockRange(_ range: Range<Int64>?) throws -> (offset: UInt64, length: UInt64) {

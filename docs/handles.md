@@ -110,6 +110,10 @@ let file = try await connection.openFile(
 )
 ```
 
+Append refreshes the file's length before each write. If multiple connections append to the same file, coordinate
+their writes with an exclusive file lock to prevent them from choosing the same offset. Append does not acquire locks
+automatically.
+
 ## Reading from a file handle
 
 Read from the current offset until end of file:
@@ -314,3 +318,17 @@ await directory.close()
 ```
 
 Both handles close automatically when they go out of scope, but explicit close is recommended in tight loops or when you open many handles.
+
+## Disconnecting
+
+``SMB.Connection.disconnect()`` cancels watchers and closes all file and directory handles before destroying the connection.
+Use ``SMB.Connection.disconnectGracefully()`` to let complete operations already in progress finish first, including
+multi-block reads, writes, and uploads or downloads:
+
+```swift
+try await connection.disconnectGracefully()
+```
+
+Once graceful disconnection starts, new operations fail with ``SMB.Error.operationRequestedAfterConnectionClosed``.
+The nested operations and cleanup needed by an existing operation can still finish. Calling `disconnect()` explicitly
+during the wait interrupts those operations.

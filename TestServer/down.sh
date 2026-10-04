@@ -1,12 +1,17 @@
 #!/bin/bash
 
-echo "Stopping the test server..."
+(
+    set -eu
 
-CONTAINER_NAME="swiftsmb-test-server"
+    echo "Stopping the test server..."
 
-if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    docker rm -f "$CONTAINER_NAME" >/dev/null
-    echo "Container '${CONTAINER_NAME}' stopped and removed."
-else
-    echo "Container '${CONTAINER_NAME}' is not running."
-fi
+    CONTAINER_NAME="swiftsmb-test-server"
+
+    CONTAINERS="$(docker ps -a --format '{{.Names}}')"
+    if printf '%s\n' "$CONTAINERS" | grep -qx "$CONTAINER_NAME"; then
+        docker rm -f "$CONTAINER_NAME" >/dev/null
+        echo "Container '${CONTAINER_NAME}' stopped and removed."
+    else
+        echo "Container '${CONTAINER_NAME}' is not running."
+    fi
+)

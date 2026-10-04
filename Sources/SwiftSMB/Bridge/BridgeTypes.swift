@@ -23,16 +23,44 @@ extension Bridge {
         /// The serial queue that owns `raw`.
         let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.bridge.context")
 
-        /// Whether `raw` has not been destroyed yet. Confined to `queue`.
-        var isAlive = true
+        /// Whether `raw` has not been destroyed yet. Mutated on `queue`, and safe to observe from public handles.
+        private let protectedLiveness = Protected(true, label: "com.ruinelson.SwiftSMB.bridge.context.liveness")
+        var isAlive: Bool {
+            get { protectedLiveness.current }
+            set { protectedLiveness.current = newValue }
+        }
+
+        /// Open local C allocations owned by this context. Confined to `queue`.
+        var fileHandles: [ObjectIdentifier: FileHandle] = [:]
+        var directoryHandles: [ObjectIdentifier: DirectoryHandle] = [:]
 
         init(raw: UnsafeMutablePointer<smb2_context>) {
             self.raw = raw
         }
     }
 
-    struct FileHandle: @unchecked Sendable {
-        let raw: OpaquePointer
+    /// A file handle whose liveness is confined to its context queue.
+    final class FileHandle: @unchecked Sendable {
+        private var raw: OpaquePointer?
+        let appendsWrites: Bool
+
+        init(raw: OpaquePointer, appendsWrites: Bool = false) {
+            self.raw = raw
+            self.appendsWrites = appendsWrites
+        }
+
+        func requireRaw(operation: SMB.Error.InvalidArgumentOperation) throws -> OpaquePointer {
+            guard let raw else {
+                throw SMB.Error.invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
+            }
+            return raw
+        }
+
+        /// Marks the handle closed before its C storage can be freed. Must run on the context queue.
+        func takeRaw() -> OpaquePointer? {
+            defer { raw = nil }
+            return raw
+        }
     }
 
     struct FileID: Equatable, Sendable {
@@ -155,8 +183,26 @@ extension Bridge {
         static let writeCaching = LeaseState(rawValue: 0x04)
     }
 
-    struct DirectoryHandle: @unchecked Sendable {
-        let raw: UnsafeMutablePointer<smb2dir>
+    /// A directory handle whose liveness is confined to its context queue.
+    final class DirectoryHandle: @unchecked Sendable {
+        private var raw: UnsafeMutablePointer<smb2dir>?
+
+        init(raw: UnsafeMutablePointer<smb2dir>) {
+            self.raw = raw
+        }
+
+        func requireRaw(operation: SMB.Error.InvalidArgumentOperation) throws -> UnsafeMutablePointer<smb2dir> {
+            guard let raw else {
+                throw SMB.Error.invalidArgument(cause: .directoryAlreadyClosed, onOperation: operation)
+            }
+            return raw
+        }
+
+        /// Marks the handle closed before its C storage can be freed. Must run on the context queue.
+        func takeRaw() -> UnsafeMutablePointer<smb2dir>? {
+            defer { raw = nil }
+            return raw
+        }
     }
 
     enum ShareEnumerationLevel: Equatable, Sendable {

@@ -98,6 +98,7 @@ public extension SMB {
     /// - Returns: The parsed URL components.
     /// - Throws: ``SMB/Error`` if `string` is not a valid SMB URL.
     static func parseURL(_ string: String) throws -> ParsedURL {
+        try validateCString(string, operation: .smb2ParseURL)
         let parsedURL = try ParsedURL(Bridge.parseURL(string))
         try validateShareName(parsedURL.share, operation: .smb2ParseURL)
         if let path = parsedURL.path {
@@ -112,6 +113,7 @@ public extension SMB {
         credentials: Credentials?,
         server: Server
     ) async throws -> Bridge.Context {
+        try validateCString(server.address, operation: .smb2ConnectShare)
         let context = try Bridge.createContext()
         do {
             try await configure(context, with: configuration)
@@ -169,15 +171,19 @@ public extension SMB {
         on context: Bridge.Context
     ) async throws {
         if let user = credentials?.user {
+            try validateCString(user, operation: .smb2SetUser)
             try await Bridge.setUser(user, on: context)
         }
         if let password = credentials?.password {
+            try validateCString(password, operation: .smb2SetPassword)
             try await Bridge.setPassword(password, on: context)
         }
         if let domain = credentials?.domain ?? server.domain {
+            try validateCString(domain, operation: .smb2SetDomain)
             try await Bridge.setDomain(domain, on: context)
         }
         if let workstation = credentials?.workstation {
+            try validateCString(workstation, operation: .smb2SetWorkstation)
             try await Bridge.setWorkstation(workstation, on: context)
         }
     }

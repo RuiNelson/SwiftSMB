@@ -20,7 +20,9 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the connection is closed or no valid block size can be determined.
     var acceptedReadBlockSize: Int {
         get async throws {
-            try await acceptedReadBlockSize()
+            try await self.withOperation {
+                try await acceptedReadBlockSize()
+            }
         }
     }
 
@@ -31,7 +33,9 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the connection is closed or no valid block size can be determined.
     var acceptedWriteBlockSize: Int {
         get async throws {
-            try await acceptedWriteBlockSize()
+            try await self.withOperation {
+                try await acceptedWriteBlockSize()
+            }
         }
     }
 
@@ -52,10 +56,12 @@ public extension SMB.Connection {
     /// - Returns: The file contents.
     /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
     func loadFile(at path: String, chunkSize: Int? = nil) async throws -> Data {
-        let path = try SMB.validatePath(path, operation: .smbConnectionReadFile)
-        let file = try await openFile(at: path)
-        defer { try? await file.close() }
-        return try await file.read(transferChunkSize: chunkSize.map { Int64($0) })
+        try await self.withOperation {
+            let path = try SMB.validatePath(path, operation: .smbConnectionReadFile)
+            let file = try await openFile(at: path)
+            defer { try? await file.close() }
+            return try await file.read(transferChunkSize: chunkSize.map { Int64($0) })
+        }
     }
 
     /// Writes data to a file.
@@ -74,10 +80,12 @@ public extension SMB.Connection {
         options: SMB.File.OpenOptions = [.create, .truncate],
         chunkSize: Int? = nil
     ) async throws {
-        let path = try SMB.validatePath(path, operation: .smbConnectionWriteFile)
-        let file = try await openFile(at: path, accessMode: .writeOnly, options: options)
-        defer { try? await file.close() }
-        _ = try await file.write(data, transferChunkSize: chunkSize.map { Int64($0) })
+        try await self.withOperation {
+            let path = try SMB.validatePath(path, operation: .smbConnectionWriteFile)
+            let file = try await openFile(at: path, accessMode: .writeOnly, options: options)
+            defer { try? await file.close() }
+            _ = try await file.write(data, transferChunkSize: chunkSize.map { Int64($0) })
+        }
     }
 
     /// Lists all entries in a directory.
@@ -86,10 +94,12 @@ public extension SMB.Connection {
     /// - Returns: The directory entries returned by the server.
     /// - Throws: ``SMB/Error`` if the directory cannot be opened or read.
     func listDirectory(at path: String = "") async throws -> [SMB.DirectoryEntry] {
-        let path = try SMB.validatePath(path, operation: .smbConnectionListDirectory, allowRoot: true)
-        let directory = try await openDirectory(at: path)
-        defer { await directory.close() }
-        return try await directory.readAll()
+        try await self.withOperation {
+            let path = try SMB.validatePath(path, operation: .smbConnectionListDirectory, allowRoot: true)
+            let directory = try await openDirectory(at: path)
+            defer { await directory.close() }
+            return try await directory.readAll()
+        }
     }
 
     /// Removes a file, link, or directory.
@@ -101,20 +111,25 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the path cannot be inspected or removed, or `CancellationError` if the task is
     /// cancelled between items. Items removed before cancellation stay removed.
     func removeItem(at path: String) async throws {
-        let path = try SMB.validatePath(path, operation: .smbConnectionRemoveItem, allowRoot: false)
-
-        let entryStat = try await stat(at: path)
-        guard entryStat.type == .directory else {
-            try await removeFile(at: path)
-            return
-        }
-
-        let entries = try await listDirectory(at: path)
-        for entry in entries where entry.name != "." && entry.name != ".." {
+        try await self.withOperation {
+            let path = try SMB.validatePath(path, operation: .smbConnectionRemoveItem, allowRoot: false)
             try Task.checkCancellation()
-            try await removeItem(at: path.appendingPathComponent(entry.name))
+
+            let entryStat = try await stat(at: path)
+            guard entryStat.type == .directory else {
+                try Task.checkCancellation()
+                try await removeFile(at: path)
+                return
+            }
+
+            let entries = try await listDirectory(at: path)
+            for entry in entries where entry.name != "." && entry.name != ".." {
+                try Task.checkCancellation()
+                try await removeItem(at: path.appendingPathComponent(entry.name))
+            }
+            try Task.checkCancellation()
+            try await removeDirectory(at: path)
         }
-        try await removeDirectory(at: path)
     }
 
     /// Copies a file from one path to another on the connected share using server-side copy.
@@ -129,38 +144,33 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the source cannot be opened or is a directory, the destination already exists, or the
     /// server does not support server-side copy.
     func copyFile(from sourcePath: String, to destinationPath: String) async throws {
-        let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
-        let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
-        let context = try requireContext()
+        try await self.withOperation {
+            let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
+            let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
+            let context = try requireContext()
 
-        switch try await itemExists(at: destinationPath) {
-        case .false:
-            break
-        case .file, .link:
-            throw SMB.Error.posix(
-                code: POSIXErrorCode.EEXIST.rawValue,
-                operation: "SMB.Connection.copyFile",
-                message: "Destination file already exists"
-            )
-        case .directory, .other:
-            throw SMB.Error.invalidArgument(
-                cause: .remoteDestinationIsNotAFile,
-                onOperation: .smbConnectionCopyFile
-            )
-        }
+            switch try await itemExists(at: destinationPath) {
+            case .false:
+                break
+            case .file, .link:
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EEXIST.rawValue,
+                    operation: "SMB.Connection.copyFile",
+                    message: "Destination file already exists"
+                )
+            case .directory, .other:
+                throw SMB.Error.invalidArgument(
+                    cause: .remoteDestinationIsNotAFile,
+                    onOperation: .smbConnectionCopyFile
+                )
+            }
 
-        do {
             try await Bridge.serverSideCopy(
                 context: context,
                 sourcePath: sourcePath,
-                destinationPath: destinationPath
+                destinationPath: destinationPath,
+                exclusiveDestination: true
             )
-        }
-        catch {
-            // The destination did not exist before, so anything there now is a partial copy. Leaving it would also
-            // make a retry fail because the destination exists.
-            try? await removeFile(at: destinationPath)
-            throw error
         }
     }
 
@@ -170,11 +180,13 @@ public extension SMB.Connection {
     /// - Returns: The smaller of the preferred size and server maximum.
     /// - Throws: ``SMB/Error`` if no valid block size can be determined.
     func acceptedReadBlockSize(_ preferredBlockSize: Int? = nil) async throws -> Int {
-        try await acceptedBlockSize(
-            preferredBlockSize,
-            serverMaximum: Int(maxReadSize),
-            operation: .smb2GetMaxReadSize
-        )
+        try await self.withOperation {
+            try await acceptedBlockSize(
+                preferredBlockSize,
+                serverMaximum: Int(maxReadSize),
+                operation: .smb2GetMaxReadSize
+            )
+        }
     }
 
     /// Returns a write block size accepted by the server.
@@ -183,11 +195,13 @@ public extension SMB.Connection {
     /// - Returns: The smaller of the preferred size and server maximum.
     /// - Throws: ``SMB/Error`` if no valid block size can be determined.
     func acceptedWriteBlockSize(_ preferredBlockSize: Int? = nil) async throws -> Int {
-        try await acceptedBlockSize(
-            preferredBlockSize,
-            serverMaximum: Int(maxWriteSize),
-            operation: .smb2GetMaxWriteSize
-        )
+        try await self.withOperation {
+            try await acceptedBlockSize(
+                preferredBlockSize,
+                serverMaximum: Int(maxWriteSize),
+                operation: .smb2GetMaxWriteSize
+            )
+        }
     }
 
     /// Clamps a preferred block size to a server maximum.

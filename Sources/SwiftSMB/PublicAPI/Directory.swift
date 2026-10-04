@@ -12,7 +12,7 @@ public extension SMB {
         /// The path used to open the directory.
         public let path: String
 
-        private let connection: Connection
+        let connection: Connection
         private let protectedHandle = ProtectedHandle<Bridge.DirectoryHandle>(
             label: "com.ruinelson.SwiftSMB.SMB.Directory.handle"
         )
@@ -42,7 +42,7 @@ public extension SMB {
 
         /// A Boolean value indicating whether the directory handle is still open.
         public var isOpen: Bool {
-            handle != nil
+            handle != nil && connection.isConnected
         }
 
         /// Closes the directory handle.
@@ -61,18 +61,22 @@ public extension SMB {
         /// - Returns: The next entry, or `nil` when the directory stream is exhausted.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func readNext() async throws -> DirectoryEntry? {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Readdir)
-            return try await Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Readdir)
+                return try await Bridge.readDir(context: context, directory: handle).map(DirectoryEntry.init)
+            }
         }
 
         /// Rewinds the directory stream to the beginning.
         ///
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func rewind() async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Rewinddir)
-            try await Bridge.rewindDir(context: context, directory: handle)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Rewinddir)
+                try await Bridge.rewindDir(context: context, directory: handle)
+            }
         }
 
         /// Returns the current directory stream location.
@@ -80,9 +84,11 @@ public extension SMB {
         /// - Returns: A stream position that can be passed to ``seek(to:)``.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func tell() async throws -> Int {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Telldir)
-            return try await Bridge.tellDir(context: context, directory: handle)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Telldir)
+                return try await Bridge.tellDir(context: context, directory: handle)
+            }
         }
 
         /// Moves the directory stream to a previous location.
@@ -90,9 +96,11 @@ public extension SMB {
         /// - Parameter location: A position returned by ``tell()``.
         /// - Throws: ``SMB/Error`` if the directory is closed.
         public func seek(to location: Int) async throws {
-            let context = try connection.requireContext()
-            let handle = try requireHandle(operation: .smb2Seekdir)
-            try await Bridge.seekDir(context: context, directory: handle, location: location)
+            try await connection.withOperation {
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Seekdir)
+                try await Bridge.seekDir(context: context, directory: handle, location: location)
+            }
         }
 
         /// Returns the live bridge handle or throws if the directory is closed.

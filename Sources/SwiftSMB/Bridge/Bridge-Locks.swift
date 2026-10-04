@@ -43,7 +43,7 @@ extension Bridge {
         offset: UInt64 = 0,
         length: UInt64 = UInt64.max
     ) throws {
-        guard let fileIDPtr = smb2_get_file_id(file.raw) else {
+        guard let fileIDPtr = try smb2_get_file_id(file.requireRaw(operation: .smb2Flock)) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
         }
         let fileID = fileIDPtr.pointee
@@ -66,7 +66,13 @@ extension Bridge {
 
             let state = LockState()
             let callbackData = Unmanaged.passRetained(state).toOpaque()
-            defer { releaseWhenFinished(state, callbackData) }
+            var isQueued = false
+            defer {
+                if !isQueued {
+                    state.isFinished = true
+                }
+                releaseWhenFinished(state, callbackData)
+            }
 
             try withUnsafeMutablePointer(to: &request) { requestPointer in
                 guard let pdu = smb2_cmd_lock_async(
@@ -79,6 +85,7 @@ extension Bridge {
                 }
 
                 smb2_queue_pdu(context.raw, pdu)
+                isQueued = true
             }
 
             try serviceUntilFinished(context: context, state: state)

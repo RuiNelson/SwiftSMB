@@ -45,7 +45,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/RuiNelson/PathWorks.git", from: "2.0.0"),
+        .package(url: "https://github.com/RuiNelson/PathWorks.git", from: "2.0.1"),
     ],
     targets: [
         .target(

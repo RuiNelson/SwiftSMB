@@ -16,6 +16,21 @@ import SMB2.Raw
 extension Bridge {
     // MARK: - Symbolic Links
 
+    private final class ReadLinkState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        var destination: String?
+    }
+
+    private static let readLinkCallback: smb2_command_cb = { _, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<ReadLinkState>.fromOpaque(callbackData).takeUnretainedValue()
+        if status == 0, let commandData {
+            state.destination = String(cString: commandData.assumingMemoryBound(to: CChar.self))
+        }
+        state.finish(status)
+    }
+
     private static func _readLink(
         context: Context,
         path: String,
@@ -28,18 +43,21 @@ extension Bridge {
             )
         }
 
-        let count = try bufferSize.asUInt32(operation: .smb2Readlink)
-        // libsmb2 copies the target with strncpy and does not NUL-terminate when it fills the buffer; keep one spare
-        // zero byte so String(cString:) never reads past the end.
-        var buffer = [CChar](repeating: 0, count: bufferSize + 1)
-        let status = path.withCString { smb2_readlink(context.raw, $0, &buffer, count) }
-        try check(status, context: context, operation: "smb2_readlink")
-        return buffer.withUnsafeBufferPointer { pointer in
-            guard let baseAddress = pointer.baseAddress else {
-                return ""
-            }
-            return String(cString: baseAddress)
+        _ = try bufferSize.asUInt32(operation: .smb2Readlink)
+        let state = ReadLinkState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = path.withCString { smb2_readlink_async(context.raw, $0, readLinkCallback, callbackData) }
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: "smb2_readlink", status: status)
         }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: "smb2_readlink")
+        guard let destination = state.destination else {
+            throw SMB.Error.unknown(operation: "smb2_readlink", message: "Server returned no link destination")
+        }
+        return String(decoding: destination.utf8.prefix(bufferSize), as: UTF8.self)
     }
 
     /// Reads the destination path of a symbolic link.
@@ -112,7 +130,13 @@ extension Bridge {
 
         let state = MakeLinkState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { releaseWhenFinished(state, callbackData) }
+        var isQueued = false
+        defer {
+            if !isQueued {
+                state.isFinished = true
+            }
+            releaseWhenFinished(state, callbackData)
+        }
 
         try reparseBuffer.withUnsafeMutableBytes { buffer in
             try path.withCString { pathPointer in
@@ -174,6 +198,7 @@ extension Bridge {
                 smb2_add_compound_pdu(context.raw, pdu, close_pdu)
 
                 smb2_queue_pdu(context.raw, pdu)
+                isQueued = true
 
                 try serviceUntilFinished(context: context, state: state)
 

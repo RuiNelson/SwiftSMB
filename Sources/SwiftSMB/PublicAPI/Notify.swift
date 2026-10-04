@@ -192,6 +192,8 @@ public extension SMB {
         public let action: Action
 
         /// The changed path, relative to the watched directory.
+        ///
+        /// Nested paths reported by recursive watchers use `/` separators.
         public let name: String
 
         /// Creates a notification change.
@@ -318,40 +320,43 @@ public extension SMB.Connection {
         options: SMB.NotifyOptions = [],
         filter: SMB.NotifyFilter = .all
     ) async throws -> SMB.NotifyWatcher {
-        let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
-        let context = try requireContext()
-        let directory = try await Bridge.open(
-            context: context,
-            path: path,
-            flags: Bridge.OpenFlags(.readOnly, options: [.directory])
-        )
+        try await self.withOperation {
+            let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
+            let context = try requireContext()
+            let directory = try await Bridge.open(
+                context: context,
+                path: path,
+                flags: Bridge.OpenFlags(.readOnly, options: [.directory])
+            )
 
-        let (stream, continuation) = AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.makeStream()
-        let state = SMBNotifyWatcherState(
-            context: context,
-            directory: directory,
-            options: options.bridgeValue,
-            filter: filter.bridgeValue,
-            continuation: continuation,
-            onFinish: { [weak self] id in
-                self?.unregisterNotifyWatcher(id: id)
+            let (stream, continuation) = AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.makeStream()
+            let state = SMBNotifyWatcherState(
+                context: context,
+                directory: directory,
+                options: options.bridgeValue,
+                filter: filter.bridgeValue,
+                continuation: continuation,
+                onFinish: { [weak self] id in
+                    self?.unregisterNotifyWatcher(id: id)
+                }
+            )
+
+            do {
+                try await state.armRequest()
+                // `armRequest` only queues the request. Requests on a connection are sent and processed in order, so
+                // once
+                // this echo returns the server has registered the notify request, and changes made after this method
+                // returns are reported.
+                try await Bridge.echo(context: context)
+                try registerAndStartNotifyWatcher(state)
             }
-        )
+            catch {
+                await state.releaseResources()
+                throw error
+            }
 
-        do {
-            try await state.armRequest()
-            // `armRequest` only queues the request. Requests on a connection are sent and processed in order, so once
-            // this echo returns the server has registered the notify request, and changes made after this method
-            // returns are reported.
-            try await Bridge.echo(context: context)
+            return SMB.NotifyWatcher(path: path, state: state, stream: stream)
         }
-        catch {
-            await state.releaseResources()
-            throw error
-        }
-
-        registerAndStartNotifyWatcher(state)
-        return SMB.NotifyWatcher(path: path, state: state, stream: stream)
     }
 }
 
@@ -359,11 +364,17 @@ extension SMB.Connection {
     /// Registers a watcher so it can be cancelled before context teardown, and starts its loop.
     ///
     /// Both happen under the registry lock, so a loop that finishes immediately cannot unregister before it has been
-    /// registered.
-    func registerAndStartNotifyWatcher(_ watcher: SMBNotifyWatcherState) {
-        protectedNotifyWatchers.withLock { watchers in
+    /// registered. Checking the connection under that same lock prevents registration after disconnect has taken the
+    /// context and its watcher snapshot.
+    func registerAndStartNotifyWatcher(_ watcher: SMBNotifyWatcherState) throws {
+        let didRegister = protectedNotifyWatchers.withLock { watchers in
+            guard isConnected else { return false }
             watchers[watcher.id] = watcher
             watcher.start()
+            return true
+        }
+        guard didRegister else {
+            throw SMB.Error.operationRequestedAfterConnectionClosed
         }
     }
 
@@ -371,24 +382,6 @@ extension SMB.Connection {
     func unregisterNotifyWatcher(id: UUID) {
         protectedNotifyWatchers.withLock { watchers in
             _ = watchers.removeValue(forKey: id)
-        }
-    }
-
-    /// Cancels all active watchers and waits until they have released their bridge resources.
-    func cancelNotifyWatchers() async {
-        let watchers = protectedNotifyWatchers.take(replacingWith: [:])
-        for watcher in watchers.values {
-            await watcher.cancelAndWait()
-        }
-    }
-
-    /// Cancels all active watchers without waiting. Used from `deinit`, which cannot await.
-    ///
-    /// Their cleanup is enqueued on the context queue, so it runs before any teardown enqueued afterwards.
-    func cancelNotifyWatchersInBackground() {
-        let watchers = protectedNotifyWatchers.take(replacingWith: [:])
-        for watcher in watchers.values {
-            watcher.releaseResourcesInBackground()
         }
     }
 }

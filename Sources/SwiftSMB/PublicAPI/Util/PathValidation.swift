@@ -9,6 +9,13 @@
 import PathWorks
 
 extension SMB {
+    /// Rejects embedded terminators before a Swift string is passed to a C API.
+    static func validateCString(_ value: String, operation: SMB.Error.InvalidArgumentOperation) throws {
+        guard !value.utf8.contains(0) else {
+            throw SMB.Error.invalidArgument(cause: .stringContainsNUL, onOperation: operation)
+        }
+    }
+
     /// Validates a share name before passing it to libsmb2.
     static func validateShareName(
         _ share: String,
@@ -51,7 +58,7 @@ extension SMB {
         }
 
         for component in components {
-            guard component.isSafeFilenameForNTFS else {
+            guard component.isSafeFilenameForNTFSIncludingLength else {
                 throw SMB.Error.invalidArgument(
                     cause: .invalidPathComponent(component),
                     onOperation: operation

@@ -14,6 +14,14 @@ public extension SMB.Error {
         case smb2ConnectShare
         case smb2ParseURL
         case smb2SetTimeout
+        /// Setting the user name used for authentication.
+        case smb2SetUser
+        /// Setting the password used for authentication.
+        case smb2SetPassword
+        /// Setting the authentication domain.
+        case smb2SetDomain
+        /// Setting the workstation name sent during authentication.
+        case smb2SetWorkstation
         case smb2Read
         case smb2Pread
         case smb2Write
@@ -59,6 +67,10 @@ public extension SMB.Error {
             case .smb2ConnectShare: "smb2_connect_share"
             case .smb2ParseURL: "smb2_parse_url"
             case .smb2SetTimeout: "smb2_set_timeout"
+            case .smb2SetUser: "smb2_set_user"
+            case .smb2SetPassword: "smb2_set_password"
+            case .smb2SetDomain: "smb2_set_domain"
+            case .smb2SetWorkstation: "smb2_set_workstation"
             case .smb2Read: "smb2_read"
             case .smb2Pread: "smb2_pread"
             case .smb2Write: "smb2_write"
@@ -93,8 +105,8 @@ public extension SMB.Error {
             case .smbConnectionTransferBlockSize: "SMB.Connection.transferBlockSize"
             case .smbConnectionRemoveItem: "SMB.Connection.removeItem"
             case .smbConnectionListDirectory: "SMB.Connection.listDirectory"
-            case .smbConnectionReadFile: "SMB.Connection.readFile"
-            case .smbConnectionWriteFile: "SMB.Connection.writeFile"
+            case .smbConnectionReadFile: "SMB.Connection.loadFile"
+            case .smbConnectionWriteFile: "SMB.Connection.dumpToFile"
             case .smbConnectionCopyFile: "SMB.Connection.copyFile"
             case .smbConnectionSetSecurityDescriptor: "SMB.Connection.setSecurityDescriptor"
             case .smb2Flock: "smb2_flock"
@@ -104,6 +116,8 @@ public extension SMB.Error {
 
     /// The reason an invalid argument was encountered.
     enum InvalidArgumentException: Equatable, Sendable {
+        /// A string contains a NUL character and would be truncated when passed to a C function.
+        case stringContainsNUL
         case invalidShareName(String)
         case shareNameMustBeSingleComponent
         case pathMustNotBeEmpty
@@ -135,6 +149,7 @@ public extension SMB.Error {
 
         var description: String {
             switch self {
+            case .stringContainsNUL: "String must not contain NUL characters"
             case let .invalidShareName(share): "Invalid share name '\(share)'"
             case .shareNameMustBeSingleComponent: "Share name must be a single component"
             case .pathMustNotBeEmpty: "Path must not be empty"

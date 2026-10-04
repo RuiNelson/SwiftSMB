@@ -95,6 +95,8 @@ let watcher = try await connection.watchDirectory(
 )
 ```
 
+Each change's `name` is relative to the watched directory and uses `/` separators, for example `Inbox/new.txt`.
+
 ## Watching in the background
 
 A `for try await` loop suspends until the watcher stops, so run it in its own task when you need to keep doing other work:

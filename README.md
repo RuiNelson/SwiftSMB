@@ -205,7 +205,7 @@ swift build
 Some tests are integration tests and expect the Docker-based Samba test server to be running:
 
 ```bash
-docker ps --filter ancestor=swiftsmb-testserver
+docker ps --filter ancestor=swiftsmb-test-server
 source TestServer/up.sh
 swift test
 ```

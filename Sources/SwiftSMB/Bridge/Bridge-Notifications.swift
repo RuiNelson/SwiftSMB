@@ -30,7 +30,7 @@ extension Bridge {
         filter: NotifyChangeFilter = .all,
         handler: @escaping NotifyChangeHandler
     ) throws -> PendingRequest {
-        guard let fileID = smb2_get_file_id(directory.raw) else {
+        guard let fileID = try smb2_get_file_id(directory.requireRaw(operation: .smb2GetFileID)) else {
             throw SMB.Error.invalidArgument(
                 cause: .directoryFileHandleMissingFileID,
                 onOperation: .smb2GetFileID
@@ -109,29 +109,37 @@ extension Bridge {
         context: Context,
         timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
     ) throws {
-        var pfd = pollfd()
-        pfd.fd = smb2_get_fd(context.raw)
-        guard pfd.fd >= 0 else {
-            throw noConnectionError(operation: "smb2_service")
-        }
-        pfd.events = Int16(smb2_which_events(context.raw))
+        do {
+            var pfd = pollfd()
+            pfd.fd = smb2_get_fd(context.raw)
+            guard pfd.fd >= 0 else {
+                throw noConnectionError(operation: "smb2_service")
+            }
+            pfd.events = Int16(smb2_which_events(context.raw))
 
-        var rc: Int32 = 0
-        repeat {
-            rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, timeoutMilliseconds) }
-        }
-        while rc < 0 && errno == EINTR
+            var rc: Int32 = 0
+            repeat {
+                rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, timeoutMilliseconds) }
+            }
+            while rc < 0 && errno == EINTR
 
-        if rc < 0 {
-            throw SMB.Error.posix(
-                code: errno,
-                operation: "poll",
-                message: "poll failed while waiting for SMB2 notification"
-            )
-        }
+            if rc < 0 {
+                throw SMB.Error.posix(
+                    code: errno,
+                    operation: "poll",
+                    message: "poll failed while waiting for SMB2 notification"
+                )
+            }
 
-        if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
-            throw SMB.Error.fromBridge(context, operation: "smb2_service")
+            if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+                throw SMB.Error.fromBridge(context, operation: "smb2_service")
+            }
+        }
+        catch {
+            // A failed service call may leave other commands pending on this shared context. Flush their callbacks
+            // before their handles or buffers can be reused by another operation.
+            _destroyContext(context)
+            throw error
         }
     }
 
@@ -195,7 +203,7 @@ extension Bridge {
         return decodeNotifyChanges(buffer)
     }
 
-    private static func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[NotifyChange], SMB.Error> {
+    static func decodeNotifyChanges(_ buffer: UnsafeRawBufferPointer) -> Result<[NotifyChange], SMB.Error> {
         var changes: [NotifyChange] = []
         var offset = 0
 
@@ -224,7 +232,8 @@ extension Bridge {
             }
 
             let nextOffsetDelta = Int(nextEntryOffset)
-            guard nextOffsetDelta >= notifyChangeEntryHeaderLength,
+            guard nextOffsetDelta >= notifyChangeEntryHeaderLength + nameLength,
+                  nextOffsetDelta % 4 == 0,
                   nextOffsetDelta <= buffer.count - offset else {
                 return .failure(malformedNotifyChangeResponse("Entry offset is not monotonic within output buffer"))
             }
@@ -257,7 +266,7 @@ extension Bridge {
             index += 2
         }
 
-        return String(decoding: codeUnits, as: UTF16.self)
+        return String(decoding: codeUnits, as: UTF16.self).replacingOccurrences(of: "\\", with: "/")
     }
 
     private static func malformedNotifyChangeResponse(_ message: String) -> SMB.Error {

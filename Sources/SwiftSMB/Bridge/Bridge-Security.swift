@@ -170,6 +170,18 @@ extension Bridge {
             for entry in entries {
                 try validate(entry.trustee)
             }
+            // ACL size, in addition to ACE count, is a 16-bit wire field. libsmb2's encoder truncates that size if a
+            // descriptor contains too many bytes, even when its number of entries fits in UInt16.
+            let wireSize = entries.reduce(8) { size, entry in
+                size + 16 + entry.trustee.subauthorities.count * 4
+            }
+            guard wireSize <= Int(UInt16.max) else {
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EINVAL.rawValue,
+                    operation: "SMB.Connection.setSecurityDescriptor",
+                    message: "Access-control list exceeds the maximum SMB wire size"
+                )
+            }
         }
     }
 
@@ -182,7 +194,13 @@ extension Bridge {
         let storage = SecurityDescriptorStorage(value)
         let state = SecurityDescriptorState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { releaseWhenFinished(state, callbackData) }
+        var isQueued = false
+        defer {
+            if !isQueued {
+                state.isFinished = true
+            }
+            releaseWhenFinished(state, callbackData)
+        }
 
         var desiredAccess: UInt32 = 0
         var additionalInformation: UInt32 = 0
@@ -246,6 +264,7 @@ extension Bridge {
             }
             smb2_add_compound_pdu(context.raw, pdu, closePDU)
             smb2_queue_pdu(context.raw, pdu)
+            isQueued = true
             try serviceUntilFinished(context: context, state: state)
         }
 

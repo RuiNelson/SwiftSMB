@@ -73,13 +73,16 @@ public extension SMB.Connection {
     /// cancelled, the download stops between blocks and throws `CancellationError`; cleanup is the same as for a
     /// failure.
     ///
+    /// The transfer reads the size reported when it begins. Data appended later is excluded; if the source becomes
+    /// shorter before those bytes have been read, the transfer fails instead of committing a partial download.
+    ///
     /// - Parameters:
     ///   - remote: The share-relative source file path.
     ///   - local: The destination file URL on local storage.
     ///   - from: The byte offset at which downloading should begin.
     ///   - options: Options used when opening the remote source file.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum read size
-    /// are clamped.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum read size are clamped.
     ///   - atomic: A Boolean value indicating whether to download through a temporary local file before moving it into
     /// place. When `false`, bytes are written directly to `local` and are not removed if the transfer fails or is
     /// cancelled.
@@ -96,58 +99,71 @@ public extension SMB.Connection {
         atomic: Bool = true,
         continuation: @escaping FileProgress
     ) async throws {
-        let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
-        let offset = from.offsetValue
-        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile
+        try await self.withOperation {
+            let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
+            try Task.checkCancellation()
+            let offset = from.offsetValue
+            let operation = SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile
+            let disk = LocalDiskWorker()
 
-        let remoteStat = try await validateRemoteFile(
-            on: self,
-            at: remote,
-            minimumSize: offset,
-            operation: operation
-        )
-        let totalBytes = remoteStat.size - offset
-        let blockSize = try await transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedReadBlockSize())
+            let remoteStat = try await validateRemoteFile(
+                on: self,
+                at: remote,
+                minimumSize: offset,
+                operation: operation
+            )
+            let totalBytes = remoteStat.size - offset
+            let preferredBlockSize = try transferBlockSize(maxBlockSize)
+            let blockSize = try await acceptedReadBlockSize(preferredBlockSize)
 
-        try assertValidLocalDestination(local, operation: operation)
+            try await disk.perform { try assertValidLocalDestination(local, operation: operation) }
 
-        let tempFile = atomic ? try createUniqueLocalTempFile(near: local, operation: operation) : nil
-        // Registered before anything else can fail, so the temporary file never outlives a failed download.
-        defer {
+            let tempFile = atomic ? try await disk.perform {
+                try createUniqueLocalTempFile(near: local, operation: operation)
+            } : nil
+            // Registered before anything else can fail, so the temporary file never outlives a failed download.
+            defer {
+                if let tempFile {
+                    try? await disk.perform { try FileManager.default.removeItem(at: tempFile) }
+                }
+            }
+
+            if let tempFile, offset > 0 {
+                try await copyLocalPrefix(
+                    from: local,
+                    to: tempFile,
+                    byteCount: offset,
+                    operation: operation,
+                    disk: disk
+                )
+            }
+            let writer = try await disk.perform {
+                if let tempFile {
+                    return try BackgroundFileWriter(appendingTo: tempFile)
+                }
+                return try BackgroundFileWriter(writingDirectlyTo: local, offset: offset, operation: operation)
+            }
+            defer { try? await writer.finish() }
+
+            let result = try await transferRemoteFileToWriter(
+                on: self,
+                remote: remote,
+                writer: writer,
+                startingOffset: offset,
+                blockSize: blockSize,
+                totalBytes: totalBytes,
+                options: options,
+                continuation: continuation
+            )
+
+            try await writer.finish()
+            guard !result.cancelled else { return }
+            try Task.checkCancellation()
             if let tempFile {
-                try? FileManager.default.removeItem(at: tempFile)
+                try await disk.perform { try moveTempFile(tempFile, to: local) }
             }
+            _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
         }
-
-        let writer: BackgroundFileWriter
-        if let tempFile {
-            if offset > 0 {
-                try copyLocalPrefix(from: local, to: tempFile, byteCount: offset, operation: operation)
-            }
-            writer = try BackgroundFileWriter(appendingTo: tempFile)
-        }
-        else {
-            writer = try BackgroundFileWriter(writingDirectlyTo: local, offset: offset, operation: operation)
-        }
-        defer { try? await writer.finish() }
-
-        let result = try await transferRemoteFileToWriter(
-            on: self,
-            remote: remote,
-            writer: writer,
-            startingOffset: offset,
-            blockSize: blockSize,
-            totalBytes: totalBytes,
-            options: options,
-            continuation: continuation
-        )
-
-        try await writer.finish()
-        guard !result.cancelled else { return }
-        if let tempFile {
-            try moveTempFile(tempFile, to: local)
-        }
-        _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
     }
 
     /// Uploads a local file to the SMB share.
@@ -166,14 +182,18 @@ public extension SMB.Connection {
     /// If `continuation` returns `false`, the method cancels the upload and returns normally. If the task is cancelled,
     /// the upload stops between blocks and throws `CancellationError`; cleanup is the same as for a failure.
     ///
+    /// The transfer reads the local file's size when it begins, following symbolic links to their target. Data appended
+    /// later is excluded; if the source becomes shorter before those bytes have been read, the transfer fails instead
+    /// of committing a partial atomic upload.
+    ///
     /// - Parameters:
     ///   - local: The source file URL on local storage.
     ///   - remote: The share-relative destination file path.
     ///   - from: The byte offset at which uploading should begin.
     ///   - options: Options used when opening `remote` for a non-atomic upload. The default creates the file if needed
     /// and truncates any existing content, so `remote` ends up identical to `local`.
-    ///   - maxBlockSize: The preferred maximum transfer block size. Values larger than the server's maximum write size
-    /// are clamped.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum write size are clamped.
     ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
     /// When `false`, the method throws if the parent directory does not exist.
     ///   - atomic: A Boolean value indicating whether to upload through a temporary remote file before renaming it into
@@ -192,89 +212,101 @@ public extension SMB.Connection {
         atomic: Bool = true,
         continuation: @escaping FileProgress
     ) async throws {
-        let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
-        let offset = from.offsetValue
-        let operation = SMB.Error.InvalidArgumentOperation.smbConnectionUploadFile
-
-        try await validateOrCreateRemoteParent(
-            on: self,
-            for: remote,
-            makePath: makePath,
-            operation: operation
-        )
-
-        let fileSize = try localFileSize(for: local, operation: operation)
-        guard offset <= fileSize else {
-            throw SMB.Error.invalidArgument(
-                cause: .offsetBeyondEndOfLocalFile,
-                onOperation: operation
-            )
-        }
-
-        let totalBytes = fileSize - offset
-        let blockSize = try await transferBlockSize(maxBlockSize, acceptedBlockSize: acceptedWriteBlockSize())
-
-        let target = atomic ? try await uniqueRemoteTemporaryPath(near: remote, on: self) : remote
-        let openOptions: SMB.File.OpenOptions = if atomic {
-            (offset == 0) ? [.create, .exclusive] : []
-        }
-        else {
-            // Truncating on open would discard the prefix a resumed upload continues from.
-            (offset == 0) ? options : options.subtracting(.truncate)
-        }
-
-        // Registered before the temporary file can be created, so it is removed even if seeding it fails.
-        var shouldRemoveRemoteTemp = atomic
-        defer {
-            if shouldRemoveRemoteTemp {
-                try? await removeFile(at: target)
+        try await self.withOperation {
+            let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
+            try Task.checkCancellation()
+            let offset = from.offsetValue
+            let operation = SMB.Error.InvalidArgumentOperation.smbConnectionUploadFile
+            let disk = LocalDiskWorker()
+            let fileSize = try await disk.perform { try localFileSize(for: local, operation: operation) }
+            guard offset <= fileSize else {
+                throw SMB.Error.invalidArgument(
+                    cause: .offsetBeyondEndOfLocalFile,
+                    onOperation: operation
+                )
             }
-        }
 
-        if atomic {
-            try await prepareAtomicUploadTarget(
+            let totalBytes = fileSize - offset
+            let preferredBlockSize = try transferBlockSize(maxBlockSize)
+            let blockSize = try await acceptedWriteBlockSize(preferredBlockSize)
+
+            try Task.checkCancellation()
+            try await validateOrCreateRemoteParent(
                 on: self,
-                remote: remote,
+                for: remote,
+                makePath: makePath,
+                operation: operation
+            )
+
+            let target = atomic ? try await uniqueRemoteTemporaryPath(near: remote, on: self) : remote
+            let openOptions: SMB.File.OpenOptions = if atomic {
+                (offset == 0) ? [.create, .exclusive] : []
+            }
+            else {
+                // Truncating on open would discard the prefix a resumed upload continues from.
+                (offset == 0) ? options : options.subtracting(.truncate)
+            }
+
+            // Cleanup owns only a temporary file successfully created by this transfer.
+            var shouldRemoveRemoteTemp = false
+            defer {
+                if shouldRemoveRemoteTemp {
+                    try? await removeFile(at: target)
+                }
+            }
+
+            if atomic {
+                try await prepareAtomicUploadTarget(
+                    on: self,
+                    remote: remote,
+                    target: target,
+                    offset: offset,
+                    blockSize: blockSize,
+                    operation: operation,
+                    onTargetCreated: { shouldRemoveRemoteTemp = true }
+                )
+            }
+
+            if offset > 0 {
+                try await validateRemoteFile(on: self, at: target, minimumSize: offset, operation: operation)
+            }
+            else {
+                try await validateRemoteDestinationForNewFile(
+                    on: self,
+                    at: target,
+                    options: openOptions,
+                    operation: operation
+                )
+            }
+
+            let reader = try await disk.perform {
+                try ReadAheadFileReader(reading: local, offset: offset, blockSize: blockSize)
+            }
+
+            let result = try await transferReaderToRemoteFile(
+                on: self,
+                reader: reader,
                 target: target,
-                offset: offset,
-                blockSize: blockSize,
-                operation: operation
+                openOptions: openOptions,
+                startingOffset: offset,
+                totalBytes: totalBytes,
+                onTargetOpened: { shouldRemoveRemoteTemp = atomic },
+                continuation: continuation
             )
+
+            guard !result.cancelled else { return }
+            try Task.checkCancellation()
+
+            if atomic {
+                // Finish fallible metadata changes before replacing the destination.
+                try await changeAttributes(at: target) { $0.subtracting(.temporary) }
+                try Task.checkCancellation()
+                try await commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
+                shouldRemoveRemoteTemp = false
+            }
+
+            _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
         }
-
-        if offset > 0 {
-            try await validateRemoteFile(on: self, at: target, minimumSize: offset, operation: operation)
-        }
-        else {
-            try await validateRemoteDestinationForNewFile(
-                on: self,
-                at: target,
-                options: openOptions,
-                operation: operation
-            )
-        }
-
-        let reader = try ReadAheadFileReader(reading: local, offset: offset, blockSize: blockSize)
-
-        let result = try await transferReaderToRemoteFile(
-            on: self,
-            reader: reader,
-            target: target,
-            openOptions: openOptions,
-            startingOffset: offset,
-            totalBytes: totalBytes,
-            continuation: continuation
-        )
-
-        guard !result.cancelled else { return }
-
-        if atomic {
-            try await commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
-            shouldRemoveRemoteTemp = false
-            try await changeAttributes(at: remote) { $0.subtracting(.temporary) }
-        }
-
-        _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
     }
 }
 
@@ -339,13 +371,14 @@ private func transferRemoteFileToWriter(
     var remoteOffset = startingOffset
     var tracker = ProgressTracker(totalBytes: totalBytes)
 
-    while true {
+    while tracker.transferred < totalBytes {
         try Task.checkCancellation()
         let blockStart = DispatchTime.now()
-        _ = try await file.seek(offset: Int64(remoteOffset), from: .start)
-        let data = try await file.read(upTo: Int64(blockSize))
+        _ = try await file.seek(offset: signedTransferOffset(remoteOffset), from: .start)
+        let requested = min(UInt64(blockSize), totalBytes - tracker.transferred)
+        let data = try await file.read(upTo: Int64(requested))
         guard !data.isEmpty else {
-            return tracker.result(cancelled: false)
+            throw unexpectedTransferEOF(operation: "SMB.Connection.downloadFile")
         }
 
         try await writer.append(data)
@@ -355,6 +388,8 @@ private func transferRemoteFileToWriter(
             return tracker.result(cancelled: true)
         }
     }
+    try await file.close()
+    return tracker.result(cancelled: false)
 }
 
 /// Writes blocks produced by the read-ahead reader to the remote file, so the disk read of one block overlaps the
@@ -367,23 +402,27 @@ private func transferReaderToRemoteFile(
     openOptions: SMB.File.OpenOptions,
     startingOffset: UInt64,
     totalBytes: UInt64,
+    onTargetOpened: () -> Void,
     continuation: SMB.Connection.FileProgress
 ) async throws -> TransferResult {
     let file = try await connection.openFile(at: target, accessMode: .writeOnly, options: openOptions)
+    onTargetOpened()
     defer { try? await file.close() }
 
     var remoteOffset = startingOffset
     var tracker = ProgressTracker(totalBytes: totalBytes)
 
-    while true {
+    while tracker.transferred < totalBytes {
         try Task.checkCancellation()
         let data = try await reader.next()
         guard !data.isEmpty else {
-            return tracker.result(cancelled: false)
+            throw unexpectedTransferEOF(operation: "SMB.Connection.uploadFile")
         }
+        let remaining = totalBytes - tracker.transferred
+        let block = data.prefix(Int(min(UInt64(data.count), remaining)))
 
         var cancelled = false
-        try await writeEntireData(data, to: file, atOffset: remoteOffset) { written, blockStart in
+        try await writeEntireData(block, to: file, atOffset: remoteOffset) { written, blockStart in
             remoteOffset += UInt64(written)
             if !tracker.record(bytes: UInt64(written), blockStart: blockStart, continuation: continuation) {
                 cancelled = true
@@ -393,9 +432,24 @@ private func transferReaderToRemoteFile(
             return tracker.result(cancelled: true)
         }
     }
+    try await file.close()
+    return tracker.result(cancelled: false)
 }
 
 // MARK: - Local Disk Workers
+
+/// Runs local file setup, metadata, commit, and cleanup off the Swift concurrency cooperative pool.
+private final class LocalDiskWorker: Sendable {
+    private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.transfer.setup")
+
+    func perform<Value: Sendable>(_ body: @escaping @Sendable () throws -> Value) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                continuation.resume(with: Result { try body() })
+            }
+        }
+    }
+}
 
 /// Appends downloaded blocks to a local file on a dedicated serial queue so disk writes overlap network reads.
 ///
@@ -446,7 +500,8 @@ private final class BackgroundFileWriter: @unchecked Sendable {
     deinit {
         // Queued writes retain `self`, so none are pending here.
         if !isFinished {
-            try? handle.close()
+            let handle = handle
+            queue.async { try? handle.close() }
         }
     }
 
@@ -512,6 +567,11 @@ private final class ReadAheadFileReader: @unchecked Sendable {
         try handle.seek(toOffset: offset)
         self.blockSize = blockSize
         scheduleRead()
+    }
+
+    deinit {
+        let handle = handle
+        queue.async { try? handle.close() }
     }
 
     /// Returns the next block, scheduling the read of the following block before returning. An empty block signals
@@ -618,9 +678,10 @@ private func copyLocalPrefix(
     from source: URL,
     to destination: URL,
     byteCount: UInt64,
-    operation: SMB.Error.InvalidArgumentOperation
-) throws {
-    let existingSize = try localFileSize(for: source, operation: operation)
+    operation: SMB.Error.InvalidArgumentOperation,
+    disk: LocalDiskWorker
+) async throws {
+    let existingSize = try await disk.perform { try localFileSize(for: source, operation: operation) }
     guard existingSize >= byteCount else {
         throw SMB.Error.invalidArgument(
             cause: .localFileShorterThanResumeOffset,
@@ -628,23 +689,25 @@ private func copyLocalPrefix(
         )
     }
 
-    let input = try FileHandle(forReadingFrom: source)
-    defer { try? input.close() }
-    let output = try FileHandle(forWritingTo: destination)
-    defer { try? output.close() }
+    let input = try await disk.perform { try ReadAheadFileReader(reading: source, offset: 0, blockSize: 1024 * 1024) }
+    let output = try await disk.perform { try BackgroundFileWriter(appendingTo: destination) }
+    defer { try? await output.finish() }
 
     var remaining = byteCount
     while remaining > 0 {
-        let chunkSize = min(Int(remaining), 1024 * 1024)
-        guard let data = try input.read(upToCount: chunkSize), !data.isEmpty else {
+        try Task.checkCancellation()
+        let data = try await input.next()
+        guard !data.isEmpty else {
             throw SMB.Error.invalidArgument(
                 cause: .localFileShorterThanResumeOffset,
                 onOperation: operation
             )
         }
-        try output.write(contentsOf: data)
-        remaining -= UInt64(data.count)
+        let prefix = data.prefix(Int(min(remaining, UInt64(data.count))))
+        try await output.append(prefix)
+        remaining -= UInt64(prefix.count)
     }
+    try await output.finish()
 }
 
 /// Seeds the temporary remote file for an atomic resumed upload by copying the trusted remote prefix.
@@ -654,7 +717,8 @@ private func prepareAtomicUploadTarget(
     target: String,
     offset: UInt64,
     blockSize: Int,
-    operation: SMB.Error.InvalidArgumentOperation
+    operation: SMB.Error.InvalidArgumentOperation,
+    onTargetCreated: () -> Void
 ) async throws {
     guard offset > 0 else {
         switch try await connection.itemExists(at: remote) {
@@ -678,6 +742,7 @@ private func prepareAtomicUploadTarget(
     let input = try await connection.openFile(at: remote, accessMode: .readOnly)
     defer { try? await input.close() }
     let output = try await connection.openFile(at: target, accessMode: .writeOnly, options: [.create, .exclusive])
+    onTargetCreated()
     defer { try? await output.close() }
 
     try await connection.changeAttributes(at: target) { $0.union(.temporary) }
@@ -686,7 +751,7 @@ private func prepareAtomicUploadTarget(
     while copied < offset {
         try Task.checkCancellation()
         let requested = min(UInt64(blockSize), offset - copied)
-        _ = try await input.seek(offset: Int64(copied), from: .start)
+        _ = try await input.seek(offset: signedTransferOffset(copied), from: .start)
         let data = try await input.read(upTo: Int64(requested))
         guard !data.isEmpty else {
             throw SMB.Error.invalidArgument(
@@ -712,8 +777,9 @@ private func writeEntireData(
     var dataOffset = 0
     var fileOffset = baseOffset
     while dataOffset < data.count {
+        try Task.checkCancellation()
         let blockStart = DispatchTime.now()
-        _ = try await file.seek(offset: Int64(fileOffset), from: .start)
+        _ = try await file.seek(offset: signedTransferOffset(fileOffset), from: .start)
         let written = try await file.write(data.subdata(in: dataOffset ..< data.count))
         guard written > 0 else {
             throw SMB.Error.unknown(
@@ -768,10 +834,10 @@ private func commitAtomicUpload(
 
 // MARK: - Block Size & Speed
 
-/// Resolves a caller-preferred block size against the server limit.
-private func transferBlockSize(_ preferred: UInt64?, acceptedBlockSize: Int) throws -> Int {
+/// Validates a caller-preferred block size before the connection clamps it to its server limit.
+private func transferBlockSize(_ preferred: UInt64?) throws -> Int? {
     guard let preferred else {
-        return acceptedBlockSize
+        return nil
     }
     guard preferred > 0, preferred <= UInt64(Int.max) else {
         throw SMB.Error.invalidArgument(
@@ -779,7 +845,28 @@ private func transferBlockSize(_ preferred: UInt64?, acceptedBlockSize: Int) thr
             onOperation: .smbConnectionTransferBlockSize
         )
     }
-    return min(Int(preferred), acceptedBlockSize)
+    return Int(preferred)
+}
+
+/// Rejects an offset that the signed seek API cannot represent rather than trapping during integer conversion.
+private func signedTransferOffset(_ offset: UInt64) throws -> Int64 {
+    guard let offset = Int64(exactly: offset) else {
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.EINVAL.rawValue,
+            operation: "smb2_lseek",
+            message: "Transfer offset must fit in Int64"
+        )
+    }
+    return offset
+}
+
+/// An EOF before the advertised length must not commit an incomplete atomic transfer.
+private func unexpectedTransferEOF(operation: String) -> SMB.Error {
+    SMB.Error.posix(
+        code: POSIXErrorCode.EIO.rawValue,
+        operation: operation,
+        message: "Source file ended before the expected transfer length"
+    )
 }
 
 /// Calculates bytes per second for an elapsed interval.
@@ -863,7 +950,14 @@ private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOpe
         )
     }
 
-    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
+    guard attributes[.type] as? FileAttributeType == .typeRegular else {
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.EINVAL.rawValue,
+            operation: operationString,
+            message: "Local source must be a regular file"
+        )
+    }
     if let size = attributes[.size] as? NSNumber {
         return size.uint64Value
     }

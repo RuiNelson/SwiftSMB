@@ -99,16 +99,29 @@ class Bridge {
     /// Closes the active connection for a context without destroying the context.
     static func closeContext(_ context: Context) async {
         try? await perform(on: context) {
+            closeOwnedHandles(on: context)
+            guard context.isAlive else { return }
             smb2_close_context(context.raw)
         }
     }
 
     /// Destroys a context and marks it dead. Must run on the context queue, or on a context that was never shared.
     static func _destroyContext(_ context: Context) {
+        guard context.isAlive else { return }
+        context.isAlive = false
+        for directory in Array(context.directoryHandles.values) {
+            _closeDir(context: context, directory: directory)
+        }
+        let rawFiles = context.fileHandles.values.compactMap { $0.takeRaw() }
+        context.fileHandles.removeAll()
         lifecycleLock.withLock { _ in
             smb2_destroy_context(context.raw)
         }
-        context.isAlive = false
+        // Contrary to its header documentation, libsmb2 does not track open file allocations. Pending callbacks must
+        // run during destroy before these allocations are reclaimed; otherwise they may still reference a handle.
+        for raw in rawFiles {
+            free(UnsafeMutableRawPointer(raw))
+        }
     }
 
     /// Destroys a libsmb2 context and any resources it owns.
@@ -141,10 +154,27 @@ class Bridge {
 
     private static func _shutdown(_ context: Context) throws {
         defer {
-            smb2_close_context(context.raw)
-            _destroyContext(context)
+            if context.isAlive {
+                smb2_close_context(context.raw)
+                _destroyContext(context)
+            }
+        }
+        closeOwnedHandles(on: context)
+        guard context.isAlive else {
+            throw SMB.Error.operationRequestedAfterConnectionClosed
         }
         try _disconnectShare(context: context)
+    }
+
+    /// Closes all registered handles while their context is still connected. Must run on the context queue.
+    private static func closeOwnedHandles(on context: Context) {
+        for directory in Array(context.directoryHandles.values) {
+            _closeDir(context: context, directory: directory)
+        }
+        for file in Array(context.fileHandles.values) {
+            guard context.isAlive else { return }
+            try? _close(context: context, file: file)
+        }
     }
 
     // MARK: - Configuration
@@ -396,13 +426,7 @@ class Bridge {
         path: String,
         flags: OpenFlags = OpenFlags()
     ) throws -> FileHandle {
-        let rawHandle = path.withCString { smb2_open(context.raw, $0, flags.rawValue) }
-
-        guard let rawHandle else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_open")
-        }
-
-        return FileHandle(raw: rawHandle)
+        try _open(context: context, path: path, flags: flags, opLockLevel: .none, leaseState: [], leaseKey: nil)
     }
 
     /// Opens or creates a file and returns a file handle.
@@ -421,14 +445,23 @@ class Bridge {
     private final class OpenState: PendingOperationState {
         var status: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
-        var fileHandle: OpaquePointer?
+        var fileHandle: FileHandle?
+        let context: Context
+        let appendsWrites: Bool
+
+        init(context: Context, appendsWrites: Bool) {
+            self.context = context
+            self.appendsWrites = appendsWrites
+        }
     }
 
     private static let openCallback: smb2_command_cb = { _, status, commandData, callbackData in
         guard let callbackData else { return }
         let state = Unmanaged<OpenState>.fromOpaque(callbackData).takeUnretainedValue()
         if status == 0, let commandData {
-            state.fileHandle = OpaquePointer(commandData)
+            let file = FileHandle(raw: OpaquePointer(commandData), appendsWrites: state.appendsWrites)
+            state.context.fileHandles[ObjectIdentifier(file)] = file
+            state.fileHandle = file
         }
         state.finish(status)
     }
@@ -441,7 +474,14 @@ class Bridge {
         leaseState: LeaseState = [],
         leaseKey: Data? = nil
     ) throws -> FileHandle {
-        let state = OpenState()
+        if opLockLevel == .lease, let leaseKey, leaseKey.count != 16 {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EINVAL.rawValue,
+                operation: "smb2_open_async_with_oplock_or_lease",
+                message: "Lease key must contain exactly 16 bytes"
+            )
+        }
+        let state = OpenState(context: context, appendsWrites: flags.options.contains(.append))
         let callbackData = Unmanaged.passRetained(state).toOpaque()
         defer { releaseWhenFinished(state, callbackData) }
 
@@ -479,7 +519,8 @@ class Bridge {
         }
 
         guard status == 0 else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_open_async_with_oplock_or_lease")
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: "smb2_open_async_with_oplock_or_lease", status: status)
         }
 
         try serviceUntilFinished(context: context, state: state)
@@ -499,7 +540,7 @@ class Bridge {
             )
         }
 
-        return FileHandle(raw: handle)
+        return handle
     }
 
     /// Opens or creates a file with an oplock or lease request.
@@ -523,8 +564,31 @@ class Bridge {
         }
     }
 
+    private final class CloseState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+    }
+
+    private static let closeCallback: smb2_command_cb = { _, status, _, callbackData in
+        guard let callbackData else { return }
+        Unmanaged<CloseState>.fromOpaque(callbackData).takeUnretainedValue().finish(status)
+    }
+
     private static func _close(context: Context, file: FileHandle) throws {
-        try check(smb2_close(context.raw, file.raw), context: context, operation: "smb2_close")
+        guard context.isAlive else { return }
+        guard let raw = file.takeRaw() else { return }
+        context.fileHandles.removeValue(forKey: ObjectIdentifier(file))
+        let state = CloseState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = smb2_close_async(context.raw, raw, closeCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            free(UnsafeMutableRawPointer(raw))
+            throw SMB.Error.fromBridge(context, operation: "smb2_close", status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: "smb2_close")
     }
 
     /// Closes an open file handle.
@@ -542,7 +606,10 @@ class Bridge {
     }
 
     private static func _sync(context: Context, file: FileHandle) throws {
-        try check(smb2_fsync(context.raw, file.raw), context: context, operation: "smb2_fsync")
+        let raw = try file.requireRaw(operation: .smb2Fsync)
+        try performStatus(context: context, operation: "smb2_fsync") {
+            smb2_fsync_async(context.raw, raw, $0, $1)
+        }
     }
 
     /// Flushes pending writes for an open file handle.
@@ -574,32 +641,70 @@ class Bridge {
         }
     }
 
-    /// Allocates `count` bytes, lets `body` fill them, and returns the prefix `body` reports as read.
+    private final class FileIOState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        let buffer: UnsafeMutablePointer<UInt8>
+
+        init(count: Int) {
+            buffer = .allocate(capacity: count)
+        }
+
+        deinit {
+            buffer.deallocate()
+        }
+    }
+
+    private static let fileIOCallback: smb2_command_cb = { _, status, _, callbackData in
+        guard let callbackData else { return }
+        Unmanaged<FileIOState>.fromOpaque(callbackData).takeUnretainedValue().finish(status)
+    }
+
+    /// Owns the read buffer until its callback finishes, including when servicing fails before the reply arrives.
     private static func readData(
         count: Int,
         context: Context,
         operation: String,
-        _ body: (UnsafeMutablePointer<UInt8>?) -> Int32
+        _ body: (UnsafeMutablePointer<UInt8>, smb2_command_cb, UnsafeMutableRawPointer) -> Int32
     ) throws -> Data {
-        var data = Data(count: count)
-        let status = data.withUnsafeMutableBytes { bytes in
-            body(bytes.baseAddress?.assumingMemoryBound(to: UInt8.self))
+        let state = FileIOState(count: count)
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = body(state.buffer, fileIOCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: operation, status: status)
         }
-        data.count = try Int(check(status, context: context, operation: operation))
-        return data
+        try serviceUntilFinished(context: context, state: state)
+        let bytesRead = try Int(check(state.status, context: context, operation: operation))
+        guard bytesRead <= count else {
+            throw SMB.Error.unknown(operation: operation, message: "Server returned more bytes than requested")
+        }
+        return Data(bytes: state.buffer, count: bytesRead)
     }
 
-    /// Calls `body` with a pointer to `data`'s bytes and returns the number of bytes `body` reports as written.
+    /// Owns the write buffer until its callback finishes, including when servicing fails before the reply arrives.
     private static func writeData(
         _ data: Data,
         context: Context,
         operation: String,
-        _ body: (UnsafePointer<UInt8>?) -> Int32
+        _ body: (UnsafeMutablePointer<UInt8>, smb2_command_cb, UnsafeMutableRawPointer) -> Int32
     ) throws -> Int {
-        let status = data.withUnsafeBytes { bytes in
-            body(bytes.baseAddress?.assumingMemoryBound(to: UInt8.self))
+        let state = FileIOState(count: data.count)
+        data.copyBytes(to: state.buffer, count: data.count)
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = body(state.buffer, fileIOCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: operation, status: status)
         }
-        return try Int(check(status, context: context, operation: operation))
+        try serviceUntilFinished(context: context, state: state)
+        let bytesWritten = try Int(check(state.status, context: context, operation: operation))
+        guard bytesWritten <= data.count else {
+            throw SMB.Error.unknown(operation: operation, message: "Server accepted more bytes than provided")
+        }
+        return bytesWritten
     }
 
     /// Reads up to `count` bytes from a file at an explicit offset.
@@ -608,8 +713,16 @@ class Bridge {
     static func read(context: Context, file: FileHandle, count: Int, offset: UInt64) async throws -> Data {
         let byteCount = try count.asUInt32(operation: .smb2Pread)
         return try await perform(on: context) {
-            try readData(count: count, context: context, operation: "smb2_pread") {
-                smb2_pread(context.raw, file.raw, $0, byteCount, offset)
+            let raw = try file.requireRaw(operation: .smb2Pread)
+            guard byteCount > 0 else { return Data() }
+            let previousOffset = try _seek(context: context, file: file, offset: 0, whence: SEEK_CUR)
+            defer {
+                if context.isAlive {
+                    _ = smb2_lseek(context.raw, raw, Int64(previousOffset), SEEK_SET, nil)
+                }
+            }
+            return try readData(count: count, context: context, operation: "smb2_pread") {
+                smb2_pread_async(context.raw, raw, $0, byteCount, offset, $1, $2)
             }
         }
     }
@@ -620,8 +733,16 @@ class Bridge {
     static func write(context: Context, file: FileHandle, data: Data, offset: UInt64) async throws -> Int {
         let byteCount = try data.count.asUInt32(operation: .smb2Pwrite)
         return try await perform(on: context) {
-            try writeData(data, context: context, operation: "smb2_pwrite") {
-                smb2_pwrite(context.raw, file.raw, $0, byteCount, offset)
+            let raw = try file.requireRaw(operation: .smb2Pwrite)
+            guard byteCount > 0 else { return 0 }
+            let previousOffset = try _seek(context: context, file: file, offset: 0, whence: SEEK_CUR)
+            defer {
+                if context.isAlive {
+                    _ = smb2_lseek(context.raw, raw, Int64(previousOffset), SEEK_SET, nil)
+                }
+            }
+            return try writeData(data, context: context, operation: "smb2_pwrite") {
+                smb2_pwrite_async(context.raw, raw, $0, byteCount, offset, $1, $2)
             }
         }
     }
@@ -632,8 +753,10 @@ class Bridge {
     static func read(context: Context, file: FileHandle, count: Int) async throws -> Data {
         let byteCount = try count.asUInt32(operation: .smb2Read)
         return try await perform(on: context) {
-            try readData(count: count, context: context, operation: "smb2_read") {
-                smb2_read(context.raw, file.raw, $0, byteCount)
+            let raw = try file.requireRaw(operation: .smb2Read)
+            guard byteCount > 0 else { return Data() }
+            return try readData(count: count, context: context, operation: "smb2_read") {
+                smb2_read_async(context.raw, raw, $0, byteCount, $1, $2)
             }
         }
     }
@@ -644,8 +767,17 @@ class Bridge {
     static func write(context: Context, file: FileHandle, data: Data) async throws -> Int {
         let byteCount = try data.count.asUInt32(operation: .smb2Write)
         return try await perform(on: context) {
-            try writeData(data, context: context, operation: "smb2_write") {
-                smb2_write(context.raw, file.raw, $0, byteCount)
+            let raw = try file.requireRaw(operation: .smb2Write)
+            guard byteCount > 0 else { return 0 }
+            if file.appendsWrites {
+                // libsmb2 ignores O_APPEND. Refresh the end on every write so reopening or seeking an append handle
+                // never overwrites the existing contents.
+                let size = try _getFileSize(context: context, file: file)
+                let destination = try seekDestination(from: size, offset: 0)
+                _ = smb2_lseek(context.raw, raw, Int64(destination), SEEK_SET, nil)
+            }
+            return try writeData(data, context: context, operation: "smb2_write") {
+                smb2_write_async(context.raw, raw, $0, byteCount, $1, $2)
             }
         }
     }
@@ -656,13 +788,70 @@ class Bridge {
         offset: Int64,
         whence: Int32
     ) throws -> UInt64 {
+        let raw = try file.requireRaw(operation: .smb2Lseek)
+        let base: UInt64
+        switch whence {
+        case SEEK_SET:
+            base = 0
+        case SEEK_CUR:
+            var previousOffset: UInt64 = 0
+            let status = smb2_lseek(context.raw, raw, 0, SEEK_CUR, &previousOffset)
+            guard status >= 0 else {
+                throw SMB.Error.fromBridge(context, operation: "smb2_lseek", status: Int32(clamping: status))
+            }
+            base = previousOffset
+        case SEEK_END:
+            base = try _getFileSize(context: context, file: file)
+        default:
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EINVAL.rawValue,
+                operation: "smb2_lseek",
+                message: "Invalid seek origin"
+            )
+        }
+        // libsmb2 performs unchecked signed addition and changes the position before validating SEEK_END. Calculate
+        // the destination first, and use an absolute seek so a failure never corrupts the current position.
+        let destination = try seekDestination(from: base, offset: offset)
         var currentOffset: UInt64 = 0
-        let status = smb2_lseek(context.raw, file.raw, offset, whence, &currentOffset)
+        let status = smb2_lseek(context.raw, raw, Int64(destination), SEEK_SET, &currentOffset)
         guard status >= 0 else {
             throw SMB.Error.fromBridge(context, operation: "smb2_lseek", status: Int32(clamping: status))
         }
 
         return currentOffset
+    }
+
+    static func seekDestination(from base: UInt64, offset: Int64) throws -> UInt64 {
+        let destination: UInt64
+        if offset < 0 {
+            guard base >= offset.magnitude else {
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EINVAL.rawValue,
+                    operation: "smb2_lseek",
+                    message: "Seek offset would become negative"
+                )
+            }
+            destination = base - offset.magnitude
+        }
+        else {
+            let (sum, overflow) = base.addingReportingOverflow(UInt64(offset))
+            guard !overflow else {
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EOVERFLOW.rawValue,
+                    operation: "smb2_lseek",
+                    message: "Seek offset cannot be represented as Int64"
+                )
+            }
+            destination = sum
+        }
+        guard destination <= UInt64(Int64.max) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EOVERFLOW.rawValue,
+                operation: "smb2_lseek",
+                message: "Seek offset cannot be represented as Int64"
+            )
+        }
+        return destination
     }
 
     /// Moves the current file offset and returns the resulting offset.
@@ -712,14 +901,43 @@ class Bridge {
         }
     }
 
-    private static func _openDir(context: Context, path: String) throws -> DirectoryHandle {
-        let rawDirectory = path.withCString { smb2_opendir(context.raw, $0) }
+    private final class OpenDirectoryState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        var directory: DirectoryHandle?
+        let context: Context
 
-        guard let rawDirectory else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_opendir")
+        init(context: Context) {
+            self.context = context
         }
+    }
 
-        return DirectoryHandle(raw: rawDirectory)
+    private static let openDirectoryCallback: smb2_command_cb = { _, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<OpenDirectoryState>.fromOpaque(callbackData).takeUnretainedValue()
+        if status == 0, let commandData {
+            let directory = DirectoryHandle(raw: commandData.assumingMemoryBound(to: smb2dir.self))
+            state.context.directoryHandles[ObjectIdentifier(directory)] = directory
+            state.directory = directory
+        }
+        state.finish(status)
+    }
+
+    private static func _openDir(context: Context, path: String) throws -> DirectoryHandle {
+        let state = OpenDirectoryState(context: context)
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = path.withCString { smb2_opendir_async(context.raw, $0, openDirectoryCallback, callbackData) }
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: "smb2_opendir", status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: "smb2_opendir")
+        guard let directory = state.directory else {
+            throw SMB.Error.unknown(operation: "smb2_opendir", message: "Server returned no directory handle")
+        }
+        return directory
     }
 
     /// Opens a directory and returns a directory handle.
@@ -730,7 +948,9 @@ class Bridge {
     }
 
     private static func _closeDir(context: Context, directory: DirectoryHandle) {
-        smb2_closedir(context.raw, directory.raw)
+        guard let raw = directory.takeRaw() else { return }
+        context.directoryHandles.removeValue(forKey: ObjectIdentifier(directory))
+        smb2_closedir(context.raw, raw)
     }
 
     /// Closes an open directory handle.
@@ -747,59 +967,187 @@ class Bridge {
         }
     }
 
-    private static func _readDir(context: Context, directory: DirectoryHandle) -> DirectoryEntry? {
-        smb2_readdir(context.raw, directory.raw).map { DirectoryEntry($0.pointee) }
+    private static func _readDir(context: Context, directory: DirectoryHandle) throws -> DirectoryEntry? {
+        try smb2_readdir(context.raw, directory.requireRaw(operation: .smb2Readdir)).map { DirectoryEntry($0.pointee) }
     }
 
     /// Reads the next directory entry from a directory handle.
     static func readDir(context: Context, directory: DirectoryHandle) async throws -> DirectoryEntry? {
         try await perform(on: context) {
-            _readDir(context: context, directory: directory)
+            try _readDir(context: context, directory: directory)
         }
     }
 
-    private static func _rewindDir(context: Context, directory: DirectoryHandle) {
-        smb2_rewinddir(context.raw, directory.raw)
+    private static func _rewindDir(context: Context, directory: DirectoryHandle) throws {
+        try smb2_rewinddir(context.raw, directory.requireRaw(operation: .smb2Rewinddir))
     }
 
     /// Rewinds a directory handle to the first entry.
     static func rewindDir(context: Context, directory: DirectoryHandle) async throws {
         try await perform(on: context) {
-            _rewindDir(context: context, directory: directory)
+            try _rewindDir(context: context, directory: directory)
         }
     }
 
-    private static func _tellDir(context: Context, directory: DirectoryHandle) -> Int {
-        Int(smb2_telldir(context.raw, directory.raw))
+    private static func _tellDir(context: Context, directory: DirectoryHandle) throws -> Int {
+        try Int(smb2_telldir(context.raw, directory.requireRaw(operation: .smb2Telldir)))
     }
 
     /// Returns the current directory stream location.
     static func tellDir(context: Context, directory: DirectoryHandle) async throws -> Int {
         try await perform(on: context) {
-            _tellDir(context: context, directory: directory)
+            try _tellDir(context: context, directory: directory)
         }
     }
 
-    private static func _seekDir(context: Context, directory: DirectoryHandle, location: Int) {
-        smb2_seekdir(context.raw, directory.raw, numericCast(location))
+    private static func _seekDir(context: Context, directory: DirectoryHandle, location: Int) throws {
+        let raw = try directory.requireRaw(operation: .smb2Seekdir)
+        guard location >= 0, let position = CLong(exactly: location) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EINVAL.rawValue,
+                operation: "smb2_seekdir",
+                message: "Directory position must be nonnegative and fit in C long"
+            )
+        }
+        smb2_seekdir(context.raw, raw, position)
     }
 
     /// Moves a directory handle to a previously returned stream location.
     static func seekDir(context: Context, directory: DirectoryHandle, location: Int) async throws {
         try await perform(on: context) {
-            _seekDir(context: context, directory: directory, location: location)
+            try _seekDir(context: context, directory: directory, location: location)
         }
     }
 
     // MARK: - File Statistics
 
+    private final class QueryFileSizeState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        var size: UInt64?
+    }
+
+    private static let queryFileSizeCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<QueryFileSizeState>.fromOpaque(callbackData).takeUnretainedValue()
+        if status == SMB2_STATUS_SUCCESS, let rawContext, let commandData {
+            let reply = commandData.assumingMemoryBound(to: smb2_query_info_reply.self).pointee
+            if let buffer = reply.output_buffer {
+                defer { smb2_free_data(rawContext, buffer) }
+                if reply.output_buffer_length >= 24 {
+                    state.size = buffer.withMemoryRebound(to: smb2_file_standard_info.self, capacity: 1) {
+                        $0.pointee.end_of_file
+                    }
+                }
+            }
+        }
+        state.finish(status)
+    }
+
+    /// Queries the original handle's current size without requiring read-data or read-attributes access.
+    private static func _getFileSize(context: Context, file: FileHandle) throws -> UInt64 {
+        let operation = "smb2_query_info(FILE_STANDARD_INFORMATION)"
+        let raw = try file.requireRaw(operation: .smb2Fstat)
+        guard let fileID = smb2_get_file_id(raw) else {
+            throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
+        }
+        clearError(on: context)
+        let state = QueryFileSizeState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        var request = smb2_query_info_request()
+        request.info_type = UInt8(SMB2_0_INFO_FILE)
+        request.file_info_class = UInt8(SMB2_FILE_STANDARD_INFORMATION)
+        request.output_buffer_length = 24
+        request.file_id = fileID.pointee
+        guard let pdu = smb2_cmd_query_info_async(context.raw, &request, queryFileSizeCallback, callbackData) else {
+            state.isFinished = true
+            throw SMB.Error.fromBridge(context, operation: operation)
+        }
+        smb2_queue_pdu(context.raw, pdu)
+        try serviceUntilFinished(context: context, state: state)
+        if state.status != SMB2_STATUS_SUCCESS {
+            throw SMB.Error.fromBridge(context, operation: operation, status: state.status)
+        }
+        guard let size = state.size else {
+            throw SMB.Error.ntStatus(
+                .invalidNetworkResponse,
+                posixCode: nil,
+                operation: operation,
+                message: "Server returned no complete file standard information"
+            )
+        }
+        return size
+    }
+
+    private class StatusState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+    }
+
+    private final class OutputState<Value>: StatusState {
+        let pointer: UnsafeMutablePointer<Value>
+
+        init(_ value: Value) {
+            pointer = .allocate(capacity: 1)
+            pointer.initialize(to: value)
+        }
+
+        deinit {
+            pointer.deinitialize(count: 1)
+            pointer.deallocate()
+        }
+    }
+
+    private static let statusCallback: smb2_command_cb = { _, status, _, callbackData in
+        guard let callbackData else { return }
+        Unmanaged<StatusState>.fromOpaque(callbackData).takeUnretainedValue().finish(status)
+    }
+
+    private static func performStatus(
+        context: Context,
+        operation: String,
+        _ body: (smb2_command_cb, UnsafeMutableRawPointer) -> Int32
+    ) throws {
+        let state = StatusState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = body(statusCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: operation, status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: operation)
+    }
+
+    private static func performOutput<Value>(
+        _ value: Value,
+        context: Context,
+        operation: String,
+        _ body: (UnsafeMutablePointer<Value>, smb2_command_cb, UnsafeMutableRawPointer) -> Int32
+    ) throws -> Value {
+        let state = OutputState(value)
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = body(state.pointer, statusCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: operation, status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: operation)
+        return state.pointer.pointee
+    }
+
     private static func _statVFS(context: Context, path: String) throws -> VFSStat {
-        var statvfs = smb2_statvfs()
-        try check(
-            path.withCString { smb2_statvfs(context.raw, $0, &statvfs) },
+        let statvfs = try performOutput(
+            smb2_statvfs(),
             context: context,
             operation: "smb2_statvfs"
-        )
+        ) { pointer, callback, data in
+            path.withCString { smb2_statvfs_async(context.raw, $0, pointer, callback, data) }
+        }
         return VFSStat(statvfs)
     }
 
@@ -811,8 +1159,10 @@ class Bridge {
     }
 
     private static func _fileStatistics(context: Context, file: FileHandle) throws -> Stat {
-        var stat = smb2_stat_64()
-        try check(smb2_fstat(context.raw, file.raw, &stat), context: context, operation: "smb2_fstat")
+        let raw = try file.requireRaw(operation: .smb2Fstat)
+        let stat = try performOutput(smb2_stat_64(), context: context, operation: "smb2_fstat") {
+            smb2_fstat_async(context.raw, raw, $0, $1, $2)
+        }
         return Stat(stat)
     }
 
@@ -824,12 +1174,13 @@ class Bridge {
     }
 
     private static func _fileStatistics(context: Context, path: String) throws -> Stat {
-        var stat = smb2_stat_64()
-        try check(
-            path.withCString { smb2_stat(context.raw, $0, &stat) },
+        let stat = try performOutput(
+            smb2_stat_64(),
             context: context,
             operation: "smb2_stat"
-        )
+        ) { pointer, callback, data in
+            path.withCString { smb2_stat_async(context.raw, $0, pointer, callback, data) }
+        }
         return Stat(stat)
     }
 
@@ -873,7 +1224,10 @@ class Bridge {
     }
 
     private static func _truncate(context: Context, file: FileHandle, length: UInt64) throws {
-        try check(smb2_ftruncate(context.raw, file.raw, length), context: context, operation: "smb2_ftruncate")
+        let raw = try file.requireRaw(operation: .smb2Ftruncate)
+        try performStatus(context: context, operation: "smb2_ftruncate") {
+            smb2_ftruncate_async(context.raw, raw, length, $0, $1)
+        }
     }
 
     /// Truncates an open file handle to a length in bytes.
@@ -926,6 +1280,7 @@ class Bridge {
         var status: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
         var fileAttributes: UInt32 = 0
+        var hasAttributes = false
     }
 
     private static let setStatsCreateCallback: smb2_command_cb = { _, status, _, callbackData in
@@ -966,6 +1321,7 @@ class Bridge {
                     }
                     let info = buffer.withMemoryRebound(to: smb2_file_basic_info.self, capacity: 1) { $0.pointee }
                     state.fileAttributes = info.file_attributes
+                    state.hasAttributes = true
                 }
             }
         }
@@ -976,32 +1332,65 @@ class Bridge {
         state.finish(status)
     }
 
-    static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
-        var pfd = pollfd()
+    /// Converts a date to libsmb2's basic-information timestamp representation without trapping.
+    static func basicInfoTimeval(from date: Date?) throws -> smb2_timeval {
+        guard let date else {
+            return smb2_timeval(tv_sec: 0xFFFF_FFFF, tv_usec: CLong(truncatingIfNeeded: UInt32.max))
+        }
+        let interval = date.timeIntervalSince1970
+        let maximumInterval = Double(UInt64.max) / 10_000_000 - 11_644_473_600
+        guard interval.isFinite,
+              interval > -11_644_473_600,
+              interval < maximumInterval,
+              let seconds = time_t(exactly: interval.rounded(.down)) else {
+            throw SMB.Error.posix(
+                code: POSIXErrorCode.EINVAL.rawValue,
+                operation: "smb2_set_basic_info",
+                message: "Timestamp cannot be represented as an SMB file time"
+            )
+        }
+        let microseconds = CLong((interval - Double(seconds)) * 1_000_000)
+        if seconds == 0, microseconds == 0 {
+            // libsmb2 interprets an all-zero timeval as "leave unchanged". An equivalent nonzero representation
+            // allows an explicit Unix epoch timestamp to be written instead of silently skipping it.
+            return smb2_timeval(tv_sec: -1, tv_usec: 1_000_000)
+        }
+        return smb2_timeval(tv_sec: seconds, tv_usec: microseconds)
+    }
 
-        while !state.isFinished {
-            // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
-            // synchronous wait loop fails in this case too.
-            pfd.fd = smb2_get_fd(context.raw)
-            guard pfd.fd >= 0 else {
-                throw noConnectionError(operation: "smb2_service")
+    static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
+        do {
+            var pfd = pollfd()
+            while !state.isFinished {
+                // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
+                // synchronous wait loop fails in this case too.
+                pfd.fd = smb2_get_fd(context.raw)
+                guard pfd.fd >= 0 else {
+                    throw noConnectionError(operation: "smb2_service")
+                }
+                pfd.events = Int16(smb2_which_events(context.raw))
+                var rc: Int32 = 0
+                repeat {
+                    rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 1000) }
+                }
+                while rc < 0 && errno == EINTR
+                if rc < 0 {
+                    throw SMB.Error.posix(
+                        code: errno,
+                        operation: "poll",
+                        message: "poll failed while waiting for SMB2 operation"
+                    )
+                }
+                if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+                    throw SMB.Error.fromBridge(context, operation: "smb2_service")
+                }
             }
-            pfd.events = Int16(smb2_which_events(context.raw))
-            var rc: Int32 = 0
-            repeat {
-                rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 1000) }
-            }
-            while rc < 0 && errno == EINTR
-            if rc < 0 {
-                throw SMB.Error.posix(
-                    code: errno,
-                    operation: "poll",
-                    message: "poll failed while waiting for SMB2 operation"
-                )
-            }
-            if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
-                throw SMB.Error.fromBridge(context, operation: "smb2_service")
-            }
+        }
+        catch {
+            // An unfinished C command can still hold its handle and buffers. Abort all callbacks before another
+            // operation can close that handle or overwrite callback data that libsmb2 stores directly on it.
+            _destroyContext(context)
+            throw error
         }
     }
 
@@ -1035,29 +1424,23 @@ class Bridge {
         changeTime: Date? = nil,
         fileAttributes: UInt32? = nil
     ) throws {
-        let dontChangeTime = smb2_timeval(tv_sec: 0xFFFF_FFFF, tv_usec: 0xFFFF_FFFF)
-
-        func smb2Timeval(from date: Date?) -> smb2_timeval {
-            guard let date else {
-                return dontChangeTime
-            }
-            let interval = date.timeIntervalSince1970
-            let sec = time_t(interval)
-            let usec = CLong((interval - Double(sec)) * 1_000_000)
-            return smb2_timeval(tv_sec: sec, tv_usec: usec)
-        }
-
-        var info = smb2_file_basic_info(
-            creation_time: smb2Timeval(from: creationTime),
-            last_access_time: smb2Timeval(from: lastAccessTime),
-            last_write_time: smb2Timeval(from: lastWriteTime),
-            change_time: smb2Timeval(from: changeTime),
+        var info = try smb2_file_basic_info(
+            creation_time: basicInfoTimeval(from: creationTime),
+            last_access_time: basicInfoTimeval(from: lastAccessTime),
+            last_write_time: basicInfoTimeval(from: lastWriteTime),
+            change_time: basicInfoTimeval(from: changeTime),
             file_attributes: fileAttributes ?? 0
         )
 
         let state = SetStatsState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-        defer { releaseWhenFinished(state, callbackData) }
+        var isQueued = false
+        defer {
+            if !isQueued {
+                state.isFinished = true
+            }
+            releaseWhenFinished(state, callbackData)
+        }
 
         try path.withCString { pathPointer in
             try withUnsafeMutablePointer(to: &info) { infoPointer in
@@ -1111,6 +1494,7 @@ class Bridge {
                 smb2_add_compound_pdu(context.raw, pdu, close_pdu)
 
                 smb2_queue_pdu(context.raw, pdu)
+                isQueued = true
 
                 try serviceUntilFinished(context: context, state: state)
 
@@ -1147,8 +1531,13 @@ class Bridge {
     private static func _getFileAttributes(context: Context, path: String) throws -> UInt32 {
         let state = QueryAttributesState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
-
-        defer { releaseWhenFinished(state, callbackData) }
+        var isQueued = false
+        defer {
+            if !isQueued {
+                state.isFinished = true
+            }
+            releaseWhenFinished(state, callbackData)
+        }
 
         return try path.withCString { pathPointer in
             var cr_req = smb2_create_request(
@@ -1214,11 +1603,20 @@ class Bridge {
             smb2_add_compound_pdu(context.raw, pdu, close_pdu)
 
             smb2_queue_pdu(context.raw, pdu)
+            isQueued = true
 
             try serviceUntilFinished(context: context, state: state)
 
             if state.status != SMB2_STATUS_SUCCESS {
                 throw SMB.Error.fromBridge(context, operation: "getFileAttributes", status: state.status)
+            }
+            guard state.hasAttributes else {
+                throw SMB.Error.ntStatus(
+                    .invalidNetworkResponse,
+                    posixCode: nil,
+                    operation: "getFileAttributes",
+                    message: "Server returned no complete file basic information"
+                )
             }
 
             return state.fileAttributes
@@ -1249,16 +1647,57 @@ class Bridge {
         let length: UInt32
     }
 
+    private final class ResumeKeyState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        var resumeKey: smb2_srv_copychunk_resume_key?
+    }
+
+    private static let resumeKeyCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<ResumeKeyState>.fromOpaque(callbackData).takeUnretainedValue()
+        if let rawContext, let commandData {
+            if status == 0 {
+                state.resumeKey = commandData.assumingMemoryBound(to: smb2_srv_copychunk_resume_key.self).pointee
+            }
+            smb2_free_data(rawContext, commandData)
+        }
+        state.finish(status)
+    }
+
+    private final class CopyChunkState: PendingOperationState {
+        var status: Int32 = SMB2_STATUS_SUCCESS
+        var isFinished = false
+        var reply: smb2_srv_copychunk_reply?
+    }
+
+    private static let copyChunkCallback: smb2_command_cb = { rawContext, status, commandData, callbackData in
+        guard let callbackData else { return }
+        let state = Unmanaged<CopyChunkState>.fromOpaque(callbackData).takeUnretainedValue()
+        if let rawContext, let commandData {
+            state.reply = commandData.assumingMemoryBound(to: smb2_srv_copychunk_reply.self).pointee
+            smb2_free_data(rawContext, commandData)
+        }
+        state.finish(status)
+    }
+
     private static func _requestResumeKey(
         context: Context,
         sourceHandle: OpaquePointer
     ) throws -> smb2_srv_copychunk_resume_key {
-        var resumeKey = smb2_srv_copychunk_resume_key()
-        try check(
-            smb2_request_resume_key(context.raw, sourceHandle, &resumeKey),
-            context: context,
-            operation: "smb2_request_resume_key"
-        )
+        let state = ResumeKeyState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
+        let status = smb2_request_resume_key_async(context.raw, sourceHandle, resumeKeyCallback, callbackData)
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: "smb2_request_resume_key", status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        try check(state.status, context: context, operation: "smb2_request_resume_key")
+        guard let resumeKey = state.resumeKey else {
+            throw SMB.Error.unknown(operation: "smb2_request_resume_key", message: "Server returned no resume key")
+        }
         return resumeKey
     }
 
@@ -1272,6 +1711,7 @@ class Bridge {
         resumeKey: smb2_srv_copychunk_resume_key,
         chunks: [CopyChunk]
     ) throws -> CopyChunkLimits? {
+        clearError(on: context)
         var resumeKey = resumeKey
         var rawChunks = chunks.map {
             smb2_srv_copychunk(
@@ -1281,20 +1721,31 @@ class Bridge {
                 reserved: 0
             )
         }
-        var reply = smb2_srv_copychunk_reply()
+        let state = CopyChunkState()
+        let callbackData = Unmanaged.passRetained(state).toOpaque()
+        defer { releaseWhenFinished(state, callbackData) }
         let status = rawChunks.withUnsafeMutableBufferPointer { buffer in
-            smb2_copychunk(
+            smb2_copychunk_async(
                 context.raw,
                 UInt32(SMB2_FSCTL_SRV_COPYCHUNK),
                 &resumeKey,
                 destinationHandle,
                 buffer.baseAddress,
                 UInt32(buffer.count),
-                &reply
+                copyChunkCallback,
+                callbackData
             )
         }
 
-        if status < 0,
+        guard status == 0 else {
+            state.finish(status)
+            throw SMB.Error.fromBridge(context, operation: "smb2_copychunk", status: status)
+        }
+        try serviceUntilFinished(context: context, state: state)
+        let reply = state.reply ?? smb2_srv_copychunk_reply()
+
+        if state.status < 0,
+           UInt32(bitPattern: smb2_get_nterror(context.raw)) == SMB.SMBStatus.invalidParameter.rawValue,
            reply.chunks_written > 0,
            reply.chunk_bytes_written > 0,
            reply.total_bytes_written > 0 {
@@ -1305,7 +1756,15 @@ class Bridge {
             )
         }
 
-        try check(status, context: context, operation: "smb2_copychunk")
+        try check(state.status, context: context, operation: "smb2_copychunk")
+        let expectedLength = chunks.reduce(UInt64(0)) { $0 + UInt64($1.length) }
+        guard UInt64(reply.total_bytes_written) == expectedLength,
+              reply.chunks_written == UInt32(chunks.count) else {
+            throw SMB.Error.unknown(
+                operation: "smb2_copychunk",
+                message: "Server returned an incomplete copy response"
+            )
+        }
         return nil
     }
 
@@ -1318,7 +1777,10 @@ class Bridge {
         var chunks: [CopyChunk] = []
         var position = offset
         var budget = UInt64(limits.maxTotalLength)
-        while position < fileSize, chunks.count < Int(limits.maxChunkCount), budget > 0 {
+        // The advertised count is a maximum, so a smaller client cap is valid and prevents an untrusted server from
+        // making us allocate billions of tiny chunks.
+        let maximumChunkCount = min(Int(limits.maxChunkCount), 256)
+        while position < fileSize, chunks.count < maximumChunkCount, budget > 0 {
             let length = min(UInt64(limits.maxChunkLength), fileSize - position, budget)
             chunks.append(CopyChunk(sourceOffset: position, targetOffset: position, length: UInt32(length)))
             position += length
@@ -1327,63 +1789,49 @@ class Bridge {
         return chunks
     }
 
-    /// Closes a raw file handle, ignoring any error. Used to clean up handles on error paths.
-    private static func closeQuietly(_ rawHandle: OpaquePointer, context: Context) {
-        _ = try? check(smb2_close(context.raw, rawHandle), context: context, operation: "smb2_close")
-    }
-
     private static func _serverSideCopy(
         context: Context,
         sourcePath: String,
         destinationPath: String,
-        chunkSize: UInt32
+        chunkSize: UInt32,
+        exclusiveDestination: Bool
     ) throws {
-        var stat = smb2_stat_64()
-        try check(
-            sourcePath.withCString { smb2_stat(context.raw, $0, &stat) },
-            context: context,
-            operation: "smb2_stat"
-        )
+        let stat = try _fileStatistics(context: context, path: sourcePath)
         // A directory reports size 0, which the empty-file shortcut below would silently "copy" to an empty file.
-        guard stat.smb2_type != SMB2_TYPE_DIRECTORY else {
+        guard stat.type != .directory else {
             throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: .smbConnectionCopyFile)
         }
-        let fileSize = stat.smb2_size
+        let fileSize = stat.size
+        let destinationOptions: OpenOptions = exclusiveDestination ? [.create, .exclusive] : [.create, .truncate]
 
         guard fileSize > 0 else {
-            let rawHandle = destinationPath.withCString {
-                smb2_open(context.raw, $0, O_WRONLY | O_CREAT | O_TRUNC)
+            let destination = try _open(
+                context: context,
+                path: destinationPath,
+                flags: .init(.writeOnly, options: destinationOptions)
+            )
+            do {
+                try _close(context: context, file: destination)
             }
-            guard let rawHandle else {
-                throw SMB.Error.fromBridge(context, operation: "smb2_open")
+            catch {
+                if exclusiveDestination, context.isAlive {
+                    try? _unlink(context: context, path: destinationPath)
+                }
+                throw error
             }
-            try check(smb2_close(context.raw, rawHandle), context: context, operation: "smb2_close")
             return
         }
 
-        let rawSourceHandle = sourcePath.withCString {
-            smb2_open(context.raw, $0, O_RDONLY)
-        }
-        guard let rawSourceHandle else {
-            throw SMB.Error.fromBridge(context, operation: "smb2_open")
-        }
+        let source = try _open(context: context, path: sourcePath)
+        defer { try? _close(context: context, file: source) }
+        let resumeKey = try _requestResumeKey(context: context, sourceHandle: source.requireRaw(operation: .smb2Read))
 
-        let resumeKey: smb2_srv_copychunk_resume_key
-        do {
-            resumeKey = try _requestResumeKey(context: context, sourceHandle: rawSourceHandle)
-        }
-        catch {
-            closeQuietly(rawSourceHandle, context: context)
-            throw error
-        }
-
-        let rawDestHandle = destinationPath.withCString {
-            smb2_open(context.raw, $0, O_RDWR | O_CREAT | O_TRUNC)
-        }
-        guard let rawDestHandle else {
-            closeQuietly(rawSourceHandle, context: context)
-            throw SMB.Error.fromBridge(context, operation: "smb2_open")
-        }
+        let destination = try _open(
+            context: context,
+            path: destinationPath,
+            flags: .init(.readWrite, options: destinationOptions)
+        )
+        defer { try? _close(context: context, file: destination) }
 
         do {
             // Start with one chunk sized to the negotiated max write size. If the server rejects that with its
@@ -1395,7 +1843,7 @@ class Bridge {
                 let chunks = planCopyChunks(from: offset, fileSize: fileSize, limits: limits)
                 if let serverLimits = try _copyChunks(
                     context: context,
-                    destinationHandle: rawDestHandle,
+                    destinationHandle: destination.requireRaw(operation: .smb2Write),
                     resumeKey: resumeKey,
                     chunks: chunks
                 ) {
@@ -1414,22 +1862,26 @@ class Bridge {
                 }
                 offset += chunks.reduce(0) { $0 + UInt64($1.length) }
             }
+            try _close(context: context, file: destination)
+            try _close(context: context, file: source)
         }
         catch {
-            closeQuietly(rawDestHandle, context: context)
-            closeQuietly(rawSourceHandle, context: context)
+            try? _close(context: context, file: destination)
+            // An exclusive creator owns its partial destination; an overwrite caller may have supplied an existing
+            // destination, which must remain the caller's responsibility on failure.
+            if exclusiveDestination, context.isAlive {
+                try? _unlink(context: context, path: destinationPath)
+            }
             throw error
         }
-
-        try check(smb2_close(context.raw, rawDestHandle), context: context, operation: "smb2_close")
-        try check(smb2_close(context.raw, rawSourceHandle), context: context, operation: "smb2_close")
     }
 
     /// Copies a file from source to destination using SMB2 server-side copy.
     static func serverSideCopy(
         context: Context,
         sourcePath: String,
-        destinationPath: String
+        destinationPath: String,
+        exclusiveDestination: Bool = false
     ) async throws {
         try await perform(on: context) {
             let chunkSize = max(smb2_get_max_write_size(context.raw), 1)
@@ -1437,7 +1889,8 @@ class Bridge {
                 context: context,
                 sourcePath: sourcePath,
                 destinationPath: destinationPath,
-                chunkSize: chunkSize
+                chunkSize: chunkSize,
+                exclusiveDestination: exclusiveDestination
             )
         }
     }

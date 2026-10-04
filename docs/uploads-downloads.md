@@ -36,7 +36,8 @@ Pass `atomic: false` to write straight to the destination instead. By default th
 and any existing content is truncated, so it ends up identical to the local file; a failed or cancelled transfer can
 leave it partially written. When resuming with `from: .offset(byte:)`, the existing content is never truncated.
 
-You can also pass a preferred block size. Values above the server maximum are clamped automatically:
+You can also pass a preferred block size. An explicit value overrides the connection's configured/default block size;
+values above the server maximum are clamped automatically:
 
 ```swift
 try await connection.uploadFile(
@@ -66,6 +67,11 @@ Return `false` from the progress closure to cancel the download. The temporary l
 Cancelling the task that runs the download stops it between blocks with the same cleanup, and the call throws
 `CancellationError`.
 
+Uploads and downloads transfer the source length reported when the operation starts. Bytes appended afterwards are
+excluded. If the source becomes shorter before the expected bytes have been read, the operation throws; an atomic
+transfer keeps the previous destination and removes its temporary file. Uploads through local symbolic links use the
+target file's length.
+
 ## Loading a file into memory
 
 If the file is small enough to fit in memory, ``SMB.Connection.loadFile(at:chunkSize:)`` reads the entire file in one call:
@@ -94,6 +100,9 @@ try await connection.dumpToFile(
     options: [.create, .append]
 )
 ```
+
+When multiple connections append to the same file, coordinate their writes with an exclusive file lock; append does
+not acquire locks automatically.
 
 ## Choosing a block size
 

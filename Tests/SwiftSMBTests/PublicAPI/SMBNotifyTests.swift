@@ -184,7 +184,7 @@ struct SMBNotifyIntegrationTests {
         #expect(try await connection.listDirectory(at: root).count(where: { $0.name.hasPrefix("file-") }) == 5)
     }
 
-    @Test("releasing a connection with an active watcher ends iteration")
+    @Test("an active watcher does not retain its connection after setup completes")
     func releasingConnectionWithActiveWatcherEndsIteration() async throws {
         let setupConnection = try await publicNotifyConnection()
         defer { try? await setupConnection.disconnect() }
@@ -194,6 +194,7 @@ struct SMBNotifyIntegrationTests {
         defer { try? await setupConnection.removeItem(at: root) }
 
         var connection: SMB.Connection? = try await publicNotifyConnection()
+        weak let observedConnection = connection
         let watcher = try await connection!.watchDirectory(at: root)
         let iteration = Task {
             for try await _ in watcher {
@@ -201,6 +202,9 @@ struct SMBNotifyIntegrationTests {
         }
 
         connection = nil
+        // The notification loop inherits the task-local operation scope used to create it. A finished scope must
+        // release the connection even while the watcher and its iterator keep that loop alive.
+        #expect(observedConnection == nil)
         try await withTimeout(seconds: 5) { try await iteration.value }
     }
 }
