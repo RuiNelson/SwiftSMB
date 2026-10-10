@@ -1,0 +1,1 @@
+int __llvm_profile_runtime __attribute__((weak)) = 0;

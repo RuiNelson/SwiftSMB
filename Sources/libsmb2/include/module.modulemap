@@ -1,0 +1,17 @@
+module SMB2 [system] [extern_c] {
+    header "config.h"
+    header "../upstream/include/smb2/smb2-errors.h"
+    header "../upstream/include/smb2/smb2.h"
+    header "../upstream/include/smb2/libsmb2.h"
+    header "../upstream/include/smb2/libsmb2-share-enum.h"
+
+    module Internal {
+        header "../upstream/include/libsmb2-private.h"
+    }
+
+    explicit module Raw {
+        header "../upstream/include/smb2/libsmb2-raw.h"
+    }
+
+    export *
+}
