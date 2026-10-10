@@ -241,6 +241,31 @@ struct CookbookHandlesTests {
         try await file.unlock()
     }
 
+    @Test("cancel blocking lock compiles and runs", .timeLimit(.minutes(1)))
+    func cancelBlockingLock() async throws {
+        let owner = try await cookbookConnection()
+        defer { try? await owner.disconnect() }
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let remote = uniquePath("cookbook-lock-cancel") + ".txt"
+        defer { try? await owner.removeFile(at: remote) }
+        try await owner.dumpToFile(Data("lock test".utf8), to: remote)
+        let ownerFile = try await owner.openFile(at: remote, accessMode: .readWrite)
+        defer { try? await ownerFile.close() }
+        try await ownerFile.lock(.exclusive, nonBlocking: true)
+        let file = try await connection.openFile(
+            at: remote,
+            accessMode: .readWrite
+        )
+        defer { try? await file.close() }
+
+        let lockTask = Task {
+            try await file.lock(.exclusive, nonBlocking: false)
+        }
+        lockTask.cancel()
+        await #expect(throws: CancellationError.self) { try await lockTask.value }
+    }
+
     @Test("lock with range compiles and runs")
     func lockWithRange() async throws {
         let connection = try await cookbookConnection()

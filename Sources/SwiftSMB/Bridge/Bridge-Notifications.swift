@@ -64,7 +64,7 @@ extension Bridge {
         rawPDU.pointee.timeout = 0
         smb2_queue_pdu(context.raw, rawPDU)
 
-        return PendingRequest(state: state)
+        return PendingRequest(state: state, messageID: smb2_get_pdu_message_id(context.raw, rawPDU))
     }
 
     /// Starts a one-shot cancellable change notification request for an open directory file handle.
@@ -80,15 +80,19 @@ extension Bridge {
         }
     }
 
-    /// Marks a pending request cancelled so that its completion is ignored.
+    /// Marks a pending request cancelled so that its completion is ignored, and asks the server to withdraw it.
     ///
     /// The PDU is deliberately not freed: libsmb2 may already be sending it or receiving its reply (`smb2->pdu`), and
-    /// freeing it then would leave libsmb2 with a dangling pointer. The request completes on its own — the server
-    /// answers pending notify requests with `STATUS_NOTIFY_CLEANUP` when their directory handle is closed, and
-    /// destroying the context completes any that remain with `SMB2_STATUS_SHUTDOWN` — and its callback then only
-    /// releases the retained state.
-    private static func _cancel(context _: Context, request: PendingRequest) {
-        request.state.cancel()
+    /// freeing it then would leave libsmb2 with a dangling pointer. An SMB2 CANCEL is queued instead, which the next
+    /// servicing sends, and the server answers the request with `STATUS_CANCELLED`. A request that has not been sent
+    /// yet cannot be cancelled; it still completes on its own — the server answers pending notify requests with
+    /// `STATUS_NOTIFY_CLEANUP` when their directory handle is closed, and destroying the context completes any that
+    /// remain with `SMB2_STATUS_SHUTDOWN`. Either way, its callback then only releases the retained state.
+    private static func _cancel(context: Context, request: PendingRequest) {
+        guard request.state.cancel() else {
+            return
+        }
+        queueCancel(context: context, messageID: request.messageID)
     }
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.

@@ -30,6 +30,18 @@ extension Bridge {
             set { protectedLiveness.current = newValue }
         }
 
+        /// Whether the context is being shut down. Set before the shutdown is enqueued, so that a request waiting on
+        /// the server, such as a blocking lock, is withdrawn instead of holding the shutdown back. Never cleared.
+        private let protectedIsClosing = Protected(false, label: "com.ruinelson.SwiftSMB.bridge.context.closing")
+        var isClosing: Bool {
+            protectedIsClosing.current
+        }
+
+        /// Marks the context as being shut down.
+        func markClosing() {
+            protectedIsClosing.current = true
+        }
+
         /// Open local C allocations owned by this context. Confined to `queue`.
         var fileHandles: [ObjectIdentifier: FileHandle] = [:]
         var directoryHandles: [ObjectIdentifier: DirectoryHandle] = [:]
@@ -551,6 +563,9 @@ extension Bridge {
 
     struct PendingRequest: Sendable {
         let state: PendingRequestState
+
+        /// The request's MessageId, used to withdraw it with an SMB2 CANCEL.
+        let messageID: UInt64
     }
 
     final class PendingRequestState: @unchecked Sendable {
@@ -569,11 +584,16 @@ extension Bridge {
         }
 
         /// Marks the request cancelled, so that its eventual completion does not call `handler`.
-        func cancel() {
+        ///
+        /// - Returns: Whether the request had not completed yet.
+        @discardableResult
+        func cancel() -> Bool {
             lock.lock()
             defer { lock.unlock() }
 
+            let wasPending = !isFinished
             isFinished = true
+            return wasPending
         }
 
         /// Marks the request completed and returns `handler`, or `nil` if it was already cancelled or completed.

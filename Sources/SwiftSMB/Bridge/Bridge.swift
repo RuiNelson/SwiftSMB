@@ -128,6 +128,7 @@ class Bridge {
     /// Destroying an already destroyed context does nothing. Operations enqueued afterwards throw
     /// ``SMB/Error/operationRequestedAfterConnectionClosed``.
     static func destroyContext(_ context: Context) async {
+        context.markClosing()
         try? await perform(on: context) {
             _destroyContext(context)
         }
@@ -138,7 +139,11 @@ class Bridge {
     /// Doing all three in one step means no other operation can run on a disconnected or closed context in between;
     /// operations enqueued afterwards throw ``SMB/Error/operationRequestedAfterConnectionClosed``. The context is
     /// destroyed even if the disconnect fails, and the disconnect error is rethrown.
+    ///
+    /// A request still waiting on the server, such as a blocking lock, is withdrawn first instead of holding the
+    /// shutdown back.
     static func shutdown(_ context: Context) async throws {
+        context.markClosing()
         try await perform(on: context) {
             try _shutdown(context)
         }
@@ -146,6 +151,7 @@ class Bridge {
 
     /// Disconnects, closes, and destroys a context without waiting. Used from `deinit`, which cannot await.
     static func teardownInBackground(_ context: Context) {
+        context.markClosing()
         performInBackground(on: context) {
             _ = try? _shutdown(context)
         }
@@ -1357,10 +1363,20 @@ class Bridge {
         return smb2_timeval(tv_sec: seconds, tv_usec: microseconds)
     }
 
-    static func serviceUntilFinished(context: Context, state: some PendingOperationState) throws {
+    /// Services the context until `state` finishes.
+    ///
+    /// With a `cancellation`, the loop polls more often and withdraws the request with an SMB2 CANCEL when asked to;
+    /// it still waits for the request's final reply, which callers check against ``RequestCancellation/reason``.
+    static func serviceUntilFinished(
+        context: Context,
+        state: some PendingOperationState,
+        cancellation: RequestCancellation? = nil
+    ) throws {
+        let pollTimeoutMilliseconds = cancellation == nil ? 1000 : RequestCancellation.pollIntervalMilliseconds
         do {
             var pfd = pollfd()
             while !state.isFinished {
+                try cancellation?.withdrawIfRequested(context: context)
                 // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
                 // synchronous wait loop fails in this case too.
                 pfd.fd = smb2_get_fd(context.raw)
@@ -1370,7 +1386,7 @@ class Bridge {
                 pfd.events = Int16(smb2_which_events(context.raw))
                 var rc: Int32 = 0
                 repeat {
-                    rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 1000) }
+                    rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, pollTimeoutMilliseconds) }
                 }
                 while rc < 0 && errno == EINTR
                 if rc < 0 {

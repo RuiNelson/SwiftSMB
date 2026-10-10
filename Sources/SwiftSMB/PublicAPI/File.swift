@@ -424,13 +424,21 @@ public extension SMB {
         /// When `range` is `nil`, the lock covers the whole file. Only one mode can be specified at a time—shared and
         /// exclusive are mutually exclusive.
         ///
+        /// A blocking lock (`nonBlocking: false`) waits until the conflicting lock is released, and other operations
+        /// on the connection wait behind it. The server is asked to withdraw the request when the task is cancelled,
+        /// when the connection's command timeout expires, or when the connection is disconnected, so the lock is
+        /// never granted after this method has thrown. If the server grants the lock before the request is
+        /// withdrawn, the lock is held and this method returns normally.
+        ///
         /// - Parameters:
         ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.
         ///   - nonBlocking: When `true`, the operation fails immediately if the lock conflicts with an existing lock
         /// instead of waiting.
         ///   - range: The byte range to lock, or `nil` to lock the entire file.
         /// - Throws: ``SMB/Error`` if the file is closed, the lock range is invalid, the lock conflicts with an
-        /// existing lock, or the server reports an error.
+        /// existing lock, the command timeout expires (``SMB/SMBStatus/ioTimeout``), the connection is disconnected
+        /// while waiting (``SMB/Error/operationRequestedAfterConnectionClosed``), or the server reports an error.
+        /// `CancellationError` if the task is cancelled while waiting.
         public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Int64>? = nil) async throws {
             try await connection.withOperation {
                 let context = try connection.requireContext()

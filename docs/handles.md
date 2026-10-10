@@ -293,6 +293,20 @@ Set `nonBlocking` to `true` to fail immediately when the lock conflicts with an 
 try await file.lock(.exclusive, nonBlocking: true)
 ```
 
+A blocking lock waits until the conflicting lock is released, and other operations on the same connection wait behind
+it. To stop waiting, cancel the task that requested the lock. The server withdraws the request, so the lock is never
+granted later, and `lock` throws `CancellationError`:
+
+```swift
+let lockTask = Task {
+    try await file.lock(.exclusive, nonBlocking: false)
+}
+// ...
+lockTask.cancel()
+```
+
+The connection's command timeout and disconnecting also withdraw a waiting lock.
+
 Lock a specific byte range instead of the entire file:
 
 ```swift
