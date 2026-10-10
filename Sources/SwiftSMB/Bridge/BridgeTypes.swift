@@ -209,12 +209,12 @@ extension Bridge {
         case namesOnly
         case detailed
 
-        var rawValue: SHARE_INFO_enum {
+        var rawValue: smb2_share_info_level {
             switch self {
             case .namesOnly:
-                SHARE_INFO_0
+                SMB2_SHARE_INFO_0
             case .detailed:
-                SHARE_INFO_1
+                SMB2_SHARE_INFO_1
             }
         }
     }
@@ -228,13 +228,13 @@ extension Bridge {
 
         init(rawValue: UInt32) {
             switch rawValue & 0x0000_0003 {
-            case UInt32(SRVSVC_SHARE_TYPE_DISKTREE):
+            case UInt32(SMB2_SHARE_TYPE_DISKTREE):
                 self = .diskTree
-            case UInt32(SRVSVC_SHARE_TYPE_PRINTQ):
+            case UInt32(SMB2_SHARE_TYPE_PRINTQ):
                 self = .printQueue
-            case UInt32(SRVSVC_SHARE_TYPE_DEVICE):
+            case UInt32(SMB2_SHARE_TYPE_DEVICE):
                 self = .device
-            case UInt32(SRVSVC_SHARE_TYPE_IPC):
+            case UInt32(SMB2_SHARE_TYPE_IPC):
                 self = .ipc
             default:
                 self = .unknown(rawValue & 0x0000_0003)
@@ -245,8 +245,8 @@ extension Bridge {
     struct ShareAttributes: OptionSet, Equatable, Hashable, Sendable {
         let rawValue: UInt32
 
-        static let temporary = ShareAttributes(rawValue: UInt32(SRVSVC_SHARE_TYPE_TEMPORARY))
-        static let hidden = ShareAttributes(rawValue: UInt32(SRVSVC_SHARE_TYPE_HIDDEN))
+        static let temporary = ShareAttributes(rawValue: UInt32(SMB2_SHARE_TYPE_TEMPORARY))
+        static let hidden = ShareAttributes(rawValue: UInt32(SMB2_SHARE_TYPE_HIDDEN))
 
         init(rawValue: UInt32) {
             self.rawValue = rawValue

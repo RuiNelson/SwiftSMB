@@ -1429,7 +1429,12 @@ class Bridge {
             last_access_time: basicInfoTimeval(from: lastAccessTime),
             last_write_time: basicInfoTimeval(from: lastWriteTime),
             change_time: basicInfoTimeval(from: changeTime),
-            file_attributes: fileAttributes ?? 0
+            file_attributes: fileAttributes ?? 0,
+            // libsmb2 only fills the raw FILETIME fields when decoding; the encoder reads the timevals above.
+            creation_time_raw: 0,
+            last_access_time_raw: 0,
+            last_write_time_raw: 0,
+            change_time_raw: 0
         )
 
         let state = SetStatsState()

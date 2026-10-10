@@ -71,14 +71,16 @@ extension Bridge {
 
         defer { smb2_free_data(context.raw, response) }
 
-        switch response.pointee.ses.Level {
-        case UInt32(SHARE_INFO_0.rawValue):
-            return shares(from: response.pointee.ses.ShareEnum.Level0)
-        case UInt32(SHARE_INFO_1.rawValue):
-            return shares(from: response.pointee.ses.ShareEnum.Level1)
+        let entriesRead = response.pointee.entries_read
+
+        switch response.pointee.level {
+        case UInt32(SMB2_SHARE_INFO_0.rawValue):
+            return shares(from: response.pointee.share_info.info_0, count: entriesRead)
+        case UInt32(SMB2_SHARE_INFO_1.rawValue):
+            return shares(from: response.pointee.share_info.info_1, count: entriesRead)
         default:
             throw SMB.Error.invalidArgument(
-                cause: .unsupportedShareEnumerationLevel(response.pointee.ses.Level),
+                cause: .unsupportedShareEnumerationLevel(response.pointee.level),
                 onOperation: .smb2ShareEnumSync
             )
         }
@@ -90,12 +92,12 @@ extension Bridge {
         (0 ..< Int(count)).map(body)
     }
 
-    private static func shares(from container: srvsvc_SHARE_INFO_0_CONTAINER) -> [Share] {
-        guard let buffer = container.share_info_0 else {
+    private static func shares(from buffer: UnsafeMutablePointer<smb2_share_info_0>?, count: UInt32) -> [Share] {
+        guard let buffer else {
             return []
         }
 
-        return shares(container.EntriesRead) { index in
+        return shares(count) { index in
             Share(
                 name: decodeString(from: buffer[index].netname),
                 kind: nil,
@@ -105,12 +107,12 @@ extension Bridge {
         }
     }
 
-    private static func shares(from container: srvsvc_SHARE_INFO_1_CONTAINER) -> [Share] {
-        guard let buffer = container.share_info_1 else {
+    private static func shares(from buffer: UnsafeMutablePointer<smb2_share_info_1>?, count: UInt32) -> [Share] {
+        guard let buffer else {
             return []
         }
 
-        return shares(container.EntriesRead) { index in
+        return shares(count) { index in
             let info = buffer[index]
             return Share(
                 name: decodeString(from: info.netname),

@@ -367,12 +367,12 @@ struct SMB2OpenOptionsTests {
 // MARK: - Bridge.SMB2ShareEnumerationLevel
 
 struct SMB2ShareEnumerationLevelTests {
-    @Test("namesOnly raw value is SHARE_INFO_0") func namesonlyRawValueIsShare_info_0() {
-        #expect(Bridge.ShareEnumerationLevel.namesOnly.rawValue == SHARE_INFO_0)
+    @Test("namesOnly raw value is SMB2_SHARE_INFO_0") func namesonlyRawValueIsShare_info_0() {
+        #expect(Bridge.ShareEnumerationLevel.namesOnly.rawValue == SMB2_SHARE_INFO_0)
     }
 
-    @Test("detailed raw value is SHARE_INFO_1") func detailedRawValueIsShare_info_1() {
-        #expect(Bridge.ShareEnumerationLevel.detailed.rawValue == SHARE_INFO_1)
+    @Test("detailed raw value is SMB2_SHARE_INFO_1") func detailedRawValueIsShare_info_1() {
+        #expect(Bridge.ShareEnumerationLevel.detailed.rawValue == SMB2_SHARE_INFO_1)
     }
 }
 
