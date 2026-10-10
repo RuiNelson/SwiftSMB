@@ -36,6 +36,28 @@ struct SMBPublicAPITests {
         #expect(share.remark == "Private data")
     }
 
+    @Test("public share value exposes full information") func publicShareValueExposesFullInformation() {
+        let share = SMB.Share(
+            name: "data",
+            kind: .diskTree,
+            path: #"C:\Data"#,
+            permissions: [.read, .write],
+            maximumUsers: 10,
+            currentUsers: 2
+        )
+
+        #expect(share.path == #"C:\Data"#)
+        #expect(share.permissions == [.read, .write])
+        #expect(share.maximumUsers == 10)
+        #expect(share.currentUsers == 2)
+
+        let standard = SMB.Share(name: "data", kind: .diskTree)
+        #expect(standard.path == nil)
+        #expect(standard.permissions == nil)
+        #expect(standard.maximumUsers == nil)
+        #expect(standard.currentUsers == nil)
+    }
+
     @Test("public configuration can express connection options") func publicConfigurationCanExpressConnectionOptions() {
         let configuration = SMB.Configuration(
             timeout: 30,

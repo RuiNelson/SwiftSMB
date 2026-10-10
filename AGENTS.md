@@ -107,6 +107,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Notify PDUs have their libsmb2 `timeout` cleared after creation: they legitimately wait until something changes, and the connection's command timeout would otherwise fail an idle watcher with `STATUS_IO_TIMEOUT`.
 - libsmb2 keeps the last NT status and error string on the context until another failure overwrites them, and `SMB.Error.fromBridge` prefers that NT status over the one an operation reports. `Bridge.perform(on:_:)` clears both before each operation; keep that so errors are never reported with an earlier operation's status.
 - Keep notify response decoding defensive. Do not call the recursive C `smb2_decode_filenotifychangeinformation` helper from public watcher paths unless it has been audited for malformed server data; the Swift decoder currently validates entry bounds, monotonic offsets, and an entry-count cap.
+- Share enumeration calls `smb2_share_enum_async` rather than `smb2_share_enum_sync`: only the callback carries the server's `WERROR`, as a positive status where libsmb2's own failures are negative errno values, and the sync wrapper reduces it to an error string. `Bridge.shareEnumError` maps `ERROR_ACCESS_DENIED` to `SMB.SMBStatus.accessDenied`, which is what Windows answers a `.full` (`SHARE_INFO_2`) request from a non-administrator with; Samba answers it for everyone, so the test server cannot exercise that path. The `passwd` field of `SHARE_INFO_2` is never exposed.
 - Retry `poll` on `EINTR` in Swift-owned service loops.
 
 ## Public API

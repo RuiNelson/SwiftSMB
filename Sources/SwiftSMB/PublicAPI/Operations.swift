@@ -19,13 +19,17 @@ public extension SMB {
     ///   - credentials: Optional credentials for authenticated enumeration.
     ///   - configuration: SMB negotiation and connection options.
     ///   - includeHidden: Whether to include shares marked as hidden.
+    ///   - detail: How much information to request about each share. ``Share/Detail/full`` adds each share's path,
+    ///     permissions and user counts, but Windows servers only return it to administrators and operators.
     /// - Returns: The server's visible disk shares.
     /// - Throws: ``SMB/Error`` when context creation, authentication, connection, enumeration, or disconnection fails.
+    ///   A server that refuses ``Share/Detail/full`` to the current user fails with ``SMB/SMBStatus/accessDenied``.
     static func listShares(
         server: Server,
         credentials: Credentials? = nil,
         configuration: Configuration = Configuration(),
-        includeHidden: Bool = false
+        includeHidden: Bool = false,
+        detail: Share.Detail = .standard
     ) async throws -> [Share] {
         let context = try await makeConfiguredContext(
             configuration: configuration,
@@ -38,7 +42,8 @@ public extension SMB {
             context: context,
             server: server.address,
             user: credentials?.user,
-            includeHidden: includeHidden
+            includeHidden: includeHidden,
+            level: detail.bridgeValue
         ).map(Share.init)
     }
 

@@ -405,6 +405,117 @@ struct SMB2ShareEnumerationLevelTests {
     @Test("detailed raw value is SMB2_SHARE_INFO_1") func detailedRawValueIsShare_info_1() {
         #expect(Bridge.ShareEnumerationLevel.detailed.rawValue == SMB2_SHARE_INFO_1)
     }
+
+    @Test("full raw value is SMB2_SHARE_INFO_2") func fullRawValueIsShare_info_2() {
+        #expect(Bridge.ShareEnumerationLevel.full.rawValue == SMB2_SHARE_INFO_2)
+    }
+}
+
+// MARK: - SMB.Share full information
+
+struct ShareFullInformationTests {
+    @Test("detail maps to the bridge level") func detailMapsToTheBridgeLevel() {
+        #expect(SMB.Share.Detail.standard.bridgeValue == .detailed)
+        #expect(SMB.Share.Detail.full.bridgeValue == .full)
+    }
+
+    @Test("bridge share has no full information by default") func bridgeShareHasNoFullInformationByDefault() {
+        let share = Bridge.Share(name: "data", kind: .diskTree, attributes: [], remark: nil)
+        #expect(share.path == nil)
+        #expect(share.permissions == nil)
+        #expect(share.maximumUsers == nil)
+        #expect(share.currentUsers == nil)
+    }
+
+    @Test("public share leaves full information unset for standard detail")
+    func publicShareLeavesFullInformationUnsetForStandardDetail() {
+        let share = SMB.Share(Bridge.Share(name: "data", kind: .diskTree, attributes: [], remark: "Data"))
+        #expect(share.path == nil)
+        #expect(share.permissions == nil)
+        #expect(share.maximumUsers == nil)
+        #expect(share.currentUsers == nil)
+    }
+
+    @Test("public share carries over full information") func publicShareCarriesOverFullInformation() {
+        let share = SMB.Share(Bridge.Share(
+            name: "data",
+            kind: .diskTree,
+            attributes: [],
+            remark: nil,
+            path: #"C:\Data"#,
+            permissions: 0x03,
+            maximumUsers: 10,
+            currentUsers: 2
+        ))
+        #expect(share.path == #"C:\Data"#)
+        #expect(share.permissions == [.read, .write])
+        #expect(share.maximumUsers == 10)
+        #expect(share.currentUsers == 2)
+    }
+
+    @Test("permissions raw values follow the access rights") func permissionsRawValuesFollowTheAccessRights() {
+        #expect(SMB.Share.Permissions.read.rawValue == 0x01)
+        #expect(SMB.Share.Permissions.write.rawValue == 0x02)
+        #expect(SMB.Share.Permissions.create.rawValue == 0x04)
+        #expect(SMB.Share.Permissions.execute.rawValue == 0x08)
+        #expect(SMB.Share.Permissions.delete.rawValue == 0x10)
+        #expect(SMB.Share.Permissions.attributes.rawValue == 0x20)
+        #expect(SMB.Share.Permissions.changePermissions.rawValue == 0x40)
+        #expect(SMB.Share.Permissions.all.rawValue == 0x7F)
+    }
+
+    @Test("permissions debug description lists the rights") func permissionsDebugDescriptionListsTheRights() {
+        #expect(SMB.Share.Permissions([.read, .write]).debugDescription == "SMB.Share.Permissions(read, write)")
+        #expect(SMB.Share.Permissions([]).debugDescription == "SMB.Share.Permissions([])")
+    }
+
+    @Test("share debug description shows full information only when present")
+    func shareDebugDescriptionShowsFullInformationOnlyWhenPresent() {
+        let standard = SMB.Share(name: "data", kind: .diskTree, remark: "Data")
+        #expect(!standard.debugDescription.contains("path"))
+        #expect(!standard.debugDescription.contains("currentUsers"))
+
+        let full = SMB.Share(
+            name: "data",
+            kind: .diskTree,
+            remark: "Data",
+            path: #"C:\Data"#,
+            permissions: [],
+            maximumUsers: 5,
+            currentUsers: 1
+        )
+        #expect(full.debugDescription.contains(#"path: C:\Data"#))
+        #expect(full.debugDescription.contains("maximumUsers: 5"))
+        #expect(full.debugDescription.contains("currentUsers: 1"))
+    }
+
+    @Test("detail debug description names the case") func detailDebugDescriptionNamesTheCase() {
+        #expect(SMB.Share.Detail.standard.debugDescription == "SMB.Share.Detail.standard")
+        #expect(SMB.Share.Detail.full.debugDescription == "SMB.Share.Detail.full")
+    }
+}
+
+// MARK: - Share enumeration errors
+
+struct ShareEnumErrorTests {
+    @Test("access denied maps to the access denied status") func accessDeniedMapsToTheAccessDeniedStatus() {
+        let error = Bridge.shareEnumError(werror: 5, operation: "smb2_share_enum_sync")
+        #expect(error == .ntStatus(
+            .accessDenied,
+            posixCode: nil,
+            operation: "smb2_share_enum_sync",
+            message: "NetrShareEnum failed with WERROR 0x00000005"
+        ))
+    }
+
+    @Test("other Win32 errors keep their code in the message") func otherWin32ErrorsKeepTheirCodeInTheMessage() {
+        // ERROR_INVALID_LEVEL, which a server that does not implement SHARE_INFO_2 returns.
+        let error = Bridge.shareEnumError(werror: 124, operation: "smb2_share_enum_sync")
+        #expect(error == .unknown(
+            operation: "smb2_share_enum_sync",
+            message: "NetrShareEnum failed with WERROR 0x0000007C"
+        ))
+    }
 }
 
 // MARK: - SMB.Error

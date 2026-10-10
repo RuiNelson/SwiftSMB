@@ -79,6 +79,92 @@ public extension SMB {
             }
         }
 
+        /// The access rights a share grants, as reported by ``SMB/Share/permissions``.
+        ///
+        /// Only servers running share-level security fill these in. Windows and Samba use user-level security and
+        /// report an empty set.
+        public struct Permissions: OptionSet, Equatable, Hashable, CustomDebugStringConvertible, Sendable {
+            /// The raw `shi2_permissions` bitfield.
+            public let rawValue: UInt32
+
+            /// Reading data and running programs.
+            public static let read = Permissions(rawValue: 0x01)
+
+            /// Writing data.
+            public static let write = Permissions(rawValue: 0x02)
+
+            /// Creating files and directories.
+            public static let create = Permissions(rawValue: 0x04)
+
+            /// Executing programs.
+            public static let execute = Permissions(rawValue: 0x08)
+
+            /// Deleting files and directories.
+            public static let delete = Permissions(rawValue: 0x10)
+
+            /// Changing attributes.
+            public static let attributes = Permissions(rawValue: 0x20)
+
+            /// Changing permissions.
+            public static let changePermissions = Permissions(rawValue: 0x40)
+
+            /// Every access right.
+            public static let all: Permissions = [
+                .read,
+                .write,
+                .create,
+                .execute,
+                .delete,
+                .attributes,
+                .changePermissions,
+            ]
+
+            /// Creates share permissions from a raw bitfield.
+            public init(rawValue: UInt32) {
+                self.rawValue = rawValue
+            }
+
+            public var debugDescription: String {
+                describeFlags([
+                    (.read, "read"),
+                    (.write, "write"),
+                    (.create, "create"),
+                    (.execute, "execute"),
+                    (.delete, "delete"),
+                    (.attributes, "attributes"),
+                    (.changePermissions, "changePermissions"),
+                ], typeName: "SMB.Share.Permissions")
+            }
+        }
+
+        /// How much information to request about each share.
+        public enum Detail: Equatable, Hashable, CustomDebugStringConvertible, Sendable {
+            /// The name, kind, attributes and remark of each share.
+            case standard
+
+            /// Everything ``standard`` returns, plus ``SMB/Share/path``, ``SMB/Share/permissions``,
+            /// ``SMB/Share/maximumUsers`` and ``SMB/Share/currentUsers``.
+            ///
+            /// Windows servers return this level only to administrators and operators, and fail the request with
+            /// ``SMB/SMBStatus/accessDenied`` for any other user. Samba returns it to every user.
+            case full
+
+            /// The bridge enumeration level that returns this detail.
+            var bridgeValue: Bridge.ShareEnumerationLevel {
+                switch self {
+                case .standard: .detailed
+                case .full: .full
+                }
+            }
+
+            public var debugDescription: String {
+                switch self {
+                case .standard: "SMB.Share.Detail.standard"
+                case .full: "SMB.Share.Detail.full"
+                }
+            }
+        }
+
         /// The share name.
         public let name: String
 
@@ -90,6 +176,27 @@ public extension SMB {
 
         /// A server-provided share description.
         public let remark: String?
+
+        /// The share's path on the server, such as `C:\Data`.
+        ///
+        /// `nil` unless the share was listed with ``Detail/full``.
+        public let path: String?
+
+        /// The access rights the share grants.
+        ///
+        /// `nil` unless the share was listed with ``Detail/full``. Servers running user-level security, such as
+        /// Windows and Samba, report an empty set.
+        public let permissions: Permissions?
+
+        /// The number of users that can use the share at once.
+        ///
+        /// `nil` when the share has no limit, and unless the share was listed with ``Detail/full``.
+        public let maximumUsers: UInt32?
+
+        /// The number of users currently using the share.
+        ///
+        /// `nil` unless the share was listed with ``Detail/full``.
+        public let currentUsers: UInt32?
 
         /// A Boolean value indicating whether the share is hidden.
         public var isHidden: Bool {
@@ -108,11 +215,28 @@ public extension SMB {
         ///   - kind: The share kind.
         ///   - attributes: Share attributes.
         ///   - remark: A server-provided share description.
-        public init(name: String, kind: Kind?, attributes: Attributes = [], remark: String? = nil) {
+        ///   - path: The share's path on the server.
+        ///   - permissions: The access rights the share grants.
+        ///   - maximumUsers: The number of users that can use the share at once, or `nil` for no limit.
+        ///   - currentUsers: The number of users currently using the share.
+        public init(
+            name: String,
+            kind: Kind?,
+            attributes: Attributes = [],
+            remark: String? = nil,
+            path: String? = nil,
+            permissions: Permissions? = nil,
+            maximumUsers: UInt32? = nil,
+            currentUsers: UInt32? = nil
+        ) {
             self.name = name
             self.kind = kind
             self.attributes = attributes
             self.remark = remark
+            self.path = path
+            self.permissions = permissions
+            self.maximumUsers = maximumUsers
+            self.currentUsers = currentUsers
         }
 
         /// Creates a public share value from a bridge value.
@@ -121,10 +245,28 @@ public extension SMB {
             kind = bridgeValue.kind.map(Kind.init)
             attributes = Attributes(rawValue: bridgeValue.attributes.rawValue)
             remark = bridgeValue.remark
+            path = bridgeValue.path
+            permissions = bridgeValue.permissions.map { Permissions(rawValue: $0) }
+            maximumUsers = bridgeValue.maximumUsers
+            currentUsers = bridgeValue.currentUsers
         }
 
         public var debugDescription: String {
-            "SMB.Share(name: \(name), kind: \(String(describing: kind)), attributes: \(attributes.debugDescription), remark: \(String(describing: remark)))"
+            var description = "SMB.Share(name: \(name), kind: \(String(describing: kind)), "
+                + "attributes: \(attributes.debugDescription), remark: \(String(describing: remark))"
+            if let path {
+                description += ", path: \(path)"
+            }
+            if let permissions {
+                description += ", permissions: \(permissions.debugDescription)"
+            }
+            if let maximumUsers {
+                description += ", maximumUsers: \(maximumUsers)"
+            }
+            if let currentUsers {
+                description += ", currentUsers: \(currentUsers)"
+            }
+            return description + ")"
         }
     }
 

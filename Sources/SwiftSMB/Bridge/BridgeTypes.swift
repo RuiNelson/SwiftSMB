@@ -208,6 +208,7 @@ extension Bridge {
     enum ShareEnumerationLevel: Equatable, Sendable {
         case namesOnly
         case detailed
+        case full
 
         var rawValue: smb2_share_info_level {
             switch self {
@@ -215,6 +216,8 @@ extension Bridge {
                 SMB2_SHARE_INFO_0
             case .detailed:
                 SMB2_SHARE_INFO_1
+            case .full:
+                SMB2_SHARE_INFO_2
             }
         }
     }
@@ -262,6 +265,38 @@ extension Bridge {
         let kind: ShareKind?
         let attributes: ShareAttributes
         let remark: String?
+
+        /// The share's path on the server. Only reported by `.full` enumeration.
+        let path: String?
+
+        /// The raw `shi2_permissions` bitfield. Only reported by `.full` enumeration.
+        let permissions: UInt32?
+
+        /// The limit on concurrent users, `nil` when the share has none. Only reported by `.full` enumeration.
+        let maximumUsers: UInt32?
+
+        /// The number of current users. Only reported by `.full` enumeration.
+        let currentUsers: UInt32?
+
+        init(
+            name: String,
+            kind: ShareKind?,
+            attributes: ShareAttributes,
+            remark: String?,
+            path: String? = nil,
+            permissions: UInt32? = nil,
+            maximumUsers: UInt32? = nil,
+            currentUsers: UInt32? = nil
+        ) {
+            self.name = name
+            self.kind = kind
+            self.attributes = attributes
+            self.remark = remark
+            self.path = path
+            self.permissions = permissions
+            self.maximumUsers = maximumUsers
+            self.currentUsers = currentUsers
+        }
 
         var isHidden: Bool {
             attributes.contains(.hidden)

@@ -104,6 +104,51 @@ struct ShareTests {
         }
     }
 
+    @Test("detailed enumeration leaves the full information unset") func detailedEnumerationLeavesFullInformationUnset(
+    ) async throws {
+        try await withFreshContext { ctx in
+            let shares = try await Bridge.listShares(context: ctx, server: testServerHost)
+            for share in shares {
+                #expect(share.path == nil)
+                #expect(share.permissions == nil)
+                #expect(share.maximumUsers == nil)
+                #expect(share.currentUsers == nil)
+            }
+        }
+    }
+
+    @Test(
+        "full enumeration returns shares with path and user counts"
+    ) func fullEnumerationReturnsSharesWithPathAndUserCounts(
+    ) async throws {
+        try await withFreshContext { ctx in
+            try await Bridge.setSecurityMode(.signingEnabled, on: ctx)
+            try await Bridge.connectShare(context: ctx, server: testServerHost, share: "IPC$")
+            let shares = try await Bridge.listSharesOnConnectedIPCShare(context: ctx, level: .full)
+            try await Bridge.disconnectShare(context: ctx)
+            #expect(shares.count >= 3)
+            for share in shares {
+                #expect(share.kind != nil)
+                #expect(share.path != nil)
+                #expect(share.permissions != nil)
+                #expect(share.currentUsers != nil)
+                // Samba reports -1, which means no limit.
+                #expect(share.maximumUsers == nil)
+            }
+        }
+    }
+
+    @Test("full enumeration reports the path of each share") func fullEnumerationReportsThePathOfEachShare(
+    ) async throws {
+        try await withFreshContext { ctx in
+            let shares = try await Bridge.listShares(context: ctx, server: testServerHost, level: .full)
+            let publicShare = try #require(shares.first { $0.name == TestShare.public })
+            #expect(try #require(publicShare.path).hasSuffix("public"))
+            let readonlyShare = try #require(shares.first { $0.name == TestShare.readonly })
+            #expect(try #require(readonlyShare.path).hasSuffix("readonly"))
+        }
+    }
+
     @Test(
         "share remark from detailed enumeration is not nil for public share"
     ) func shareRemarkFromDetailedEnumerationIsNotNilForPublicShare() async throws {
