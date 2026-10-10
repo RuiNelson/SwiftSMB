@@ -175,6 +175,47 @@ struct SMBConnectionFileTests {
         #expect(try await connection.readLink(at: linkPath) == directoryPath)
     }
 
+    @Test("makeLink looks up a directory target when isDirectory is not given")
+    func makeLinkLooksUpDirectoryTarget() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let directoryPath = uniquePath("lookup-target-dir")
+        let parentPath = uniquePath("lookup-parent")
+        let siblingLink = uniquePath("lookup-sibling-link")
+        let nestedLink = "\(parentPath)/lookup-nested-link"
+        defer {
+            try? await connection.removeDirectory(at: nestedLink)
+            try? await connection.removeFile(at: nestedLink)
+            try? await connection.removeDirectory(at: parentPath)
+            try? await connection.removeDirectory(at: siblingLink)
+            try? await connection.removeFile(at: siblingLink)
+            try? await connection.removeDirectory(at: directoryPath)
+        }
+        try await connection.makeDirectory(at: directoryPath)
+        try await connection.makeDirectory(at: parentPath)
+
+        // Servers that cannot store a directory link fall back to a file link, so both outcomes read back the same.
+        try await connection.makeLink(at: siblingLink, pointingTo: directoryPath)
+        #expect(try await connection.readLink(at: siblingLink) == directoryPath)
+
+        // The target is stored with Windows separators, so it reads back with backslashes.
+        try await connection.makeLink(at: nestedLink, pointingTo: "../\(directoryPath)")
+        #expect(try await connection.readLink(at: nestedLink) == "..\\\(directoryPath)")
+    }
+
+    @Test("makeLink treats a missing target as a file") func makeLinkMissingTargetIsFile() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let linkPath = uniquePath("dangling-link")
+        defer { try? await connection.removeFile(at: linkPath) }
+
+        let target = uniquePath("does-not-exist")
+        try await connection.makeLink(at: linkPath, pointingTo: target)
+        #expect(try await connection.readLink(at: linkPath) == target)
+    }
+
     @Test("makeLink accepts an absolute target") func makeLinkAcceptsAbsoluteTarget() async throws {
         let connection = try await publicFileConnection()
         defer { try? await connection.disconnect() }

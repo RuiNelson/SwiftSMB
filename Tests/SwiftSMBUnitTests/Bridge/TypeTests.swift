@@ -699,3 +699,48 @@ struct StatAttributesTests {
         #expect(stat.reparseTag == nil)
     }
 }
+
+// MARK: - SMB.Connection link target lookup
+
+struct LinkTargetLookupTests {
+    private func lookup(_ target: String, from linkPath: String, isAbsolute: Bool = false) -> String? {
+        SMB.Connection.linkTargetLookupPath(target: target, linkPath: linkPath, isAbsolute: isAbsolute)
+    }
+
+    @Test("relative target resolves against the link's directory") func relativeTarget() {
+        #expect(lookup("hello.txt", from: "dir/link") == "dir/hello.txt")
+        #expect(lookup("sub/hello.txt", from: "dir/link") == "dir/sub/hello.txt")
+    }
+
+    @Test("relative target of a link at the share root") func relativeTargetAtRoot() {
+        #expect(lookup("hello.txt", from: "link") == "hello.txt")
+    }
+
+    @Test("parent segments are resolved") func parentSegments() {
+        #expect(lookup("../other/file", from: "a/b/link") == "a/other/file")
+        #expect(lookup("./file", from: "a/link") == "a/file")
+    }
+
+    @Test("backslashes are separators") func backslashes() {
+        #expect(lookup("..\\other\\file", from: "a/b/link") == "a/other/file")
+    }
+
+    @Test("a leading separator looks the target up from the share root") func leadingSeparator() {
+        #expect(lookup("/foo/bar", from: "a/b/link") == "foo/bar")
+        #expect(lookup("\\foo\\bar", from: "a/b/link") == "foo/bar")
+    }
+
+    @Test("isAbsolute looks a relative-looking target up from the share root") func forcedAbsolute() {
+        #expect(lookup("foo/bar", from: "a/b/link", isAbsolute: true) == "foo/bar")
+    }
+
+    @Test("a drive-letter path cannot be looked up") func driveLetter() {
+        #expect(lookup("C:\\data", from: "link") == nil)
+        #expect(lookup("c:/data", from: "link") == nil)
+    }
+
+    @Test("a target above the share root cannot be looked up") func escapesShareRoot() {
+        #expect(lookup("../../x", from: "a/link") == nil)
+        #expect(lookup("../x", from: "link") == nil)
+    }
+}
