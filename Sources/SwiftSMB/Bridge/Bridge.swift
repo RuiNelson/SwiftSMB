@@ -25,8 +25,7 @@ class Bridge {
     // `smb2_destroy_context` mutate process-wide libsmb2 state (the active-context list and the `srandom` seed).
     //
     // Blocking libsmb2 calls never run on the Swift concurrency cooperative pool: callers suspend while the work runs
-    // on
-    // the context queue.
+    // on the context queue.
 
     /// Serializes libsmb2 calls that mutate process-wide state.
     private static let lifecycleLock = Protected((), label: "com.ruinelson.SwiftSMB.bridge.lifecycle")
