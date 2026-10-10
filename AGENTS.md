@@ -10,9 +10,12 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ```text
 .
-├── libsmb2                                   # Git submodule of libsmb2.
 ├── Package.swift                             # Swift Package Manager manifest.
 ├── Sources
+│   ├── libsmb2                               # C target: upstream libsmb2 plus the SwiftPM glue that lives in this repo.
+│   │   ├── include                           # Public headers: module map (module `SMB2`), config.h, forwarders into `upstream`.
+│   │   ├── upstream                          # Git submodule of sahlberg/libsmb2 (pristine; never edit).
+│   │   └── xcode_compat.c                    # Weak `__llvm_profile_runtime` so the dynamic product links with coverage.
 │   └── SwiftSMB
 │       ├── Bridge                            # Internal libsmb2 bridge; no public API here.
 │       │   ├── Extensions
@@ -80,7 +83,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 - `Bridge` is a `class` (not a namespace enum) with all-static methods. All bridge types (e.g., `Context`, `FileHandle`, `OpenOptions`) are nested inside `Bridge` via `extension Bridge { ... }` in `BridgeTypes.swift`.
 - Outside the `Bridge` class, reference bridge types with the `Bridge.` prefix (e.g., `Bridge.SMB2Context`). Inside the class or its extensions, types resolve without prefix.
-- Keep `Bridge.swift` focused on the high-level POSIX-like API described in `libsmb2/include/smb2/libsmb2.h`, exposed as `async` functions.
+- Keep `Bridge.swift` focused on the high-level POSIX-like API described in `Sources/libsmb2/upstream/include/smb2/libsmb2.h`, exposed as `async` functions.
 - Bridge functions should expose Swift-shaped arguments and return values (`String`, `Bool`, `UInt64`, `Int64`, Swift structs/enums/options) and convert to C types only at the boundary.
 - Functions that correspond directly to C `get` functions should keep `get` in the Swift bridge name, even though this is not typical Swift style.
 - Do not expose raw C flags as plain integers. Use Swift `enum` or `OptionSet` types instead. Examples: `Bridge.SMB2OpenFlags`, `Bridge.SMB2SecurityMode`, `Bridge.SMB2AuthenticationMethod`.
@@ -90,7 +93,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
 - `libsmb2` contexts are not safe to service concurrently. Every bridge function that touches a shared context is `async` and runs its body on that context's serial queue through `Bridge.perform(on:_:)`. The private `_name` functions hold the synchronous C calls and must only run on the context queue, or on a context that is never shared (such as `Bridge.parseURL`'s private context). Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) follow the same rule.
 - Operations on different contexts run in parallel. `smb2_init_context` and `smb2_destroy_context` mutate process-wide libsmb2 state (the `active_contexts` list and the `srandom` seed), so they run under `Bridge.lifecycleLock`. When wrapping new libsmb2 APIs, check them for other process-wide state and serialize it the same way.
-- Known, accepted risk: the fork's SwiftPM `include/apple/config.h` and `include/linux/config.h` do not enable `HAVE_ARC4RANDOM_BUF`/`HAVE_GETRANDOM`, so `smb2_random_bytes` falls back to `random()`. `smb3_encrypt_pdu` calls it for every sealed PDU, and Darwin's `random()` is not thread-safe, so sealed connections running in parallel race on its state (the fallback also makes nonces predictable). Fixing it means enabling a strong random source in those fork config headers.
+- Known, accepted risk: upstream's `apple/config.h` and `Sources/libsmb2/include/linux/config.h` do not enable `HAVE_ARC4RANDOM_BUF`/`HAVE_GETRANDOM`, so `smb2_random_bytes` falls back to `random()`. `smb3_encrypt_pdu` calls it for every sealed PDU, and Darwin's `random()` is not thread-safe, so sealed connections running in parallel race on its state (the fallback also makes nonces predictable). Fixing it means defining a strong random source in `Sources/libsmb2/include/config.h` (after it includes the platform config), since `upstream` must stay untouched.
 - Never run blocking libsmb2 calls on the Swift concurrency cooperative thread pool; always hop to the context queue.
 - `smb2_connect_share` treats the command timeout as a connection window checked against `time(NULL)` before the event that completes the TCP connect is handled, so a timeout of `0` fails any connect that crosses a wall-clock second boundary ("Timeout expired and no connection exists"; seen when many connections open concurrently). `Bridge._connectShare` therefore connects with `Bridge.defaultConnectTimeoutSeconds` when the timeout is `0` and restores `0` afterwards; keep that when touching the connect path.
 - Loops that service a context themselves (`Bridge.serviceUntilFinished`, `Bridge.serviceNotifyEvents`) must fail when `smb2_get_fd` is negative: `smb2_service` returns success without a connection and `poll` ignores negative descriptors, so they would spin forever and block the context queue.
@@ -145,19 +148,20 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ## Dependency Updates
 
-- `libsmb2` is a Git submodule. Synchronize the fork before updating SwiftSMB's submodule pointer:
+- `libsmb2` is consumed straight from `https://github.com/sahlberg/libsmb2` as the Git submodule `Sources/libsmb2/upstream`, pinned to a commit. There is no fork. To update it:
   ```bash
-  git -C libsmb2 fetch origin
-  git -C libsmb2 fetch upstream
-  git -C libsmb2 checkout xcode_compat
-  git -C libsmb2 merge upstream/master
+  git -C Sources/libsmb2/upstream fetch origin
+  git -C Sources/libsmb2/upstream checkout <commit>
   ```
-- Preserve the fork-specific `xcode_compat` patches. If upstream reorganizes files, keep SwiftPM/Xcode compatibility fixes in the fork rather than patching generated build products in SwiftSMB.
-- After merging upstream, inspect the public C headers, especially `libsmb2/include/smb2/libsmb2.h`, `libsmb2/include/smb2/libsmb2-share-enum.h`, and `libsmb2/include/smb2/libsmb2-raw.h`, for new APIs that should be wrapped by `Sources/SwiftSMB/Bridge` and exposed under `SMB`.
+- Never edit files under `Sources/libsmb2/upstream`. Everything SwiftPM needs on top of upstream lives next to it in `Sources/libsmb2`:
+  - `include/module.modulemap` defines module `SMB2` (and `SMB2.Raw`, `SMB2.Internal`). Its `header` paths point into `../upstream`.
+  - `include/config.h` picks `linux/config.h` or upstream's `apple/config.h`, and declares the `libsmb2_dcerpc_pdu_direction` prototype that upstream's `libdcerpc/dcerpc-srvsvc.c` calls without declaring.
+  - The one-line forwarders (`libsmb2-private.h`, `slist.h`, `portable-endian.h`, `asprintf.h`, `smb2/*.h`, `dcerpc/*.h`) exist because `upstream/include` must **not** be on the header search path: it contains upstream's own `module.modulemap`, which clang would load and report as `redefinition of module 'SMB2'`. Any header that `lib/*.c` or the module headers include by `<dir/name.h>` or from `upstream/include` needs a forwarder.
+- After moving the pin, inspect the public C headers, especially `Sources/libsmb2/upstream/include/smb2/libsmb2.h`, `.../libsmb2-share-enum.h`, and `.../libsmb2-raw.h`, for new APIs that should be wrapped by `Sources/SwiftSMB/Bridge` and exposed under `SMB`.
 - Do not expose every upstream addition automatically. Prefer APIs that fit SwiftSMB's client-file-management scope. Large optional subsystems such as full DCE/RPC should stay out of the SwiftPM product unless there is a deliberate public API and linking decision.
-- If upstream adds non-C source files under `libsmb2/lib` or splits libraries, update `Package.swift` excludes and the fork's `include/module.modulemap` so `swift build` compiles only the intended `libsmb2` client surface.
+- If upstream adds non-C source files under `upstream/lib`, moves headers (upstream HEAD already split `libdcerpc` out of `lib`), or splits libraries, update the `Package.swift` excludes/sources, the forwarders, and `include/module.modulemap` so `swift build` compiles only the intended `libsmb2` client surface.
 - Run `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test` after dependency updates. If new wrapped functionality touches real SMB server behavior, start the Docker server with `source TestServer/up.sh`, run a focused integration test.
-- Once the submodule builds and tests pass, commit and push the `libsmb2` fork branch first, then update the submodule pointer in the main SwiftSMB repository.
+- Once the build and tests pass, commit the submodule pointer together with any glue changes in `Sources/libsmb2`.
 
 ## Concurrency & Dispatch
 
