@@ -538,6 +538,12 @@ public extension SMB {
         case fileIsOffline = 0xC000_0267
         case volumeDismounted = 0xC000_026E
         case notAReparsePoint = 0xC000_0275
+        case ioReparseTagInvalid = 0xC000_0276
+        case ioReparseTagMismatch = 0xC000_0277
+        case ioReparseDataInvalid = 0xC000_0278
+        case ioReparseTagNotHandled = 0xC000_0279
+        case reparsePointNotResolved = 0xC000_0280
+        case directoryIsAReparsePoint = 0xC000_0281
         case serverUnavailable = 0xC000_0466
         case bufferOverflow = 0x8000_0005
         case stoppedOnSymlink = 0x8000_002D
@@ -1564,6 +1570,18 @@ public extension SMB {
                 "SMB2_STATUS_VOLUME_DISMOUNTED"
             case .notAReparsePoint:
                 "SMB2_STATUS_NOT_A_REPARSE_POINT"
+            case .ioReparseTagInvalid:
+                "SMB2_STATUS_IO_REPARSE_TAG_INVALID"
+            case .ioReparseTagMismatch:
+                "SMB2_STATUS_IO_REPARSE_TAG_MISMATCH"
+            case .ioReparseDataInvalid:
+                "SMB2_STATUS_IO_REPARSE_DATA_INVALID"
+            case .ioReparseTagNotHandled:
+                "SMB2_STATUS_IO_REPARSE_TAG_NOT_HANDLED"
+            case .reparsePointNotResolved:
+                "SMB2_STATUS_REPARSE_POINT_NOT_RESOLVED"
+            case .directoryIsAReparsePoint:
+                "SMB2_STATUS_DIRECTORY_IS_A_REPARSE_POINT"
             case .serverUnavailable:
                 "SMB2_STATUS_SERVER_UNAVAILABLE"
             case .bufferOverflow:

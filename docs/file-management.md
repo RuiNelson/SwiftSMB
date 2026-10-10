@@ -144,11 +144,16 @@ try await connection.truncateFile(at: "log.txt", toLength: 0)
 
 ## Creating a symbolic link
 
-``SMB.Connection.makeLink(at:pointingTo:)`` creates a symbolic link at the given path:
+``SMB.Connection.makeLink(at:pointingTo:isDirectory:isAbsolute:)`` creates a symbolic link at the given path:
 
 ```swift
-try await connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects")
+try await connection.makeLink(at: "shortcuts/projects", pointingTo: "shared/projects", isDirectory: true)
 ```
+
+Windows symbolic links are typed, so pass `isDirectory: true` when the target is a directory. A target that starts with
+a drive letter or a path separator is taken as absolute on the server; pass `isAbsolute: true` to force that for any
+other target. Windows servers normally only let administrators create symbolic links, and servers that cannot store a
+directory link fail the call without leaving an empty directory behind.
 
 ## Creating a hard link
 

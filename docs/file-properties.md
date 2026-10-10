@@ -113,6 +113,29 @@ print("Meta changed: \(info.changeTime)")
 Timestamps before 1970-01-01, including the zero timestamp some servers report for an unknown time, are not
 represented correctly: `libsmb2` converts them with unsigned arithmetic, so they read back as dates far in the future.
 
+## Reading the node type and attributes
+
+The same ``SMB/Stat`` value reports the kind of node and the raw Windows attributes:
+
+```swift
+let info = try await connection.stat(at: "report.pdf")
+
+switch info.type {
+case .file: print("Regular file")
+case .directory: print("Directory")
+case .link: print("Symbolic link")
+case .fifo, .characterDevice, .blockDevice, .socket: print("Special file created by WSL")
+case let .unknown(raw): print("Unrecognized node type \(raw)")
+}
+
+if info.attributes.contains(.reparsePoint), let tag = info.reparseTag {
+    print("Reparse point with tag 0x\(String(tag, radix: 16))")
+}
+```
+
+``SMB/Stat/reparseTag`` is `nil` for items that are not reparse points and for servers that do not report the tag.
+The special file types are only reported for the reparse points that WSL uses to store them on a Windows filesystem.
+
 ## Filesystem statistics
 
 ``SMB.Connection.statFilesystem(at:)`` returns capacity and usage information for the share:

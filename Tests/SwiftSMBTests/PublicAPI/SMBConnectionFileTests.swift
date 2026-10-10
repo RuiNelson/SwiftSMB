@@ -149,6 +149,77 @@ struct SMBConnectionFileTests {
         await #expect(try connection.itemExists(at: destPath) == .false)
     }
 
+    @Test("makeLink with isDirectory creates a directory link or leaves nothing behind")
+    func makeLinkDirectoryLinkOrNothing() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let directoryPath = uniquePath("link-target-dir")
+        let linkPath = uniquePath("dir-link")
+        defer {
+            try? await connection.removeDirectory(at: linkPath)
+            try? await connection.removeDirectory(at: directoryPath)
+        }
+        try await connection.makeDirectory(at: directoryPath)
+
+        // Servers that cannot store a directory symbolic link (the Samba test server answers ACCESS_DENIED) must not
+        // leave the empty placeholder directory behind.
+        do {
+            try await connection.makeLink(at: linkPath, pointingTo: directoryPath, isDirectory: true)
+        }
+        catch is SMB.Error {
+            #expect(try await connection.itemExists(at: linkPath) == .false)
+            return
+        }
+
+        #expect(try await connection.readLink(at: linkPath) == directoryPath)
+    }
+
+    @Test("makeLink accepts an absolute target") func makeLinkAcceptsAbsoluteTarget() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let linkPath = uniquePath("abs-link")
+        defer { try? await connection.removeFile(at: linkPath) }
+
+        try await connection.makeLink(at: linkPath, pointingTo: "testdir/hello.txt", isAbsolute: true)
+        let target = try await connection.readLink(at: linkPath)
+        #expect(target.hasSuffix("testdir\\hello.txt") || target.hasSuffix("testdir/hello.txt"))
+    }
+
+    @Test("makeLink fails when the parent directory does not exist") func makeLinkFailsWithoutParent() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let linkPath = "\(uniquePath("missing-parent"))/link"
+        await #expect(throws: SMB.Error.self) {
+            try await connection.makeLink(at: linkPath, pointingTo: "anything")
+        }
+        #expect(try await connection.itemExists(at: linkPath) == .false)
+    }
+
+    @Test("stat reports attributes and no reparse tag for a regular file") func statRegularFileAttributes(
+    ) async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let stat = try await connection.stat(at: TestContent.helloPath)
+        #expect(stat.type == .file)
+        #expect(!stat.attributes.contains(.directory))
+        #expect(!stat.attributes.contains(.reparsePoint))
+        #expect(stat.reparseTag == nil)
+    }
+
+    @Test("stat reports the directory attribute") func statDirectoryAttributes() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let stat = try await connection.stat(at: TestContent.subdirPath)
+        #expect(stat.type == .directory)
+        #expect(stat.attributes.contains(.directory))
+        #expect(stat.reparseTag == nil)
+    }
+
     @Test("makeLink rejects a destination too long for a reparse buffer")
     func makeLinkRejectsOverlongDestination() async throws {
         let connection = try await publicFileConnection()

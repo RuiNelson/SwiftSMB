@@ -433,18 +433,37 @@ public extension SMB {
 
         /// Creates a symbolic link at the given path.
         ///
+        /// Windows symbolic links are typed, so a link to a directory has to be created as one. A target that starts
+        /// with a drive letter (`C:\data`) or a path separator is taken as absolute on the server, and anything else as
+        /// relative to the directory the link lives in. Windows servers normally allow creating symbolic links only
+        /// for administrators.
+        ///
         /// - Parameters:
         ///   - path: The link path, relative to the share root.
         ///   - pointingTo: The target path that the link will point to.
+        ///   - isDirectory: Pass `true` when the target is a directory. Defaults to `false`.
+        ///   - isAbsolute: Pass `true` to treat the target as an absolute path on the server even if it does not start
+        ///     with a drive letter or separator. Defaults to `false`.
         /// - Throws: ``SMB/Error`` if the link cannot be created.
-        public func makeLink(at path: String, pointingTo: String) async throws {
+        public func makeLink(
+            at path: String,
+            pointingTo: String,
+            isDirectory: Bool = false,
+            isAbsolute: Bool = false
+        ) async throws {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2MakeLink)
                 guard !pointingTo.isEmpty else {
                     throw SMB.Error.invalidArgument(cause: .pathMustNotBeEmpty, onOperation: .smb2MakeLink)
                 }
                 let context = try requireContext()
-                try await Bridge.makeLink(context: context, path: path, destination: pointingTo)
+                try await Bridge.makeLink(
+                    context: context,
+                    path: path,
+                    destination: pointingTo,
+                    isDirectory: isDirectory,
+                    isAbsolute: isAbsolute
+                )
             }
         }
 

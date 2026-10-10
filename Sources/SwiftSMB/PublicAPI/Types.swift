@@ -139,6 +139,26 @@ public extension SMB {
         /// A symbolic link.
         case link
 
+        /// A named pipe (FIFO).
+        ///
+        /// Only reported for the reparse points WSL uses to store non-regular files on a Windows filesystem.
+        case fifo
+
+        /// A character device.
+        ///
+        /// Only reported for the reparse points WSL uses to store non-regular files on a Windows filesystem.
+        case characterDevice
+
+        /// A block device.
+        ///
+        /// Only reported for the reparse points WSL uses to store non-regular files on a Windows filesystem.
+        case blockDevice
+
+        /// A Unix domain socket.
+        ///
+        /// Only reported for the reparse points WSL uses to store non-regular files on a Windows filesystem.
+        case socket
+
         /// An unrecognized node type.
         case unknown(UInt32)
 
@@ -151,6 +171,14 @@ public extension SMB {
                 self = .directory
             case .link:
                 self = .link
+            case .fifo:
+                self = .fifo
+            case .characterDevice:
+                self = .characterDevice
+            case .blockDevice:
+                self = .blockDevice
+            case .socket:
+                self = .socket
             case let .unknown(rawValue):
                 self = .unknown(rawValue)
             }
@@ -161,6 +189,10 @@ public extension SMB {
             case .file: "SMB.NodeType.file"
             case .directory: "SMB.NodeType.directory"
             case .link: "SMB.NodeType.link"
+            case .fifo: "SMB.NodeType.fifo"
+            case .characterDevice: "SMB.NodeType.characterDevice"
+            case .blockDevice: "SMB.NodeType.blockDevice"
+            case .socket: "SMB.NodeType.socket"
             case let .unknown(rawValue): "SMB.NodeType.unknown(\(hex(rawValue)))"
             }
         }
@@ -242,7 +274,7 @@ public extension SMB {
                 self = .directory
             case .link:
                 self = .link
-            case .unknown:
+            case .fifo, .characterDevice, .blockDevice, .socket, .unknown:
                 self = .other
             }
         }
@@ -299,6 +331,13 @@ public extension SMB {
 
         /// Nanoseconds component for ``birthTime``.
         public let birthTimeNanoseconds: UInt64
+
+        /// The Windows file attributes reported by the server.
+        public let attributes: FileAttributes
+
+        /// The reparse tag (`IO_REPARSE_TAG_*`, see MS-FSCC 2.1.2.1) of the item, or `nil` if it is not a reparse
+        /// point or the server did not report one.
+        public let reparseTag: UInt32?
         
         /// The time the file was last accessed.
         public var accessTime: Date {
@@ -334,6 +373,9 @@ public extension SMB {
             changeTimeNanoseconds = bridgeValue.changeTimeNanoseconds
             birthTimeSeconds = bridgeValue.birthTime
             birthTimeNanoseconds = bridgeValue.birthTimeNanoseconds
+            attributes = FileAttributes(rawValue: bridgeValue.attributes)
+            let isReparsePoint = attributes.contains(.reparsePoint)
+            reparseTag = isReparsePoint && bridgeValue.reparseTag != 0 ? bridgeValue.reparseTag : nil
         }
 
         public var debugDescription: String {

@@ -300,6 +300,10 @@ extension Bridge {
         case file
         case directory
         case link
+        case fifo
+        case characterDevice
+        case blockDevice
+        case socket
         case unknown(UInt32)
 
         init(rawValue: UInt32) {
@@ -310,6 +314,14 @@ extension Bridge {
                 self = .directory
             case UInt32(SMB2_TYPE_LINK):
                 self = .link
+            case UInt32(SMB2_TYPE_FIFO):
+                self = .fifo
+            case UInt32(SMB2_TYPE_CHARDEV):
+                self = .characterDevice
+            case UInt32(SMB2_TYPE_BLOCKDEV):
+                self = .blockDevice
+            case UInt32(SMB2_TYPE_SOCKET):
+                self = .socket
             default:
                 self = .unknown(rawValue)
             }
@@ -329,6 +341,8 @@ extension Bridge {
         let changeTimeNanoseconds: UInt64
         let birthTime: UInt64
         let birthTimeNanoseconds: UInt64
+        let attributes: UInt32
+        let reparseTag: UInt32
 
         init(_ stat: smb2_stat_64) {
             type = NodeType(rawValue: stat.smb2_type)
@@ -343,6 +357,8 @@ extension Bridge {
             changeTimeNanoseconds = stat.smb2_ctime_nsec
             birthTime = stat.smb2_btime
             birthTimeNanoseconds = stat.smb2_btime_nsec
+            attributes = stat.smb2_attributes
+            reparseTag = stat.smb2_reparse_tag
         }
     }
 

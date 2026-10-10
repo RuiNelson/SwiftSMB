@@ -60,6 +60,15 @@ struct SMBStatusTests {
         #expect(SMB.SMBStatus.objectNameNotFound.name == "SMB2_STATUS_OBJECT_NAME_NOT_FOUND")
     }
 
+    @Test("reparse point statuses have names") func reparsePointStatusesHaveNames() {
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0276)?.name == "SMB2_STATUS_IO_REPARSE_TAG_INVALID")
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0277)?.name == "SMB2_STATUS_IO_REPARSE_TAG_MISMATCH")
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0278)?.name == "SMB2_STATUS_IO_REPARSE_DATA_INVALID")
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0279)?.name == "SMB2_STATUS_IO_REPARSE_TAG_NOT_HANDLED")
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0280)?.name == "SMB2_STATUS_REPARSE_POINT_NOT_RESOLVED")
+        #expect(SMB.SMBStatus(rawValue: 0xC000_0281)?.name == "SMB2_STATUS_DIRECTORY_IS_A_REPARSE_POINT")
+    }
+
     @Test("raw values are unique") func rawValuesAreUnique() {
         let values = SMB.SMBStatus.allCases.map(\.rawValue)
         let unique = Set(values)
@@ -99,6 +108,28 @@ struct SMB2NodeTypeTests {
 
     @Test("link from raw value") func linkFromRawValue() {
         #expect(Bridge.NodeType(rawValue: 2) == .link)
+    }
+
+    @Test("WSL special file types from raw value") func wslSpecialFileTypesFromRawValue() {
+        // SMB2_TYPE_FIFO = 3, SMB2_TYPE_CHARDEV = 4, SMB2_TYPE_BLOCKDEV = 5, SMB2_TYPE_SOCKET = 6
+        #expect(Bridge.NodeType(rawValue: 3) == .fifo)
+        #expect(Bridge.NodeType(rawValue: 4) == .characterDevice)
+        #expect(Bridge.NodeType(rawValue: 5) == .blockDevice)
+        #expect(Bridge.NodeType(rawValue: 6) == .socket)
+    }
+
+    @Test("public node type mirrors the bridge node type") func publicNodeTypeMirrorsBridge() {
+        #expect(SMB.NodeType(Bridge.NodeType.fifo) == .fifo)
+        #expect(SMB.NodeType(Bridge.NodeType.characterDevice) == .characterDevice)
+        #expect(SMB.NodeType(Bridge.NodeType.blockDevice) == .blockDevice)
+        #expect(SMB.NodeType(Bridge.NodeType.socket) == .socket)
+    }
+
+    @Test("special file types are reported as other items") func specialFileTypesAreOtherItems() {
+        #expect(SMB.ItemExistence(.fifo) == .other)
+        #expect(SMB.ItemExistence(.characterDevice) == .other)
+        #expect(SMB.ItemExistence(.blockDevice) == .other)
+        #expect(SMB.ItemExistence(.socket) == .other)
     }
 
     @Test("unknown from unrecognized raw value") func unknownFromUnrecognizedRawValue() {
@@ -635,5 +666,36 @@ struct SMBFilesystemStatTests {
 
         #expect(stat.freeBytes == .max)
         #expect(stat.availableBytes == .max)
+    }
+}
+
+// MARK: - SMB.Stat attributes and reparse tag
+
+struct StatAttributesTests {
+    private func makeStat(attributes: UInt32, reparseTag: UInt32) -> SMB.Stat {
+        var raw = smb2_stat_64()
+        raw.smb2_attributes = attributes
+        raw.smb2_reparse_tag = reparseTag
+        return SMB.Stat(Bridge.Stat(raw))
+    }
+
+    @Test("attributes are copied from the raw stat") func attributesAreCopied() {
+        let stat = makeStat(attributes: 0x0000_0010 | 0x0000_0002, reparseTag: 0)
+        #expect(stat.attributes == [.directory, .hidden])
+    }
+
+    @Test("reparse tag is reported for a reparse point") func reparseTagIsReported() {
+        let stat = makeStat(attributes: SMB.FileAttributes.reparsePoint.rawValue, reparseTag: 0xA000_000C)
+        #expect(stat.reparseTag == 0xA000_000C)
+    }
+
+    @Test("reparse tag is nil when the item is not a reparse point") func reparseTagIsNilWithoutReparseAttribute() {
+        let stat = makeStat(attributes: 0x0000_0020, reparseTag: 0xA000_000C)
+        #expect(stat.reparseTag == nil)
+    }
+
+    @Test("reparse tag is nil when the server did not report one") func reparseTagIsNilWhenZero() {
+        let stat = makeStat(attributes: SMB.FileAttributes.reparsePoint.rawValue, reparseTag: 0)
+        #expect(stat.reparseTag == nil)
     }
 }
