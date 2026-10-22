@@ -158,6 +158,25 @@ struct SMBConnectionDirectoryTests {
         }
     }
 
+    @Test("directory contains(where:) awaits an async predicate")
+    func directoryContainsAwaitsAsyncPredicate() async throws {
+        let connection = try await publicDirectoryConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = try await makeDirectoryWithFiles(["small.txt", "large.txt"], on: connection)
+        defer { try? await connection.removeItem(at: root) }
+        try await connection.dumpToFile(Data(repeating: 1, count: 32), to: root + "/large.txt")
+
+        let directory = try await connection.openDirectory(at: root)
+        defer { await directory.close() }
+
+        let found = try await directory.contains { entry in
+            guard entry.stat.type == .file else { return false }
+            return try await connection.stat(at: root + "/" + entry.name).size == 32
+        }
+        #expect(found)
+    }
+
     @Test("directory contains(where:) checks cancellation before reading")
     func directoryContainsChecksCancellationBeforeReading() async throws {
         let connection = try await publicDirectoryConnection()

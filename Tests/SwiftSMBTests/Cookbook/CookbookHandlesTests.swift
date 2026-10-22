@@ -174,6 +174,13 @@ struct CookbookHandlesTests {
         defer { await directory.close() }
         let hasPDF = try await directory.contains { $0.name.hasSuffix(".pdf") }
         _ = hasPDF
+
+        try await directory.rewind()
+        let catalog = CookbookBackupCatalog()
+        let hasNewFile = try await directory.contains { entry in
+            await !catalog.contains(entry.name)
+        }
+        _ = hasNewFile
     }
 
     @Test("directory tell and seek compiles and runs")
@@ -290,5 +297,14 @@ struct CookbookHandlesTests {
         defer { try? await file.close() }
         try await file.lock(.exclusive, nonBlocking: false, range: 1024 ..< 2048)
         try await file.unlock(range: 1024 ..< 2048)
+    }
+}
+
+/// The `catalog` actor from the `contains(where:)` example in `docs/handles.md`.
+private actor CookbookBackupCatalog {
+    private let names: Set<String> = []
+
+    func contains(_ name: String) -> Bool {
+        names.contains(name)
     }
 }

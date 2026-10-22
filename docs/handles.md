@@ -225,10 +225,15 @@ Or read all remaining entries at once:
 let entries = try await directory.readAll()
 ```
 
-Or check whether any of the remaining entries matches a predicate, which may throw:
+Or check whether any of the remaining entries matches a predicate, which may throw and use `await`:
 
 ```swift
 let hasPDF = try await directory.contains { $0.name.hasSuffix(".pdf") }
+
+// `catalog` is an actor that knows which files were already backed up.
+let hasNewFile = try await directory.contains { entry in
+    await !catalog.contains(entry.name)
+}
 ```
 
 `contains(where:)` stops at the first match, so the stream continues after that entry, or is exhausted when nothing
