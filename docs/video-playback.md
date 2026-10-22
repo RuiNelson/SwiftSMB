@@ -110,7 +110,8 @@ let observation = item.observe(\.status) { item, _ in
 - All requests from AVFoundation share one read-only file handle and read with `SMB.File.read(upTo:atOffset:)`, in
   blocks of `SMB.Connection.acceptedReadBlockSize`. Set `SMB.Configuration.transferBlockSize` to tune it.
 - Operations on one connection run one after another, so playback shares the connection with anything else you do on
-  it. Use a separate connection for playback if you run large transfers at the same time.
+  it. Use a separate connection for playback, such as one from `SMB.Connection.fork()`, if you run large transfers at
+  the same time.
 
 ## Sample app
 

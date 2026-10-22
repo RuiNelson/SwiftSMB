@@ -129,6 +129,8 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - All public operations that reach the server are `async`. Pure value operations (`SMB.parseURL`, validation, value types) stay synchronous. Long loops (`File.read`/`write`, transfers, recursive `removeItem`) call `Task.checkCancellation()` between steps.
 - Prefer friendly API behavior when it is unambiguous. For example, clamp requested transfer block sizes to the server maximum and return the accepted value from accepted block-size helpers.
 - Keep credentials out of `SMB.Configuration`; pass them to connection/listing entry points.
+- `SMB.Connection` keeps the `Credentials` it was opened with in a private property, only so `fork()` can authenticate a new connection (libsmb2 keeps the password in the context for the connection's lifetime anyway). Never expose them.
+- `SMB.Connection.fork()` reconnects to the same server and share with the same configuration, except for the values in effect on the original: `transferBlockSize` becomes the larger of the accepted read/write block sizes (each direction clamps it to its server maximum again, so the fork uses the same blocks), and `timeout` follows the context's command timeout, which `setTimeout` may have changed. The dialect and the other negotiation options are negotiated again from the configured preferences, not pinned to what the original negotiated.
 - Do not expose password-file APIs publicly.
 - Add DocC comments to public API at Apple documentation quality. Private and internal members may use concise one-line comments where useful. `SMB.SMBStatus` does not need exhaustive DocC.
 - Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
@@ -176,7 +178,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Run a subset: `swift test --filter 'ConnectionTests'`
 - Notification-focused tests: `swift test --filter 'SMBNotify'`
 - The test server is a Docker-based Samba container.
-  - Check whether it is already running: `docker ps --filter ancestor=swiftsmb-testserver`
+  - Check whether it is already running: `docker ps --filter ancestor=swiftsmb-test-server`
   - Start: `source TestServer/up.sh`
   - Stop: `source TestServer/down.sh`
   - Dockerfile with SAMBA configuration in `TestServer/Dockerfile`

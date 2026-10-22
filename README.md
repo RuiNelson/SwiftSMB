@@ -63,7 +63,16 @@ let serverID: UUID = try await connection.serverGUID
 ```
 
 Operations on a connection run one at a time, in the order they were requested. Open separate connections to run
-operations in parallel.
+operations in parallel. `fork()` opens another connection to the same share, with the same credentials and
+configuration:
+
+```swift
+let secondConnection = try await connection.fork()
+defer { try? await secondConnection.disconnect() }
+```
+
+A fork reads and writes in the block sizes the server accepted for the original connection, rather than the configured
+`transferBlockSize`, and starts with its current command timeout.
 
 Set a command timeout when connecting if you want `libsmb2` to abort operations that take too long:
 

@@ -86,6 +86,7 @@ public extension SMB {
                 server: server,
                 share: share,
                 configuration: configuration,
+                credentials: credentials,
                 context: context,
                 maxReadSize: maxReadSize,
                 maxWriteSize: maxWriteSize
