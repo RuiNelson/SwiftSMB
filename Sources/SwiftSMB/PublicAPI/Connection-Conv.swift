@@ -183,7 +183,7 @@ public extension SMB.Connection {
         try await self.withOperation {
             try await acceptedBlockSize(
                 preferredBlockSize,
-                serverMaximum: Int(maxReadSize),
+                serverMaximum: Int(clamping: maxReadSize),
                 operation: .smb2GetMaxReadSize
             )
         }
@@ -198,7 +198,7 @@ public extension SMB.Connection {
         try await self.withOperation {
             try await acceptedBlockSize(
                 preferredBlockSize,
-                serverMaximum: Int(maxWriteSize),
+                serverMaximum: Int(clamping: maxWriteSize),
                 operation: .smb2GetMaxWriteSize
             )
         }
