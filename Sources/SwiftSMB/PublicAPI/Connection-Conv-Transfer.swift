@@ -368,22 +368,19 @@ public extension SMB.Connection {
     /// ahead, so they overlap the network writes.
     ///
     /// When `atomic` is `true` (the default), the upload is written to a temporary path in the destination directory
-    /// and
-    /// renamed to `remote` only after the transfer completes successfully. If the transfer fails or is cancelled, the
-    /// temporary remote file is removed. When `atomic` is `false`, bytes are written directly to `remote` using
+    /// and renamed to `remote` only after the transfer completes successfully. If the transfer fails or is cancelled,
+    /// the temporary remote file is removed. When `atomic` is `false`, bytes are written directly to `remote` using
     /// `options`; cancellation or failure may leave a partially written remote file.
     ///
     /// To resume a partial upload, pass an offset with ``FromArgument/offset(byte:)``. The offset applies only to
     /// `remote`, which must already contain at least that many bytes. Those bytes are kept, and `stream` supplies the
     /// bytes that follow them, starting at its current position. For atomic resumed uploads, the remote prefix is
-    /// copied
-    /// into the temporary remote file first. Resumed uploads never truncate `remote`, so
+    /// copied into the temporary remote file first. Resumed uploads never truncate `remote`, so
     /// ``SMB/File/OpenOptions/truncate`` is ignored when the offset is not zero.
     ///
     /// Without a `length`, the size of the upload isn't known in advance, so `continuation` receives the number of
-    /// bytes
-    /// transferred so far as the total. With a `length`, a stream that ends before supplying that many bytes fails the
-    /// upload instead of committing a partial file.
+    /// bytes transferred so far as the total. With a `length`, a stream that ends before supplying that many bytes
+    /// fails the upload instead of committing a partial file.
     ///
     /// If `continuation` returns `false`, the method cancels the upload and returns normally. If the task is cancelled,
     /// the upload stops between blocks and throws `CancellationError`; cleanup is the same as for a failure. After a
@@ -453,10 +450,9 @@ public extension SMB.Connection {
     /// Downloads a file from the SMB share into an output stream.
     ///
     /// The download writes the bytes of `remote`, starting at `from`, to `stream`. If `stream` isn't open yet, the
-    /// method
-    /// opens it. The method never closes the stream, so afterwards you can keep writing to it, or read the data written
-    /// to a memory stream; close it when you're done. Don't use the stream elsewhere while the download is in progress.
-    /// Stream writes happen on a background queue so they overlap the network reads.
+    /// method opens it. The method never closes the stream, so afterwards you can keep writing to it, or read the data
+    /// written to a memory stream; close it when you're done. Don't use the stream elsewhere while the download is in
+    /// progress. Stream writes happen on a background queue so they overlap the network reads.
     ///
     /// Bytes reach `stream` as they arrive, so a cancelled or failed download leaves the bytes written so far in the
     /// stream. If `continuation` returns `false`, the method cancels the download and returns normally. If the task is
@@ -473,8 +469,7 @@ public extension SMB.Connection {
     ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
     /// Values larger than the server's maximum read size are clamped.
     ///   - continuation: A progress closure called after each block is read from the share and once after the last
-    /// block
-    /// has been written to `stream`. The download waits for it to return before reading the next block.
+    /// block has been written to `stream`. The download waits for it to return before reading the next block.
     /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
     /// offset is invalid, or the stream is closed; or the error that `stream` reports when writing to it fails.
     nonisolated(nonsending) func streamFromRemote(
@@ -683,8 +678,7 @@ private struct ProgressTracker {
 }
 
 /// Reads the remote file in server-sized blocks and hands each block to the background writer, so the local write of
-/// one
-/// block overlaps the network read of the next. Reports progress after each block.
+/// one block overlaps the network read of the next. Reports progress after each block.
 private func transferRemoteFileToWriter(
     on connection: SMB.Connection,
     remote: String,
@@ -935,8 +929,8 @@ private final class ReadAheadFileReader: UploadBlockReader, @unchecked Sendable 
 // MARK: - Stream Workers
 
 /// Reads upload blocks from a caller-supplied input stream on a dedicated serial queue, one block ahead of the
-/// consumer,
-/// so stream reads overlap network writes. Nothing is read before the first block is requested, and nothing past
+/// consumer, so stream reads overlap network writes. Nothing is read before the first block is requested, and nothing
+/// past
 /// `limit`. The stream belongs to the caller and is never closed.
 private final class ReadAheadStreamReader: UploadBlockReader, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.streamToRemote.stream")
@@ -1096,8 +1090,7 @@ private final class BackgroundStreamWriter: DownloadBlockWriter, @unchecked Send
 }
 
 /// Opens a caller-supplied stream that isn't open yet, and rejects one that can no longer be used. Must run on the
-/// queue
-/// that owns the stream.
+/// queue that owns the stream.
 private func openStream(_ stream: Stream, operation: SMB.Error.InvalidArgumentOperation) throws {
     if stream.streamStatus == .notOpen {
         stream.open()

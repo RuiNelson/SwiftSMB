@@ -20,10 +20,10 @@ public extension SMB {
     ///   - configuration: SMB negotiation and connection options.
     ///   - includeHidden: Whether to include shares marked as hidden.
     ///   - detail: How much information to request about each share. ``Share/Detail/full`` adds each share's path,
-    ///     permissions and user counts, but Windows servers only return it to administrators and operators.
+    /// permissions and user counts, but Windows servers only return it to administrators and operators.
     /// - Returns: The server's visible disk shares.
     /// - Throws: ``SMB/Error`` when context creation, authentication, connection, enumeration, or disconnection fails.
-    ///   A server that refuses ``Share/Detail/full`` to the current user fails with ``SMB/SMBStatus/accessDenied``.
+    /// A server that refuses ``Share/Detail/full`` to the current user fails with ``SMB/SMBStatus/accessDenied``.
     static func listShares(
         server: Server,
         credentials: Credentials? = nil,

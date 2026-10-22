@@ -197,8 +197,8 @@ public extension SMB {
         ///
         /// Once graceful disconnection begins, new operations throw
         /// ``SMB/Error/operationRequestedAfterConnectionClosed``. Nested work and cleanup belonging to an admitted
-        /// operation can continue until that operation finishes. An explicit ``disconnect()`` takes precedence and
-        /// can interrupt the operations being drained.
+        /// operation can continue until that operation finishes. An explicit ``disconnect()`` takes precedence and can
+        /// interrupt the operations being drained.
         ///
         /// Calling this method more than once is allowed.
         ///
@@ -436,20 +436,20 @@ public extension SMB {
         /// Windows symbolic links are typed, so a link to a directory has to be created as one. Unless `isDirectory`
         /// says otherwise, the target is looked up and the link is created as a directory link when the target is a
         /// directory. A target that starts with a drive letter (`C:\data`) or a path separator is taken as absolute on
-        /// the server, and anything else as relative to the directory the link lives in. Windows servers normally
-        /// allow creating symbolic links only for administrators.
+        /// the server, and anything else as relative to the directory the link lives in. Windows servers normally allow
+        /// creating symbolic links only for administrators.
         ///
         /// - Parameters:
         ///   - path: The link path, relative to the share root.
         ///   - pointingTo: The target path that the link will point to.
         ///   - isDirectory: `true` to create a directory link and `false` to create a file link. Pass `nil`, the
-        ///     default, to look the target up first: a relative target is resolved against the directory that holds
-        ///     the link and an absolute one against the share root. A target that cannot be found or inspected, such
-        ///     as a drive-letter path, is treated as a file. Servers that cannot store directory links, such as Samba,
-        ///     reject a directory link, in which case a looked-up directory target falls back to a file link, which
-        ///     they accept. An explicit `true` is never retried.
+        /// default, to look the target up first: a relative target is resolved against the directory that holds the
+        /// link and an absolute one against the share root. A target that cannot be found or inspected, such as a
+        /// drive-letter path, is treated as a file. Servers that cannot store directory links, such as Samba, reject a
+        /// directory link, in which case a looked-up directory target falls back to a file link, which they accept. An
+        /// explicit `true` is never retried.
         ///   - isAbsolute: Pass `true` to treat the target as an absolute path on the server even if it does not start
-        ///     with a drive letter or separator. Defaults to `false`.
+        /// with a drive letter or separator. Defaults to `false`.
         /// - Throws: ``SMB/Error`` if the link cannot be created.
         public func makeLink(
             at path: String,

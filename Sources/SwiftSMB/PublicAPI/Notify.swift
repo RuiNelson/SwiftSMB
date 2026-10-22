@@ -344,9 +344,8 @@ public extension SMB.Connection {
             do {
                 try await state.armRequest()
                 // `armRequest` only queues the request. Requests on a connection are sent and processed in order, so
-                // once
-                // this echo returns the server has registered the notify request, and changes made after this method
-                // returns are reported.
+                // once this echo returns the server has registered the notify request, and changes made after this
+                // method returns are reported.
                 try await Bridge.echo(context: context)
                 try registerAndStartNotifyWatcher(state)
             }

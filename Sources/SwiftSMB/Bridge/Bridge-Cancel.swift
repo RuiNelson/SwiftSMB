@@ -133,8 +133,8 @@ extension Bridge {
         }
     }
 
-    /// The callback of an SMB2 CANCEL. libsmb2 calls it without checking for `NULL` when it destroys a context with
-    /// the CANCEL still queued, so it cannot be omitted.
+    /// The callback of an SMB2 CANCEL. libsmb2 calls it without checking for `NULL` when it destroys a context with the
+    /// CANCEL still queued, so it cannot be omitted.
     private static let cancelCallback: smb2_command_cb = { _, _, _, _ in }
 
     /// Queues an SMB2 CANCEL for a request that is waiting on the server. Must run on the context queue.

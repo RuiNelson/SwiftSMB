@@ -289,8 +289,8 @@ private func withLockContention(
 
 /// Checks that the server did not keep the contender's withdrawn lock pending.
 ///
-/// A lock still pending would be granted to the contender once the owner releases its own, and the owner could then
-/// not lock the file again.
+/// A lock still pending would be granted to the contender once the owner releases its own, and the owner could then not
+/// lock the file again.
 private func expectNoLeftoverLock(ownerFile: SMB.File) async throws {
     try await ownerFile.unlock()
     // Samba grants pending locks asynchronously, from the contender's own server process.

@@ -44,9 +44,9 @@ extension Bridge {
     /// Locks or unlocks a byte range.
     ///
     /// A blocking lock waits on the server until the conflicting lock is released. It is withdrawn with an SMB2 CANCEL
-    /// when `signal` is tripped, when the connection starts shutting down, or when the command timeout expires, so
-    /// that the server can never grant it after the caller stopped waiting. If the server grants it first, the lock is
-    /// held and this returns normally.
+    /// when `signal` is tripped, when the connection starts shutting down, or when the command timeout expires, so that
+    /// the server can never grant it after the caller stopped waiting. If the server grants it first, the lock is held
+    /// and this returns normally.
     private static func _lock(
         context: Context,
         file: FileHandle,

@@ -55,8 +55,8 @@ public extension SMB {
 
             /// Append writes to the end of the file.
             ///
-            /// Each write refreshes the file's current length. Writers on separate connections must coordinate
-            /// access, for example with an exclusive file lock, to prevent concurrent append writes from overlapping.
+            /// Each write refreshes the file's current length. Writers on separate connections must coordinate access,
+            /// for example with an exclusive file lock, to prevent concurrent append writes from overlapping.
             public static let append = OpenOptions(rawValue: 1 << 4)
 
             /// Creates an open options value from a raw bitfield.
@@ -231,8 +231,7 @@ public extension SMB {
             try await connection.withOperation {
                 let maxWriteSize = try await Int64(connection.maxWriteSize)
                 // The server accepts at most `maxWriteSize` bytes per write, so a larger chunk would only be copied
-                // again,
-                // minus the accepted prefix, on every iteration.
+                // again, minus the accepted prefix, on every iteration.
                 let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
                 guard chunkSize > 0 else {
                     throw SMB.Error.invalidArgument(
@@ -424,11 +423,11 @@ public extension SMB {
         /// When `range` is `nil`, the lock covers the whole file. Only one mode can be specified at a time—shared and
         /// exclusive are mutually exclusive.
         ///
-        /// A blocking lock (`nonBlocking: false`) waits until the conflicting lock is released, and other operations
-        /// on the connection wait behind it. The server is asked to withdraw the request when the task is cancelled,
-        /// when the connection's command timeout expires, or when the connection is disconnected, so the lock is
-        /// never granted after this method has thrown. If the server grants the lock before the request is
-        /// withdrawn, the lock is held and this method returns normally.
+        /// A blocking lock (`nonBlocking: false`) waits until the conflicting lock is released, and other operations on
+        /// the connection wait behind it. The server is asked to withdraw the request when the task is cancelled, when
+        /// the connection's command timeout expires, or when the connection is disconnected, so the lock is never
+        /// granted after this method has thrown. If the server grants the lock before the request is withdrawn, the
+        /// lock is held and this method returns normally.
         ///
         /// - Parameters:
         ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.

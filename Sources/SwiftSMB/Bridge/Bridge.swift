@@ -346,9 +346,8 @@ class Bridge {
     /// The connection deadline, in seconds, used while connecting a context whose command timeout is `0`.
     ///
     /// `smb2_connect_share` gives up once `time(NULL)` has advanced past the command timeout while the TCP connection
-    /// is
-    /// still pending, and it checks that before handling the event that completes the connection. With a timeout of `0`
-    /// it therefore fails any connect that crosses a wall-clock second boundary, which becomes likely when many
+    /// is still pending, and it checks that before handling the event that completes the connection. With a timeout of
+    /// `0` it therefore fails any connect that crosses a wall-clock second boundary, which becomes likely when many
     /// connections are opened concurrently.
     static let defaultConnectTimeoutSeconds: Int32 = 30
 
@@ -813,8 +812,8 @@ class Bridge {
                 message: "Invalid seek origin"
             )
         }
-        // libsmb2 performs unchecked signed addition and changes the position before validating SEEK_END. Calculate
-        // the destination first, and use an absolute seek so a failure never corrupts the current position.
+        // libsmb2 performs unchecked signed addition and changes the position before validating SEEK_END. Calculate the
+        // destination first, and use an absolute seek so a failure never corrupts the current position.
         let destination = try seekDestination(from: base, offset: offset)
         var currentOffset: UInt64 = 0
         let status = smb2_lseek(context.raw, raw, Int64(destination), SEEK_SET, &currentOffset)
@@ -1355,8 +1354,8 @@ class Bridge {
         }
         let microseconds = CLong((interval - Double(seconds)) * 1_000_000)
         if seconds == 0, microseconds == 0 {
-            // libsmb2 interprets an all-zero timeval as "leave unchanged". An equivalent nonzero representation
-            // allows an explicit Unix epoch timestamp to be written instead of silently skipping it.
+            // libsmb2 interprets an all-zero timeval as "leave unchanged". An equivalent nonzero representation allows
+            // an explicit Unix epoch timestamp to be written instead of silently skipping it.
             return smb2_timeval(tv_sec: -1, tv_usec: 1_000_000)
         }
         return smb2_timeval(tv_sec: seconds, tv_usec: microseconds)
@@ -1364,8 +1363,8 @@ class Bridge {
 
     /// Services the context until `state` finishes.
     ///
-    /// With a `cancellation`, the loop polls more often and withdraws the request with an SMB2 CANCEL when asked to;
-    /// it still waits for the request's final reply, which callers check against ``RequestCancellation/reason``.
+    /// With a `cancellation`, the loop polls more often and withdraws the request with an SMB2 CANCEL when asked to; it
+    /// still waits for the request's final reply, which callers check against ``RequestCancellation/reason``.
     static func serviceUntilFinished(
         context: Context,
         state: some PendingOperationState,

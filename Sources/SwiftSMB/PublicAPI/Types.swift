@@ -477,8 +477,8 @@ public extension SMB {
         /// The Windows file attributes reported by the server.
         public let attributes: FileAttributes
 
-        /// The reparse tag (`IO_REPARSE_TAG_*`, see MS-FSCC 2.1.2.1) of the item, or `nil` if it is not a reparse
-        /// point or the server did not report one.
+        /// The reparse tag (`IO_REPARSE_TAG_*`, see MS-FSCC 2.1.2.1) of the item, or `nil` if it is not a reparse point
+        /// or the server did not report one.
         public let reparseTag: UInt32?
         
         /// The time the file was last accessed.

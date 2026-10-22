@@ -27,8 +27,8 @@ struct NotificationDecodingRegressionTests {
 
     @Test("notify decoding rejects entries overlapping the previous filename")
     func rejectsOverlappingEntries() {
-        // The first entry claims a 16-byte name, but its next offset points to the beginning of that name. Both
-        // headers individually fit in the buffer, so merely checking monotonic offsets accepted this response.
+        // The first entry claims a 16-byte name, but its next offset points to the beginning of that name. Both headers
+        // individually fit in the buffer, so merely checking monotonic offsets accepted this response.
         var bytes = notificationUInt32(12) + notificationUInt32(1) + notificationUInt32(16)
         bytes.append(contentsOf: entry(nextOffset: 0, action: 2, name: "ab"))
         expectMalformed(decode(bytes))

@@ -35,8 +35,7 @@ struct SMBConcurrencyTests {
     }
 
     /// `disconnect()` used to disconnect, close, and destroy the context in separate queue operations; an operation
-    /// that
-    /// slipped in after the close found no connection and serviced the context forever.
+    /// that slipped in after the close found no connection and serviced the context forever.
     @Test("disconnect while operations are in flight completes")
     func disconnectWhileOperationsAreInFlightCompletes() async throws {
         let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)

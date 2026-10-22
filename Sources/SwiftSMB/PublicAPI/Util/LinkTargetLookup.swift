@@ -13,9 +13,9 @@ extension SMB.Connection {
     /// target cannot be looked up through the share.
     ///
     /// A relative target is resolved against the directory that holds the link. An absolute target (one that starts
-    /// with a separator, or any target when `isAbsolute` is set) is looked up from the share root. A drive-letter
-    /// path names a volume on the server and cannot be reached through a share, and a relative target that climbs
-    /// above the share root leaves it.
+    /// with a separator, or any target when `isAbsolute` is set) is looked up from the share root. A drive-letter path
+    /// names a volume on the server and cannot be reached through a share, and a relative target that climbs above the
+    /// share root leaves it.
     ///
     /// - Parameters:
     ///   - target: The target the link will point to.

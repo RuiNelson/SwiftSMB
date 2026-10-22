@@ -127,8 +127,8 @@ extension Bridge {
 
     /// Translates the Win32 error a failed `NetrShareEnum` call returned.
     ///
-    /// Windows only returns the `.full` level to administrators and operators, so an access error is reported as
-    /// the SMB status callers already handle.
+    /// Windows only returns the `.full` level to administrators and operators, so an access error is reported as the
+    /// SMB status callers already handle.
     static func shareEnumError(werror: Int32, operation: String) -> SMB.Error {
         let message = String(format: "NetrShareEnum failed with WERROR 0x%08X", UInt32(bitPattern: werror))
         if werror == werrorAccessDenied {
