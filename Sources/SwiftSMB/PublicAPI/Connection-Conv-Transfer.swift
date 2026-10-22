@@ -42,7 +42,7 @@ public extension SMB.Connection {
     /// The closure is called after each block is transferred between local storage and the SMB share and once more when
     /// the transfer completes successfully. The completion call reports a latest speed of `0`. Return `true` to
     /// continue, or `false` to cancel the operation. Cancellation is treated as a successful early return and does not
-    /// throw.
+    /// throw. To await inside the closure, use ``AsyncFileProgress`` instead.
     ///
     /// - Parameters:
     ///   - bytesTransferred: The cumulative number of bytes transferred since the operation began, excluding any resume
@@ -53,6 +53,26 @@ public extension SMB.Connection {
     ///   - averageSpeed: The average transfer rate since the operation began, in bytes per second.
     /// - Returns: `true` to continue the transfer, or `false` to cancel it.
     typealias FileProgress = @Sendable (UInt64, UInt64, Double, Double) -> Bool
+
+    /// Reports progress for a local file transfer from a closure that can suspend.
+    ///
+    /// The closure is called at the same points and with the same arguments as ``FileProgress``. The transfer waits for
+    /// the closure to return before it continues, so work awaited inside the closure delays the next block. Return
+    /// `true` to continue, or `false` to cancel the operation. Cancellation is treated as a successful early return and
+    /// does not throw.
+    ///
+    /// Swift selects the transfer methods that take this type when the progress closure uses `await`, and the ones that
+    /// take ``FileProgress`` otherwise.
+    ///
+    /// - Parameters:
+    ///   - bytesTransferred: The cumulative number of bytes transferred since the operation began, excluding any resume
+    /// offset.
+    ///   - totalBytes: The total number of bytes expected to be transferred, excluding any resume offset.
+    ///   - latestSpeed: The transfer rate for the most recent block, in bytes per second, or `0` for the completion
+    /// call.
+    ///   - averageSpeed: The average transfer rate since the operation began, in bytes per second.
+    /// - Returns: `true` to continue the transfer, or `false` to cancel it.
+    typealias AsyncFileProgress = @Sendable (UInt64, UInt64, Double, Double) async -> Bool
 
     /// Downloads a file from the SMB share to a local URL.
     ///
@@ -87,7 +107,7 @@ public extension SMB.Connection {
     /// place. When `false`, bytes are written directly to `local` and are not removed if the transfer fails or is
     /// cancelled.
     ///   - continuation: A progress closure called after each block is read from the share and once after the completed
-    /// download is moved into place.
+    /// download is moved into place. The download waits for it to return before reading the next block.
     /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
     /// offset is invalid, or a local file operation fails.
     func downloadFile(
@@ -97,7 +117,7 @@ public extension SMB.Connection {
         options: SMB.File.OpenOptions = [],
         maxBlockSize: UInt64? = nil,
         atomic: Bool = true,
-        continuation: @escaping FileProgress
+        continuation: @escaping AsyncFileProgress
     ) async throws {
         try await self.withOperation {
             let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
@@ -162,8 +182,49 @@ public extension SMB.Connection {
             if let tempFile {
                 try await disk.perform { try moveTempFile(tempFile, to: local) }
             }
-            _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
+            _ = await continuation(result.transferred, totalBytes, 0, result.averageSpeed)
         }
+    }
+
+    /// Downloads a file from the SMB share to a local URL, reporting progress through a synchronous closure.
+    ///
+    /// This method behaves exactly like the overload that takes an ``AsyncFileProgress``. Swift selects it when the
+    /// progress closure doesn't use `await`.
+    ///
+    /// - Parameters:
+    ///   - remote: The share-relative source file path.
+    ///   - local: The destination file URL on local storage.
+    ///   - from: The byte offset at which downloading should begin.
+    ///   - options: Options used when opening the remote source file.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum read size are clamped.
+    ///   - atomic: A Boolean value indicating whether to download through a temporary local file before moving it into
+    /// place. When `false`, bytes are written directly to `local` and are not removed if the transfer fails or is
+    /// cancelled.
+    ///   - continuation: A progress closure called after each block is read from the share and once after the completed
+    /// download is moved into place.
+    /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
+    /// offset is invalid, or a local file operation fails.
+    func downloadFile(
+        remote: String,
+        local: URL,
+        from: FromArgument = .beginning,
+        options: SMB.File.OpenOptions = [],
+        maxBlockSize: UInt64? = nil,
+        atomic: Bool = true,
+        continuation: @escaping FileProgress
+    ) async throws {
+        // Passing `continuation` directly would select this overload again.
+        let progress: AsyncFileProgress = continuation
+        try await downloadFile(
+            remote: remote,
+            local: local,
+            from: from,
+            options: options,
+            maxBlockSize: maxBlockSize,
+            atomic: atomic,
+            continuation: progress
+        )
     }
 
     /// Uploads a local file to the SMB share.
@@ -199,7 +260,7 @@ public extension SMB.Connection {
     ///   - atomic: A Boolean value indicating whether to upload through a temporary remote file before renaming it into
     /// place.
     ///   - continuation: A progress closure called after each SMB write block and once after the completed upload is in
-    /// place.
+    /// place. The upload waits for it to return before writing the next block.
     /// - Throws: ``SMB/Error`` if the connection is closed, a remote operation fails, the resume offset is invalid, or
     /// a local file operation fails.
     func uploadFile(
@@ -210,7 +271,7 @@ public extension SMB.Connection {
         maxBlockSize: UInt64? = nil,
         makePath: Bool = true,
         atomic: Bool = true,
-        continuation: @escaping FileProgress
+        continuation: @escaping AsyncFileProgress
     ) async throws {
         try await self.withOperation {
             let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
@@ -305,8 +366,53 @@ public extension SMB.Connection {
                 shouldRemoveRemoteTemp = false
             }
 
-            _ = continuation(result.transferred, totalBytes, 0, result.averageSpeed)
+            _ = await continuation(result.transferred, totalBytes, 0, result.averageSpeed)
         }
+    }
+
+    /// Uploads a local file to the SMB share, reporting progress through a synchronous closure.
+    ///
+    /// This method behaves exactly like the overload that takes an ``AsyncFileProgress``. Swift selects it when the
+    /// progress closure doesn't use `await`.
+    ///
+    /// - Parameters:
+    ///   - local: The source file URL on local storage.
+    ///   - remote: The share-relative destination file path.
+    ///   - from: The byte offset at which uploading should begin.
+    ///   - options: Options used when opening `remote` for a non-atomic upload. The default creates the file if needed
+    /// and truncates any existing content, so `remote` ends up identical to `local`.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum write size are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
+    /// When `false`, the method throws if the parent directory does not exist.
+    ///   - atomic: A Boolean value indicating whether to upload through a temporary remote file before renaming it into
+    /// place.
+    ///   - continuation: A progress closure called after each SMB write block and once after the completed upload is in
+    /// place.
+    /// - Throws: ``SMB/Error`` if the connection is closed, a remote operation fails, the resume offset is invalid, or
+    /// a local file operation fails.
+    func uploadFile(
+        local: URL,
+        remote: String,
+        from: FromArgument = .beginning,
+        options: SMB.File.OpenOptions = [.create, .truncate],
+        maxBlockSize: UInt64? = nil,
+        makePath: Bool = true,
+        atomic: Bool = true,
+        continuation: @escaping FileProgress
+    ) async throws {
+        // Passing `continuation` directly would select this overload again.
+        let progress: AsyncFileProgress = continuation
+        try await uploadFile(
+            local: local,
+            remote: remote,
+            from: from,
+            options: options,
+            maxBlockSize: maxBlockSize,
+            makePath: makePath,
+            atomic: atomic,
+            continuation: progress
+        )
     }
 }
 
@@ -318,7 +424,7 @@ private struct TransferResult {
     let averageSpeed: Double
 }
 
-/// Tracks cumulative bytes transferred and reports progress through a `FileProgress` continuation.
+/// Tracks cumulative bytes transferred and reports progress through an `AsyncFileProgress` continuation.
 private struct ProgressTracker {
     private(set) var transferred: UInt64
     private let totalBytes: UInt64
@@ -340,11 +446,11 @@ private struct ProgressTracker {
     mutating func record(
         bytes: UInt64,
         blockStart: DispatchTime,
-        continuation: SMB.Connection.FileProgress
-    ) -> Bool {
+        continuation: SMB.Connection.AsyncFileProgress
+    ) async -> Bool {
         transferred += bytes
         let latestSpeed = speed(bytes: bytes, from: blockStart, to: .now())
-        return continuation(transferred, totalBytes, latestSpeed, averageSpeed)
+        return await continuation(transferred, totalBytes, latestSpeed, averageSpeed)
     }
 
     /// Builds a `TransferResult` reflecting the bytes transferred so far.
@@ -363,7 +469,7 @@ private func transferRemoteFileToWriter(
     blockSize: Int,
     totalBytes: UInt64,
     options: SMB.File.OpenOptions,
-    continuation: SMB.Connection.FileProgress
+    continuation: SMB.Connection.AsyncFileProgress
 ) async throws -> TransferResult {
     let file = try await connection.openFile(at: remote, accessMode: .readOnly, options: options)
     defer { try? await file.close() }
@@ -384,7 +490,7 @@ private func transferRemoteFileToWriter(
         try await writer.append(data)
         remoteOffset += UInt64(data.count)
 
-        guard tracker.record(bytes: UInt64(data.count), blockStart: blockStart, continuation: continuation) else {
+        guard await tracker.record(bytes: UInt64(data.count), blockStart: blockStart, continuation: continuation) else {
             return tracker.result(cancelled: true)
         }
     }
@@ -403,7 +509,7 @@ private func transferReaderToRemoteFile(
     startingOffset: UInt64,
     totalBytes: UInt64,
     onTargetOpened: () -> Void,
-    continuation: SMB.Connection.FileProgress
+    continuation: SMB.Connection.AsyncFileProgress
 ) async throws -> TransferResult {
     let file = try await connection.openFile(at: target, accessMode: .writeOnly, options: openOptions)
     onTargetOpened()
@@ -424,7 +530,7 @@ private func transferReaderToRemoteFile(
         var cancelled = false
         try await writeEntireData(block, to: file, atOffset: remoteOffset) { written, blockStart in
             remoteOffset += UInt64(written)
-            if !tracker.record(bytes: UInt64(written), blockStart: blockStart, continuation: continuation) {
+            if await !tracker.record(bytes: UInt64(written), blockStart: blockStart, continuation: continuation) {
                 cancelled = true
             }
         }
@@ -772,7 +878,7 @@ private func writeEntireData(
     _ data: Data,
     to file: SMB.File,
     atOffset baseOffset: UInt64,
-    onBlockWritten: (UInt64, DispatchTime) -> Void = { _, _ in }
+    onBlockWritten: (UInt64, DispatchTime) async -> Void = { _, _ in }
 ) async throws {
     var dataOffset = 0
     var fileOffset = baseOffset
@@ -789,7 +895,7 @@ private func writeEntireData(
         }
         dataOffset += Int(written)
         fileOffset += UInt64(written)
-        onBlockWritten(UInt64(written), blockStart)
+        await onBlockWritten(UInt64(written), blockStart)
     }
 }
 

@@ -144,6 +144,9 @@ try await connection.downloadFile(
 Return `false` from the progress closure to cancel the download. Cancelling the task that runs the download also stops
 it, and the call then throws `CancellationError`.
 
+Both methods also accept a progress closure that uses `await` (`SMB.Connection.AsyncFileProgress`), for example to
+report progress to an actor. The transfer waits for it before moving on to the next block.
+
 ### More advanced cookbooks
 
 Longer examples belong in `docs/`:

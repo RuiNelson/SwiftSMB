@@ -72,6 +72,30 @@ excluded. If the source becomes shorter before the expected bytes have been read
 transfer keeps the previous destination and removes its temporary file. Uploads through local symbolic links use the
 target file's length.
 
+## Awaiting inside the progress closure
+
+Both methods also accept a progress closure that can suspend (``SMB.Connection.AsyncFileProgress``). Swift picks that
+overload as soon as the closure uses `await`, so you can report progress to an actor without spawning a task:
+
+```swift
+actor TransferStatus {
+    var completed: UInt64 = 0
+    func update(_ completed: UInt64) { self.completed = completed }
+}
+
+let status = TransferStatus()
+
+try await connection.downloadFile(
+    remote: "Anna/Inbox/report.pdf",
+    local: localURL
+) { completed, _, _, _ in
+    await status.update(completed)
+    return true
+}
+```
+
+The transfer waits for the closure to return before it moves on to the next block, so keep the awaited work short.
+
 ## Loading a file into memory
 
 If the file is small enough to fit in memory, ``SMB.Connection.loadFile(at:chunkSize:)`` reads the entire file in one call:

@@ -23,6 +23,15 @@ final class SendableBox<Value>: @unchecked Sendable {
     }
 }
 
+/// Collects progress reports from an asynchronous progress closure.
+private actor ProgressRecorder {
+    private(set) var reports: [UInt64] = []
+
+    func record(_ transferred: UInt64) {
+        reports.append(transferred)
+    }
+}
+
 @Suite(.tags(.integration))
 struct SMBConnectionTransferTests {
     @Test("leading slash in remote path is ignored")
@@ -366,6 +375,92 @@ struct SMBConnectionTransferTests {
         await #expect(throws: (any Error).self) {
             try await connection.stat(at: remote)
         }
+    }
+
+    @Test("upload with async progress awaits each report")
+    func uploadWithAsyncProgressAwaitsEachReport() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("upload-async-progress") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let expected = Data((0 ..< 10).map { UInt8($0) })
+        try expected.write(to: local)
+
+        let recorder = ProgressRecorder()
+        try await connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, _, _, _ in
+            await recorder.record(transferred)
+            return true
+        }
+
+        await #expect(try connection.loadFile(at: remote) == expected)
+        #expect(await recorder.reports == [4, 8, 10, 10])
+    }
+
+    @Test("download with async progress awaits each report")
+    func downloadWithAsyncProgressAwaitsEachReport() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("download-async-progress") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        try? FileManager.default.removeItem(at: local)
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        let expected = Data((0 ..< 10).map { UInt8(200 + $0) })
+        try await connection.dumpToFile(expected, to: remote)
+
+        let recorder = ProgressRecorder()
+        try await connection.downloadFile(remote: remote, local: local, maxBlockSize: 4) { transferred, _, _, _ in
+            await recorder.record(transferred)
+            return true
+        }
+
+        #expect(try Data(contentsOf: local) == expected)
+        #expect(await recorder.reports == [4, 8, 10, 10])
+    }
+
+    @Test("async progress cancellation does not throw")
+    func asyncProgressCancellationDoesNotThrow() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("async-progress-cancel") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let local = try localTemporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: local) }
+
+        try Data((0 ..< 12).map { UInt8($0) }).write(to: local)
+
+        let recorder = ProgressRecorder()
+        try await connection.uploadFile(local: local, remote: remote, maxBlockSize: 4) { transferred, _, _, _ in
+            await recorder.record(transferred)
+            return transferred < 4
+        }
+
+        #expect(await recorder.reports == [4])
+        await #expect(throws: (any Error).self) {
+            try await connection.stat(at: remote)
+        }
+
+        try await connection.dumpToFile(Data((0 ..< 12).map { UInt8($0) }), to: remote)
+        try FileManager.default.removeItem(at: local)
+
+        let downloadRecorder = ProgressRecorder()
+        try await connection.downloadFile(remote: remote, local: local, maxBlockSize: 4) { transferred, _, _, _ in
+            await downloadRecorder.record(transferred)
+            return transferred < 4
+        }
+
+        #expect(await downloadRecorder.reports == [4])
+        #expect(!FileManager.default.fileExists(atPath: local.path))
     }
 
     @Test("download offset requires local prefix")
