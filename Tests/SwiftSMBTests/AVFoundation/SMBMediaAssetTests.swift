@@ -7,10 +7,10 @@
 //
 
 #if canImport(AVFoundation) && !os(watchOS)
+    @testable import SwiftSMBAVFoundation
     import AVFoundation
     import Foundation
     import SwiftSMB
-    import SwiftSMBAVFoundation
     import Testing
     import UniformTypeIdentifiers
 
@@ -79,6 +79,17 @@
         }
 
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
+        @Test("content type is inferred from registered extensions only") func contentTypeInference() async throws {
+            let connection = try await mediaConnection()
+            defer { try? await connection.disconnect() }
+
+            #expect(try contentType(of: connection.makeAsset(at: "Videos/holiday.MP4")) == .mpeg4Movie)
+            #expect(try contentType(of: connection.makeAsset(at: "Videos/holiday")) == .movie)
+            // `UTType(filenameExtension:)` returns a dynamic type, not `nil`, for an extension it doesn't know.
+            #expect(try contentType(of: connection.makeAsset(at: "Videos/holiday.mp4.part")) == .movie)
+        }
+
+        @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
         @Test("missing file fails to load") func missingFileFailsToLoad() async throws {
             let connection = try await mediaConnection()
             defer { try? await connection.disconnect() }
@@ -126,5 +137,11 @@
             share: TestShare.public,
             configuration: SMB.Configuration(transferBlockSize: 16 * 1024)
         )
+    }
+
+    /// The media type the asset reports to AVFoundation.
+    @available(macOS 11, iOS 14, tvOS 14, macCatalyst 14, visionOS 1, *)
+    private func contentType(of asset: AVURLAsset) throws -> UTType {
+        try #require(asset as? SMBMediaAsset).loader.contentType
     }
 #endif

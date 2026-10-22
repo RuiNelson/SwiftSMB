@@ -33,14 +33,16 @@
         /// - Parameters:
         ///   - path: The path to the media file, relative to the share root.
         ///   - contentType: The file's media type, or `nil` to infer it from the path's extension. Pass it for files
-        /// without an extension; `.movie` is used when no type can be inferred.
+        /// without an extension; `.movie` is used when the extension is missing or has no registered type.
         ///   - options: Options passed to ``AVURLAsset/init(url:options:)``.
         /// - Returns: An asset backed by the SMB file.
         func makeAsset(at path: String, contentType: UTType? = nil, options: [String: Any]? = nil) -> AVURLAsset {
             let fileName = path.lastPathComponent ?? ""
-            let resolvedType = contentType
-                ?? fileName.separateExtension.ext.flatMap { UTType(filenameExtension: $0) }
-                ?? .movie
+            // `UTType(filenameExtension:)` returns a dynamic type, not `nil`, for an extension it doesn't know.
+            let registeredType = fileName.separateExtension.ext
+                .flatMap { UTType(filenameExtension: $0) }
+                .flatMap { $0.isDynamic ? nil : $0 }
+            let resolvedType = contentType ?? registeredType ?? .movie
             let loader = MediaResourceLoader(connection: self, path: path, contentType: resolvedType)
             return SMBMediaAsset(url: SMBMediaAsset.makeURL(fileName: fileName), loader: loader, options: options)
         }

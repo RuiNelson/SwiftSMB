@@ -21,8 +21,10 @@
         /// The delegate queue. Loading requests are only touched on this queue.
         let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.MediaResourceLoader")
 
+        /// The media type reported to AVFoundation.
+        let contentType: UTType
+
         private let source: MediaSource
-        private let contentType: UTType
         private let lock = NSLock()
         private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 

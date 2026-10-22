@@ -18,7 +18,7 @@
         /// The custom scheme that routes every request through the resource loader.
         static let scheme = "swiftsmb-media"
 
-        private let loader: MediaResourceLoader
+        let loader: MediaResourceLoader
 
         init(url: URL, loader: MediaResourceLoader, options: [String: Any]?) {
             self.loader = loader

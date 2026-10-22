@@ -73,7 +73,7 @@ extension, or with one that doesn't match their contents, pass it explicitly:
 let item = connection.makePlayerItem(at: "Videos/holiday", contentType: .mpeg4Movie)
 ```
 
-When no type can be inferred, `.movie` is used.
+When the path has no extension, or one with no registered type, `.movie` is used.
 
 ## Connection lifetime and errors
 
