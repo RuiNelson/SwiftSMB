@@ -212,6 +212,54 @@ public extension SMB {
             }
         }
 
+        /// Reads bytes from the file, starting at an explicit offset.
+        ///
+        /// Unlike ``read(upTo:transferChunkSize:)``, this method doesn't use or move the file's current offset, so
+        /// concurrent tasks can read different ranges of the same handle without coordinating seeks.
+        ///
+        /// - Parameters:
+        ///   - upTo: The maximum number of bytes to read.
+        ///   - offset: The absolute file offset at which reading starts.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum read size.
+        /// - Returns: The bytes read. The value is shorter than `upTo` when the end of the file is reached, and empty
+        /// when `offset` is at or past the end of the file.
+        /// - Throws: ``SMB/Error`` if the read fails, or `CancellationError` if the task is cancelled between chunks.
+        public func read(
+            upTo: Int64,
+            atOffset offset: UInt64,
+            transferChunkSize: Int64? = nil
+        ) async throws -> Data {
+            try await connection.withOperation {
+                guard upTo > 0 else {
+                    return Data()
+                }
+
+                // Clamps to the server maximum and rejects non-positive sizes.
+                let chunkSize = try await connection
+                    .acceptedReadBlockSize(transferChunkSize.map { Int(clamping: $0) } ?? .max)
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Pread)
+
+                var result = Data()
+                var remaining = upTo
+                var position = offset
+
+                while remaining > 0 {
+                    try Task.checkCancellation()
+                    let byteCount = Int(min(remaining, Int64(chunkSize)))
+                    let data = try await Bridge.read(context: context, file: handle, count: byteCount, offset: position)
+                    guard !data.isEmpty else { break }
+                    result.append(data)
+                    remaining -= Int64(data.count)
+                    let (next, overflow) = position.addingReportingOverflow(UInt64(data.count))
+                    guard !overflow else { break }
+                    position = next
+                }
+
+                return result
+            }
+        }
+
         /// Writes bytes to the file.
         ///
         /// Data larger than the transfer chunk size is automatically split into accepted block sizes.

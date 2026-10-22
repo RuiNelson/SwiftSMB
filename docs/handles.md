@@ -141,6 +141,18 @@ try await file.seek(offset: Int64(info.size - 1024), from: .start)
 let footer = try await file.read(upTo: 1024)
 ```
 
+Or pass the offset to `read(upTo:atOffset:)`, which neither uses nor moves the current offset. Concurrent tasks can
+read different ranges of the same handle this way without coordinating seeks:
+
+```swift
+let info = try await file.stat()
+async let header = file.read(upTo: 1024, atOffset: 0)
+async let footer = file.read(upTo: 1024, atOffset: info.size - 1024)
+let (first, last) = try await (header, footer)
+```
+
+The result is shorter than `upTo` when the end of the file is reached, and empty when the offset is at or past it.
+
 ## Writing to a file handle
 
 Write all data:

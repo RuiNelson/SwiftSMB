@@ -148,6 +148,21 @@ To transfer without a local file, `streamToRemote(remote:stream:...)` uploads th
 `streamFromRemote(remote:stream:...)` downloads into an `OutputStream`. See
 [Uploads and Downloads](docs/uploads-downloads.md#streaming-to-and-from-the-share).
 
+### Playing videos with AVPlayer
+
+The `SwiftSMBAVFoundation` product streams media files from the share into AVFoundation, reading only the byte ranges
+the player asks for:
+
+```swift
+import AVFoundation
+import SwiftSMBAVFoundation
+
+let player = AVPlayer(playerItem: connection.makePlayerItem(at: "Videos/holiday.mp4"))
+player.play()
+```
+
+See [Playing media with AVFoundation](docs/video-playback.md).
+
 ### More advanced cookbooks
 
 Longer examples belong in `docs/`:
@@ -157,6 +172,7 @@ Longer examples belong in `docs/`:
 - [Working with file handles and directory handles](docs/handles.md)
 - [Changing properties of files](docs/file-properties.md)
 - [Watching file system changes](docs/watching-changes.md)
+- [Playing media with AVFoundation](docs/video-playback.md)
 
 ## Adding this package to your Project
 
@@ -180,6 +196,8 @@ Then add `SwiftSMB` to the target that uses it:
     ]
 )
 ```
+
+To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`.
 
 SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.2.
 

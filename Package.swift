@@ -17,7 +17,7 @@ if includeIntegrationTests {
     testTargets.append(
         .testTarget(
             name: "SwiftSMBTests",
-            dependencies: ["SwiftSMB"],
+            dependencies: ["SwiftSMB", "SwiftSMBAVFoundation"],
             path: "Tests/SwiftSMBTests",
         )
     )
@@ -37,6 +37,10 @@ let package = Package(
         .library(
             name: "SwiftSMB",
             targets: ["SwiftSMB"],
+        ),
+        .library(
+            name: "SwiftSMBAVFoundation",
+            targets: ["SwiftSMBAVFoundation"],
         ),
         .library(
             name: "libsmb2",
@@ -80,6 +84,13 @@ let package = Package(
             name: "SwiftSMB",
             dependencies: [
                 "libsmb2",
+                .product(name: "PathWorks", package: "PathWorks"),
+            ],
+        ),
+        .target(
+            name: "SwiftSMBAVFoundation",
+            dependencies: [
+                "SwiftSMB",
                 .product(name: "PathWorks", package: "PathWorks"),
             ],
         ),

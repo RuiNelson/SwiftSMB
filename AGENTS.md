@@ -16,41 +16,45 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   ├── include                           # Public headers: module map (module `SMB2`), config.h, forwarders into `upstream`.
 │   │   ├── upstream                          # Git submodule of sahlberg/libsmb2 (pristine; never edit).
 │   │   └── xcode_compat.c                    # Weak `__llvm_profile_runtime` so the dynamic product links with coverage.
-│   └── SwiftSMB
-│       ├── Bridge                            # Internal libsmb2 bridge; no public API here.
-│       │   ├── Extensions
-│       │   │   ├── Int.swift                 # Extensions to `Int`.
-│       │   │   ├── String?.swift             # Extensions to `String?`.
-│       │   │   └── SMB.Error.swift           # SMB.Error bridge factory and check() helper.
-│       │   ├── Bridge.swift                  # High-level async POSIX-like bridge calls on per-context queues.
-│       │   ├── BridgeTypes.swift             # Bridge structs/enums/options nested under `extension Bridge`.
-│       │   ├── Bridge-Cancel.swift           # SMB2 CANCEL for requests that wait on the server.
-│       │   ├── Bridge-Links.swift            # Symlink read/create bridge calls.
-│       │   ├── Bridge-Locks.swift            # Byte-range lock bridge calls.
-│       │   ├── Bridge-Notifications.swift    # Directory change-notification bridge calls.
-│       │   ├── Bridge-ShareEnum.swift        # IPC$ share enumeration bridge calls.
-│       │   └── Bridge-URL.swift              # SMB URL parsing bridge calls.
-│       └── PublicAPI                         # User-facing API, all organized under SMB.
-│           ├── SMB.swift                     # public final class SMB; no public initializers.
-│           ├── Operations.swift              # Static top-level operations: connect/listShares/parseURL.
-│           ├── Configuration.swift           # Server, credentials, and connection configuration.
-│           ├── Connection.swift              # Connection handle, state, and primitive bridge operations.
-│           ├── Connection-Conv.swift         # Connection convenience methods built from primitives.
-│           ├── Connection-Conv-Transfer.swift # Upload/download and stream transfer convenience methods.
-│           ├── File.swift                    # OOP file handle.
-│           ├── Directory.swift               # OOP directory handle.
-│           ├── Directory-Conv.swift          # Directory convenience methods built from primitives.
-│           ├── Notify.swift                  # AsyncSequence-based public SMB directory notifications.
-│           ├── Types.swift                   # Public value types.
-│           ├── Error.swift                   # Public error type.
-│           ├── Error-InvalidArgument.swift   # Typed invalid-argument operations and causes.
-│           ├── Error-Status.swift            # SMB.SMBStatus and SMB.SMBStatusSeverity.
-│           └── Util
-│               ├── Date+.swift               # Date helpers for SMB timestamp values.
-│               ├── OptionSet+.swift          # Shared debug formatting helpers.
-│               ├── PathValidation.swift      # Share-name and share-relative path validation.
-│               ├── Protected.swift           # Mutex/NSLock-backed state wrapper for Sendable handles.
-│               └── ProtectedHandle.swift     # Protected<Handle?> wrapper shared by File/Directory/Connection.
+│   ├── SwiftSMB
+│   │   ├── Bridge                            # Internal libsmb2 bridge; no public API here.
+│   │   │   ├── Extensions
+│   │   │   │   ├── Int.swift                 # Extensions to `Int`.
+│   │   │   │   ├── String?.swift             # Extensions to `String?`.
+│   │   │   │   └── SMB.Error.swift           # SMB.Error bridge factory and check() helper.
+│   │   │   ├── Bridge.swift                  # High-level async POSIX-like bridge calls on per-context queues.
+│   │   │   ├── BridgeTypes.swift             # Bridge structs/enums/options nested under `extension Bridge`.
+│   │   │   ├── Bridge-Cancel.swift           # SMB2 CANCEL for requests that wait on the server.
+│   │   │   ├── Bridge-Links.swift            # Symlink read/create bridge calls.
+│   │   │   ├── Bridge-Locks.swift            # Byte-range lock bridge calls.
+│   │   │   ├── Bridge-Notifications.swift    # Directory change-notification bridge calls.
+│   │   │   ├── Bridge-ShareEnum.swift        # IPC$ share enumeration bridge calls.
+│   │   │   └── Bridge-URL.swift              # SMB URL parsing bridge calls.
+│   │   └── PublicAPI                         # User-facing API, all organized under SMB.
+│   │       ├── SMB.swift                     # public final class SMB; no public initializers.
+│   │       ├── Operations.swift              # Static top-level operations: connect/listShares/parseURL.
+│   │       ├── Configuration.swift           # Server, credentials, and connection configuration.
+│   │       ├── Connection.swift              # Connection handle, state, and primitive bridge operations.
+│   │       ├── Connection-Conv.swift         # Connection convenience methods built from primitives.
+│   │       ├── Connection-Conv-Transfer.swift # Upload/download and stream transfer convenience methods.
+│   │       ├── File.swift                    # OOP file handle.
+│   │       ├── Directory.swift               # OOP directory handle.
+│   │       ├── Directory-Conv.swift          # Directory convenience methods built from primitives.
+│   │       ├── Notify.swift                  # AsyncSequence-based public SMB directory notifications.
+│   │       ├── Types.swift                   # Public value types.
+│   │       ├── Error.swift                   # Public error type.
+│   │       ├── Error-InvalidArgument.swift   # Typed invalid-argument operations and causes.
+│   │       ├── Error-Status.swift            # SMB.SMBStatus and SMB.SMBStatusSeverity.
+│   │       └── Util
+│   │           ├── Date+.swift               # Date helpers for SMB timestamp values.
+│   │           ├── OptionSet+.swift          # Shared debug formatting helpers.
+│   │           ├── PathValidation.swift      # Share-name and share-relative path validation.
+│   │           ├── Protected.swift           # Mutex/NSLock-backed state wrapper for Sendable handles.
+│   │           └── ProtectedHandle.swift     # Protected<Handle?> wrapper shared by File/Directory/Connection.
+│   └── SwiftSMBAVFoundation                  # Optional AVFoundation integration (empty on watchOS/Linux/Android).
+│       ├── Connection+AVFoundation.swift     # Public makeAsset/makePlayerItem on SMB.Connection.
+│       ├── MediaResourceLoader.swift         # AVAssetResourceLoaderDelegate serving byte ranges with positional reads.
+│       └── SMBMediaAsset.swift               # AVURLAsset subclass that retains its loader; custom URL scheme.
 ├── Tests
 │   ├── SwiftSMBUnitTests                     # Unit tests (no server needed); always run in CI.
 │   │   ├── Bridge
@@ -59,6 +63,9 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   └── PublicAPI
 │   │       └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 │   └── SwiftSMBTests                         # Integration tests; need the Docker test server.
+│       ├── AVFoundation                      # SwiftSMBAVFoundation integration tests.
+│       │   ├── SMBMediaAssetTests.swift      # Asset loading, frame decoding, playback readiness, errors.
+│       │   └── TestMovie.swift               # Generates and uploads a small H.264 movie at test time.
 │       ├── Bridge                            # Bridge-level Samba integration tests.
 │       │   ├── CancelTests.swift             # SMB2 CANCEL of pending notify requests.
 │       │   ├── ConnectionTests.swift         # Context configuration and connection lifecycle tests.
@@ -126,6 +133,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Add DocC comments to public API at Apple documentation quality. Private and internal members may use concise one-line comments where useful. `SMB.SMBStatus` does not need exhaustive DocC.
 - Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
 - File convenience methods are named `loadFile(at:)` and `dumpToFile(_:to:)`; avoid reintroducing the older `readFile`/`writeFile` names.
+- `SMB.File.read(upTo:atOffset:transferChunkSize:)` reads through `smb2_pread`, which `Bridge.read(context:file:count:offset:)` wraps so the handle's current offset is restored. Keep it that way: concurrent positional reads on one handle (as `SwiftSMBAVFoundation` does) rely on it. `upTo` is required so a positional read is never unbounded.
 - Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
 - File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe. The helpers resume awaiting callers from their queue instead of blocking them. Task cancellation is checked between blocks and throws `CancellationError`; returning `false` from the progress closure still cancels without throwing.
 - Stream transfers (`streamToRemote`/`streamFromRemote`) share the upload pipeline and transfer engine with the file transfers through the `UploadBlockReader`/`DownloadBlockWriter` protocols. The caller owns the stream: the methods open it if needed but never close it, touch it only on its worker's serial queue, never read past `length`, and wait for pending read-ahead or writes before returning. `Stream` isn't `Sendable`, so both methods are `nonisolated(nonsending)`, which lets actors pass streams they own; wrap the stream in its `@unchecked Sendable` worker before handing anything to the other async helpers, which run off the caller's actor.
@@ -134,6 +142,22 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+.swift` for consistent debug output.
 - `Connection-Conv-Transfer.swift`'s private helpers are file-scope free functions taking `on connection: SMB.Connection` as their first argument, while `Connection-Conv.swift`'s private helpers are `private extension SMB.Connection` methods. Both styles are intentional — don't "fix" one file to match the other.
 - `SMB.Configuration.Dialect` (negotiation preference, includes `.any`/`.anySMB2`/`.anySMB3`) and `SMB.NegotiatedDialect` (the actual dialect a server negotiated, with an `.unknown(UInt16)` fallback) are intentionally separate types with different case sets — don't merge them.
+
+## AVFoundation Integration
+
+- `SwiftSMBAVFoundation` is a separate product so the core `SwiftSMB` target never links AVFoundation. Every file is
+  wrapped in `#if canImport(AVFoundation) && !os(watchOS)` (`AVAssetResourceLoader` doesn't exist on watchOS), so the
+  module builds empty on watchOS, Linux, and Android. Its public API needs `UTType`, hence the
+  `@available(macOS 11, iOS 14, tvOS 14, macCatalyst 14, visionOS 1, *)` annotations.
+- The module uses only the public `SwiftSMB` API. Add a public primitive to `SwiftSMB` (as was done for
+  `SMB.File.read(upTo:atOffset:transferChunkSize:)`) rather than reaching into `Bridge`.
+- `makeAsset` returns an `SMBMediaAsset` with a unique `swiftsmb-media://` URL that ends in the file name. The asset
+  retains its `MediaResourceLoader`, because `AVAssetResourceLoader` holds its delegate weakly, and the loader retains the
+  user's `SMB.Connection`.
+- `MediaResourceLoader` opens one read-only `SMB.File` lazily (shared by all requests through the `MediaSource` actor)
+  and serves each loading request in its own task with positional reads, so concurrent requests never race on the
+  handle offset. It touches `AVAssetResourceLoadingRequest` only on its dedicated delegate queue, skips requests that
+  are already cancelled or finished, and never finishes a request it was told to cancel.
 
 ## Testing
 

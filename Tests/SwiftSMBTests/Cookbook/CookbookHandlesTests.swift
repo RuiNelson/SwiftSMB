@@ -79,6 +79,20 @@ struct CookbookHandlesTests {
         _ = footer.count
     }
 
+    @Test("read at explicit offsets compiles and runs")
+    func readAtExplicitOffsets() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let file = try await connection.openFile(at: "report.pdf")
+        defer { try? await file.close() }
+        let info = try await file.stat()
+        async let header = file.read(upTo: 1024, atOffset: 0)
+        async let footer = file.read(upTo: 1024, atOffset: info.size - 1024)
+        let (first, last) = try await (header, footer)
+        #expect(first.count == 1024)
+        #expect(last.count == 1024)
+    }
+
     @Test("write and seek compiles and runs")
     func writeAndSeek() async throws {
         let connection = try await cookbookConnection()
