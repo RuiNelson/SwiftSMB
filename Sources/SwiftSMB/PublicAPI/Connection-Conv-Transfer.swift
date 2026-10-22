@@ -173,6 +173,7 @@ public extension SMB.Connection {
                 blockSize: blockSize,
                 totalBytes: totalBytes,
                 options: options,
+                operation: operation,
                 continuation: continuation
             )
 
@@ -287,86 +288,25 @@ public extension SMB.Connection {
                 )
             }
 
-            let totalBytes = fileSize - offset
             let preferredBlockSize = try transferBlockSize(maxBlockSize)
             let blockSize = try await acceptedWriteBlockSize(preferredBlockSize)
 
-            try Task.checkCancellation()
-            try await validateOrCreateRemoteParent(
+            try await uploadBlocks(
                 on: self,
-                for: remote,
+                to: remote,
+                totalBytes: fileSize - offset,
+                offset: offset,
+                options: options,
+                blockSize: blockSize,
                 makePath: makePath,
-                operation: operation
-            )
-
-            let target = atomic ? try await uniqueRemoteTemporaryPath(near: remote, on: self) : remote
-            let openOptions: SMB.File.OpenOptions = if atomic {
-                (offset == 0) ? [.create, .exclusive] : []
-            }
-            else {
-                // Truncating on open would discard the prefix a resumed upload continues from.
-                (offset == 0) ? options : options.subtracting(.truncate)
-            }
-
-            // Cleanup owns only a temporary file successfully created by this transfer.
-            var shouldRemoveRemoteTemp = false
-            defer {
-                if shouldRemoveRemoteTemp {
-                    try? await removeFile(at: target)
+                atomic: atomic,
+                operation: operation,
+                continuation: continuation
+            ) {
+                try await disk.perform {
+                    try ReadAheadFileReader(reading: local, offset: offset, blockSize: blockSize)
                 }
             }
-
-            if atomic {
-                try await prepareAtomicUploadTarget(
-                    on: self,
-                    remote: remote,
-                    target: target,
-                    offset: offset,
-                    blockSize: blockSize,
-                    operation: operation,
-                    onTargetCreated: { shouldRemoveRemoteTemp = true }
-                )
-            }
-
-            if offset > 0 {
-                try await validateRemoteFile(on: self, at: target, minimumSize: offset, operation: operation)
-            }
-            else {
-                try await validateRemoteDestinationForNewFile(
-                    on: self,
-                    at: target,
-                    options: openOptions,
-                    operation: operation
-                )
-            }
-
-            let reader = try await disk.perform {
-                try ReadAheadFileReader(reading: local, offset: offset, blockSize: blockSize)
-            }
-
-            let result = try await transferReaderToRemoteFile(
-                on: self,
-                reader: reader,
-                target: target,
-                openOptions: openOptions,
-                startingOffset: offset,
-                totalBytes: totalBytes,
-                onTargetOpened: { shouldRemoveRemoteTemp = atomic },
-                continuation: continuation
-            )
-
-            guard !result.cancelled else { return }
-            try Task.checkCancellation()
-
-            if atomic {
-                // Finish fallible metadata changes before replacing the destination.
-                try await changeAttributes(at: target) { $0.subtracting(.temporary) }
-                try Task.checkCancellation()
-                try await commitAtomicUpload(from: target, to: remote, on: self, operation: operation)
-                shouldRemoveRemoteTemp = false
-            }
-
-            _ = await continuation(result.transferred, totalBytes, 0, result.averageSpeed)
         }
     }
 
@@ -416,7 +356,283 @@ public extension SMB.Connection {
     }
 }
 
+// MARK: - Stream Transfers
+
+public extension SMB.Connection {
+    /// Uploads the contents of an input stream to a file on the SMB share.
+    ///
+    /// The upload reads `stream` from its current position until the end of the stream, or until it has read `length`
+    /// bytes when you pass a length, and never reads past that point. If `stream` isn't open yet, the method opens it.
+    /// The method never closes the stream, so you can keep reading from it afterwards; close it when you're done. Don't
+    /// use the stream elsewhere while the upload is in progress. Stream reads happen on a background queue one block
+    /// ahead, so they overlap the network writes.
+    ///
+    /// When `atomic` is `true` (the default), the upload is written to a temporary path in the destination directory
+    /// and
+    /// renamed to `remote` only after the transfer completes successfully. If the transfer fails or is cancelled, the
+    /// temporary remote file is removed. When `atomic` is `false`, bytes are written directly to `remote` using
+    /// `options`; cancellation or failure may leave a partially written remote file.
+    ///
+    /// To resume a partial upload, pass an offset with ``FromArgument/offset(byte:)``. The offset applies only to
+    /// `remote`, which must already contain at least that many bytes. Those bytes are kept, and `stream` supplies the
+    /// bytes that follow them, starting at its current position. For atomic resumed uploads, the remote prefix is
+    /// copied
+    /// into the temporary remote file first. Resumed uploads never truncate `remote`, so
+    /// ``SMB/File/OpenOptions/truncate`` is ignored when the offset is not zero.
+    ///
+    /// Without a `length`, the size of the upload isn't known in advance, so `continuation` receives the number of
+    /// bytes
+    /// transferred so far as the total. With a `length`, a stream that ends before supplying that many bytes fails the
+    /// upload instead of committing a partial file.
+    ///
+    /// If `continuation` returns `false`, the method cancels the upload and returns normally. If the task is cancelled,
+    /// the upload stops between blocks and throws `CancellationError`; cleanup is the same as for a failure. After a
+    /// cancelled or failed upload, the stream may have been read past the last byte that reached the share.
+    ///
+    /// - Parameters:
+    ///   - remote: The share-relative destination file path.
+    ///   - stream: The stream that supplies the bytes to upload.
+    ///   - length: The number of bytes to read from `stream`, or `nil` to read until the end of the stream.
+    ///   - from: The byte offset in `remote` at which uploading should begin.
+    ///   - options: Options used when opening `remote` for a non-atomic upload. The default creates the file if needed
+    /// and truncates any existing content, so `remote` ends up containing exactly the uploaded bytes.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum write size are clamped.
+    ///   - makePath: A Boolean value indicating whether to create missing ancestor directories before writing the file.
+    /// When `false`, the method throws if the parent directory does not exist.
+    ///   - atomic: A Boolean value indicating whether to upload through a temporary remote file before renaming it into
+    /// place.
+    ///   - continuation: A progress closure called after each SMB write block and once after the completed upload is in
+    /// place. The upload waits for it to return before writing the next block.
+    /// - Throws: ``SMB/Error`` if the connection is closed, a remote operation fails, the resume offset is invalid, the
+    /// stream is closed, or the stream ends before supplying `length` bytes; or the error that `stream` reports when
+    /// reading from it fails.
+    nonisolated(nonsending) func streamToRemote(
+        remote: String,
+        stream: InputStream,
+        length: UInt64? = nil,
+        from: FromArgument = .beginning,
+        options: SMB.File.OpenOptions = [.create, .truncate],
+        maxBlockSize: UInt64? = nil,
+        makePath: Bool = true,
+        atomic: Bool = true,
+        continuation: @escaping AsyncFileProgress
+    ) async throws {
+        try await self.withOperation {
+            let operation = SMB.Error.InvalidArgumentOperation.smbConnectionStreamToRemote
+            let remote = try SMB.validatePath(remote, operation: operation)
+            try Task.checkCancellation()
+            let preferredBlockSize = try transferBlockSize(maxBlockSize)
+            let blockSize = try await acceptedWriteBlockSize(preferredBlockSize)
+
+            let reader = ReadAheadStreamReader(
+                reading: stream,
+                limit: length,
+                blockSize: blockSize,
+                operation: operation
+            )
+            try await reader.open()
+            // The stream belongs to the caller, so no read-ahead may outlive the upload.
+            defer { await reader.finish() }
+
+            try await uploadBlocks(
+                on: self,
+                to: remote,
+                totalBytes: length,
+                offset: from.offsetValue,
+                options: options,
+                blockSize: blockSize,
+                makePath: makePath,
+                atomic: atomic,
+                operation: operation,
+                continuation: continuation
+            ) { reader }
+        }
+    }
+
+    /// Downloads a file from the SMB share into an output stream.
+    ///
+    /// The download writes the bytes of `remote`, starting at `from`, to `stream`. If `stream` isn't open yet, the
+    /// method
+    /// opens it. The method never closes the stream, so afterwards you can keep writing to it, or read the data written
+    /// to a memory stream; close it when you're done. Don't use the stream elsewhere while the download is in progress.
+    /// Stream writes happen on a background queue so they overlap the network reads.
+    ///
+    /// Bytes reach `stream` as they arrive, so a cancelled or failed download leaves the bytes written so far in the
+    /// stream. If `continuation` returns `false`, the method cancels the download and returns normally. If the task is
+    /// cancelled, the download stops between blocks and throws `CancellationError`.
+    ///
+    /// The transfer reads the size reported when it begins. Data appended later is excluded; if the source becomes
+    /// shorter before those bytes have been read, the transfer fails.
+    ///
+    /// - Parameters:
+    ///   - remote: The share-relative source file path.
+    ///   - stream: The stream that receives the downloaded bytes.
+    ///   - from: The byte offset in `remote` at which downloading should begin.
+    ///   - options: Options used when opening the remote source file.
+    ///   - maxBlockSize: The preferred maximum transfer block size, overriding the configured/default block size.
+    /// Values larger than the server's maximum read size are clamped.
+    ///   - continuation: A progress closure called after each block is read from the share and once after the last
+    /// block
+    /// has been written to `stream`. The download waits for it to return before reading the next block.
+    /// - Throws: ``SMB/Error`` if the connection is closed, the remote file cannot be inspected or read, the resume
+    /// offset is invalid, or the stream is closed; or the error that `stream` reports when writing to it fails.
+    nonisolated(nonsending) func streamFromRemote(
+        remote: String,
+        stream: OutputStream,
+        from: FromArgument = .beginning,
+        options: SMB.File.OpenOptions = [],
+        maxBlockSize: UInt64? = nil,
+        continuation: @escaping AsyncFileProgress
+    ) async throws {
+        try await self.withOperation {
+            let operation = SMB.Error.InvalidArgumentOperation.smbConnectionStreamFromRemote
+            let remote = try SMB.validatePath(remote, operation: operation)
+            try Task.checkCancellation()
+            let offset = from.offsetValue
+
+            let remoteStat = try await validateRemoteFile(
+                on: self,
+                at: remote,
+                minimumSize: offset,
+                operation: operation
+            )
+            let totalBytes = remoteStat.size - offset
+            let preferredBlockSize = try transferBlockSize(maxBlockSize)
+            let blockSize = try await acceptedReadBlockSize(preferredBlockSize)
+
+            let writer = BackgroundStreamWriter(writingTo: stream, operation: operation)
+            try await writer.open()
+            // The stream belongs to the caller, so no queued write may outlive the download.
+            defer { try? await writer.finish() }
+
+            let result = try await transferRemoteFileToWriter(
+                on: self,
+                remote: remote,
+                writer: writer,
+                startingOffset: offset,
+                blockSize: blockSize,
+                totalBytes: totalBytes,
+                options: options,
+                operation: operation,
+                continuation: continuation
+            )
+
+            try await writer.finish()
+            guard !result.cancelled else { return }
+            try Task.checkCancellation()
+            _ = await continuation(result.transferred, totalBytes, 0, result.averageSpeed)
+        }
+    }
+}
+
+// MARK: - Upload Pipeline
+
+/// Uploads the blocks of the reader that `makeReader` creates once the destination is prepared, staging them through a
+/// temporary remote file when `atomic` is `true`. When `totalBytes` is `nil`, the upload ends at the reader's first
+/// empty block and reports the bytes transferred so far as the total.
+private func uploadBlocks(
+    on connection: SMB.Connection,
+    to remote: String,
+    totalBytes: UInt64?,
+    offset: UInt64,
+    options: SMB.File.OpenOptions,
+    blockSize: Int,
+    makePath: Bool,
+    atomic: Bool,
+    operation: SMB.Error.InvalidArgumentOperation,
+    continuation: SMB.Connection.AsyncFileProgress,
+    makeReader: () async throws -> some UploadBlockReader
+) async throws {
+    try Task.checkCancellation()
+    try await validateOrCreateRemoteParent(
+        on: connection,
+        for: remote,
+        makePath: makePath,
+        operation: operation
+    )
+
+    let target = atomic ? try await uniqueRemoteTemporaryPath(near: remote, on: connection) : remote
+    let openOptions: SMB.File.OpenOptions = if atomic {
+        (offset == 0) ? [.create, .exclusive] : []
+    }
+    else {
+        // Truncating on open would discard the prefix a resumed upload continues from.
+        (offset == 0) ? options : options.subtracting(.truncate)
+    }
+
+    // Cleanup owns only a temporary file successfully created by this transfer.
+    var shouldRemoveRemoteTemp = false
+    defer {
+        if shouldRemoveRemoteTemp {
+            try? await connection.removeFile(at: target)
+        }
+    }
+
+    if atomic {
+        try await prepareAtomicUploadTarget(
+            on: connection,
+            remote: remote,
+            target: target,
+            offset: offset,
+            blockSize: blockSize,
+            operation: operation,
+            onTargetCreated: { shouldRemoveRemoteTemp = true }
+        )
+    }
+
+    if offset > 0 {
+        try await validateRemoteFile(on: connection, at: target, minimumSize: offset, operation: operation)
+    }
+    else {
+        try await validateRemoteDestinationForNewFile(
+            on: connection,
+            at: target,
+            options: openOptions,
+            operation: operation
+        )
+    }
+
+    let reader = try await makeReader()
+
+    let result = try await transferReaderToRemoteFile(
+        on: connection,
+        reader: reader,
+        target: target,
+        openOptions: openOptions,
+        startingOffset: offset,
+        totalBytes: totalBytes,
+        operation: operation,
+        onTargetOpened: { shouldRemoveRemoteTemp = atomic },
+        continuation: continuation
+    )
+
+    guard !result.cancelled else { return }
+    try Task.checkCancellation()
+
+    if atomic {
+        // Finish fallible metadata changes before replacing the destination.
+        try await connection.changeAttributes(at: target) { $0.subtracting(.temporary) }
+        try Task.checkCancellation()
+        try await commitAtomicUpload(from: target, to: remote, on: connection, operation: operation)
+        shouldRemoveRemoteTemp = false
+    }
+
+    _ = await continuation(result.transferred, totalBytes ?? result.transferred, 0, result.averageSpeed)
+}
+
 // MARK: - Transfer Engine
+
+/// Produces upload blocks, reading ahead on its own queue. An empty block marks the end of the source.
+private protocol UploadBlockReader: Sendable {
+    func next() async throws -> Data
+}
+
+/// Consumes downloaded blocks, writing them on its own queue.
+private protocol DownloadBlockWriter: Sendable {
+    func append(_ data: Data) async throws
+    func finish() async throws
+}
 
 private struct TransferResult {
     let transferred: UInt64
@@ -427,12 +643,18 @@ private struct TransferResult {
 /// Tracks cumulative bytes transferred and reports progress through an `AsyncFileProgress` continuation.
 private struct ProgressTracker {
     private(set) var transferred: UInt64
-    private let totalBytes: UInt64
+    /// The bytes the transfer expects, or `nil` when the source length is unknown.
+    private let totalBytes: UInt64?
     private let operationStart = DispatchTime.now()
 
-    init(totalBytes: UInt64) {
+    init(totalBytes: UInt64?) {
         transferred = 0
         self.totalBytes = totalBytes
+    }
+
+    /// The bytes still expected, or `nil` when the source length is unknown.
+    var remaining: UInt64? {
+        totalBytes.map { $0 - transferred }
     }
 
     /// The average transfer rate since the operation began, in bytes per second.
@@ -440,7 +662,8 @@ private struct ProgressTracker {
         speed(bytes: transferred, from: operationStart, to: .now())
     }
 
-    /// Records a transferred block and reports progress.
+    /// Records a transferred block and reports progress. Without a known length, the bytes transferred so far are
+    /// reported as the total.
     ///
     /// - Returns: `false` if `continuation` requested cancellation.
     mutating func record(
@@ -450,7 +673,7 @@ private struct ProgressTracker {
     ) async -> Bool {
         transferred += bytes
         let latestSpeed = speed(bytes: bytes, from: blockStart, to: .now())
-        return await continuation(transferred, totalBytes, latestSpeed, averageSpeed)
+        return await continuation(transferred, totalBytes ?? transferred, latestSpeed, averageSpeed)
     }
 
     /// Builds a `TransferResult` reflecting the bytes transferred so far.
@@ -459,16 +682,18 @@ private struct ProgressTracker {
     }
 }
 
-/// Reads the remote file in server-sized blocks and hands each block to the background writer, so the disk write of one
+/// Reads the remote file in server-sized blocks and hands each block to the background writer, so the local write of
+/// one
 /// block overlaps the network read of the next. Reports progress after each block.
 private func transferRemoteFileToWriter(
     on connection: SMB.Connection,
     remote: String,
-    writer: BackgroundFileWriter,
+    writer: some DownloadBlockWriter,
     startingOffset: UInt64,
     blockSize: Int,
     totalBytes: UInt64,
     options: SMB.File.OpenOptions,
+    operation: SMB.Error.InvalidArgumentOperation,
     continuation: SMB.Connection.AsyncFileProgress
 ) async throws -> TransferResult {
     let file = try await connection.openFile(at: remote, accessMode: .readOnly, options: options)
@@ -484,7 +709,7 @@ private func transferRemoteFileToWriter(
         let requested = min(UInt64(blockSize), totalBytes - tracker.transferred)
         let data = try await file.read(upTo: Int64(requested))
         guard !data.isEmpty else {
-            throw unexpectedTransferEOF(operation: "SMB.Connection.downloadFile")
+            throw unexpectedTransferEOF(operation: operation)
         }
 
         try await writer.append(data)
@@ -498,16 +723,18 @@ private func transferRemoteFileToWriter(
     return tracker.result(cancelled: false)
 }
 
-/// Writes blocks produced by the read-ahead reader to the remote file, so the disk read of one block overlaps the
+/// Writes blocks produced by the read-ahead reader to the remote file, so the local read of one block overlaps the
 /// network write of the previous one. Each block may be split into multiple SMB writes when the server accepts only a
-/// prefix. Reports progress after each SMB write.
+/// prefix. Reports progress after each SMB write. When `totalBytes` is `nil`, the transfer ends at the reader's first
+/// empty block.
 private func transferReaderToRemoteFile(
     on connection: SMB.Connection,
-    reader: ReadAheadFileReader,
+    reader: some UploadBlockReader,
     target: String,
     openOptions: SMB.File.OpenOptions,
     startingOffset: UInt64,
-    totalBytes: UInt64,
+    totalBytes: UInt64?,
+    operation: SMB.Error.InvalidArgumentOperation,
     onTargetOpened: () -> Void,
     continuation: SMB.Connection.AsyncFileProgress
 ) async throws -> TransferResult {
@@ -518,13 +745,17 @@ private func transferReaderToRemoteFile(
     var remoteOffset = startingOffset
     var tracker = ProgressTracker(totalBytes: totalBytes)
 
-    while tracker.transferred < totalBytes {
+    // Without a known length, `remaining` stays `nil` and only an empty block ends the loop.
+    while tracker.remaining != 0 {
         try Task.checkCancellation()
         let data = try await reader.next()
         guard !data.isEmpty else {
-            throw unexpectedTransferEOF(operation: "SMB.Connection.uploadFile")
+            guard tracker.remaining == nil else {
+                throw unexpectedTransferEOF(operation: operation)
+            }
+            break
         }
-        let remaining = totalBytes - tracker.transferred
+        let remaining = tracker.remaining ?? UInt64(data.count)
         let block = data.prefix(Int(min(UInt64(data.count), remaining)))
 
         var cancelled = false
@@ -561,7 +792,7 @@ private final class LocalDiskWorker: Sendable {
 ///
 /// ``append(_:)`` waits for the previously queued block to reach disk before queuing the next one, bounding the
 /// buffered data to two blocks. Callers suspend instead of blocking while they wait.
-private final class BackgroundFileWriter: @unchecked Sendable {
+private final class BackgroundFileWriter: DownloadBlockWriter, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.downloadFile.disk")
     private let handle: FileHandle
     /// The first error raised by a queued write. Guarded by `queue`.
@@ -661,7 +892,7 @@ private final class BackgroundFileWriter: @unchecked Sendable {
 
 /// Reads upload blocks from a local file on a dedicated serial queue, one block ahead of the consumer, so disk reads
 /// overlap network writes.
-private final class ReadAheadFileReader: @unchecked Sendable {
+private final class ReadAheadFileReader: UploadBlockReader, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.uploadFile.disk")
     private let handle: FileHandle
     private let blockSize: Int
@@ -699,6 +930,203 @@ private final class ReadAheadFileReader: @unchecked Sendable {
             self.buffered = Result { try self.handle.read(upToCount: self.blockSize) ?? Data() }
         }
     }
+}
+
+// MARK: - Stream Workers
+
+/// Reads upload blocks from a caller-supplied input stream on a dedicated serial queue, one block ahead of the
+/// consumer,
+/// so stream reads overlap network writes. Nothing is read before the first block is requested, and nothing past
+/// `limit`. The stream belongs to the caller and is never closed.
+private final class ReadAheadStreamReader: UploadBlockReader, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.streamToRemote.stream")
+    private let stream: InputStream
+    private let blockSize: Int
+    private let operation: SMB.Error.InvalidArgumentOperation
+    /// The bytes left to read before `limit`, or `nil` to read until the end of the stream. Guarded by `queue`.
+    private var remaining: UInt64?
+    /// The result of the most recent read-ahead, or `nil` until the first block is requested. Guarded by `queue`.
+    private var buffered: Result<Data, Swift.Error>?
+
+    init(reading stream: InputStream, limit: UInt64?, blockSize: Int, operation: SMB.Error.InvalidArgumentOperation) {
+        self.stream = stream
+        self.blockSize = blockSize
+        self.operation = operation
+        remaining = limit
+    }
+
+    /// Opens the stream if it isn't open yet. Throws when the stream is closed or has failed.
+    func open() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                continuation.resume(with: Result { try openStream(self.stream, operation: self.operation) })
+            }
+        }
+    }
+
+    /// Returns the next block, scheduling the read of the following block before returning. An empty block signals the
+    /// end of the stream or of `limit`. Throws when reading from the stream failed.
+    func next() async throws -> Data {
+        let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Swift.Error>) in
+            queue.async {
+                continuation.resume(with: self.buffered ?? Result { try self.readBlock() })
+            }
+        }
+        if !data.isEmpty {
+            scheduleRead()
+        }
+        return data
+    }
+
+    /// Waits for a pending read-ahead, so the stream is no longer used once this returns.
+    func finish() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func scheduleRead() {
+        queue.async {
+            self.buffered = Result { try self.readBlock() }
+        }
+    }
+
+    /// Reads up to one block, stopping early only at `limit` or at the end of the stream. Must run on `queue`.
+    private func readBlock() throws -> Data {
+        let count = remaining.map { Int(min(UInt64(blockSize), $0)) } ?? blockSize
+        var data = Data(count: count)
+        var filled = 0
+        while filled < count {
+            let read = data.withUnsafeMutableBytes { buffer in
+                stream.read(buffer.baseAddress!.assumingMemoryBound(to: UInt8.self) + filled, maxLength: count - filled)
+            }
+            guard read >= 0 else {
+                throw streamFailure(stream, operation: operation, message: "Unable to read from the input stream")
+            }
+            guard read > 0 else { break }
+            filled += read
+        }
+        data.count = filled
+        remaining = remaining.map { $0 - UInt64(filled) }
+        return data
+    }
+}
+
+/// Writes downloaded blocks to a caller-supplied output stream on a dedicated serial queue so stream writes overlap
+/// network reads.
+///
+/// ``append(_:)`` waits for the previously queued block to reach the stream before queuing the next one, bounding the
+/// buffered data to two blocks. The stream belongs to the caller and is never closed.
+private final class BackgroundStreamWriter: DownloadBlockWriter, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.SMB.Connection.streamFromRemote.stream")
+    private let stream: OutputStream
+    private let operation: SMB.Error.InvalidArgumentOperation
+    /// The first error raised by a queued write. Guarded by `queue`.
+    private var pendingError: Swift.Error?
+
+    init(writingTo stream: OutputStream, operation: SMB.Error.InvalidArgumentOperation) {
+        self.stream = stream
+        self.operation = operation
+    }
+
+    /// Opens the stream if it isn't open yet. Throws when the stream is closed or has failed.
+    func open() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                continuation.resume(with: Result { try openStream(self.stream, operation: self.operation) })
+            }
+        }
+    }
+
+    /// Queues a block for writing once the previously queued block is in the stream. Throws when an earlier queued
+    /// write failed.
+    func append(_ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                if let error = self.pendingError {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                // Let the caller fetch the next block while this one is written.
+                continuation.resume()
+                do {
+                    try self.write(data)
+                }
+                catch {
+                    self.pendingError = self.pendingError ?? error
+                }
+            }
+        }
+    }
+
+    /// Waits for queued writes to complete, throwing when any of them failed. Safe to call more than once.
+    func finish() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            queue.async {
+                if let error = self.pendingError {
+                    continuation.resume(throwing: error)
+                }
+                else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    /// Writes the whole block, continuing while the stream accepts only part of it. Must run on `queue`.
+    private func write(_ data: Data) throws {
+        try data.withUnsafeBytes { buffer in
+            var written = 0
+            while written < buffer.count {
+                let count = stream.write(
+                    buffer.baseAddress!.assumingMemoryBound(to: UInt8.self) + written,
+                    maxLength: buffer.count - written
+                )
+                // Zero means that a fixed-capacity stream is full.
+                guard count > 0 else {
+                    throw streamFailure(stream, operation: operation, message: "Unable to write to the output stream")
+                }
+                written += count
+            }
+        }
+    }
+}
+
+/// Opens a caller-supplied stream that isn't open yet, and rejects one that can no longer be used. Must run on the
+/// queue
+/// that owns the stream.
+private func openStream(_ stream: Stream, operation: SMB.Error.InvalidArgumentOperation) throws {
+    if stream.streamStatus == .notOpen {
+        stream.open()
+    }
+    switch stream.streamStatus {
+    case .closed:
+        throw SMB.Error.posix(
+            code: POSIXErrorCode.EBADF.rawValue,
+            operation: operation.description,
+            message: "Stream is closed"
+        )
+    case .error:
+        throw streamFailure(stream, operation: operation, message: "Unable to open the stream")
+    default:
+        return
+    }
+}
+
+/// Returns the error a stream reports for a failed call, or a generic I/O error when it reports none.
+private func streamFailure(
+    _ stream: Stream,
+    operation: SMB.Error.InvalidArgumentOperation,
+    message: String
+) -> Swift.Error {
+    stream.streamError ?? SMB.Error.posix(
+        code: POSIXErrorCode.EIO.rawValue,
+        operation: operation.description,
+        message: message
+    )
 }
 
 // MARK: - Validation & Preparation
@@ -967,11 +1395,11 @@ private func signedTransferOffset(_ offset: UInt64) throws -> Int64 {
 }
 
 /// An EOF before the advertised length must not commit an incomplete atomic transfer.
-private func unexpectedTransferEOF(operation: String) -> SMB.Error {
+private func unexpectedTransferEOF(operation: SMB.Error.InvalidArgumentOperation) -> SMB.Error {
     SMB.Error.posix(
         code: POSIXErrorCode.EIO.rawValue,
-        operation: operation,
-        message: "Source file ended before the expected transfer length"
+        operation: operation.description,
+        message: "Source ended before the expected transfer length"
     )
 }
 

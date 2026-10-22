@@ -96,6 +96,44 @@ try await connection.downloadFile(
 
 The transfer waits for the closure to return before it moves on to the next block, so keep the awaited work short.
 
+## Streaming to and from the share
+
+``SMB.Connection.streamToRemote(remote:stream:length:continuation:)`` uploads the contents of an `InputStream`, and ``SMB.Connection.streamFromRemote(remote:stream:continuation:)`` downloads a remote file into an `OutputStream`. They work like `uploadFile` and `downloadFile`, without a local file in between:
+
+```swift
+let payload = Data("Hello, SMB!".utf8)
+let input = InputStream(data: payload)
+
+try await connection.streamToRemote(
+    remote: "Anna/Inbox/hello.txt",
+    stream: input,
+    length: UInt64(payload.count)
+) { completed, total, _, _ in
+    print("Uploaded \(completed) of \(total) bytes")
+    return true
+}
+
+let output = OutputStream.toMemory()
+
+try await connection.streamFromRemote(remote: "Anna/Inbox/hello.txt", stream: output) { completed, total, _, _ in
+    print("Downloaded \(completed) of \(total) bytes")
+    return true
+}
+
+let downloaded = output.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+output.close()
+```
+
+Both methods open a stream that isn't open yet and never close it, so you can keep using it afterwards; close it when
+you're done.
+
+- **Uploads** read until the end of the stream when you leave out `length`, and then report the bytes uploaded so far as
+  the total. With `length`, the upload stops after that many bytes and leaves the rest of the stream unread; a stream
+  that ends sooner fails the upload. Uploads are atomic by default, like `uploadFile`, and `from: .offset(byte:)`
+  resumes after a prefix that is already on the share, with the stream supplying the bytes that follow it.
+- **Downloads** write bytes to the stream as they arrive, so a cancelled or failed download leaves the bytes received so
+  far in the stream.
+
 ## Loading a file into memory
 
 If the file is small enough to fit in memory, ``SMB.Connection.loadFile(at:chunkSize:)`` reads the entire file in one call:

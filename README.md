@@ -147,6 +147,10 @@ it, and the call then throws `CancellationError`.
 Both methods also accept a progress closure that uses `await` (`SMB.Connection.AsyncFileProgress`), for example to
 report progress to an actor. The transfer waits for it before moving on to the next block.
 
+To transfer without a local file, `streamToRemote(remote:stream:...)` uploads the contents of an `InputStream` and
+`streamFromRemote(remote:stream:...)` downloads into an `OutputStream`. See
+[Uploads and Downloads](docs/uploads-downloads.md#streaming-to-and-from-the-share).
+
 ### More advanced cookbooks
 
 Longer examples belong in `docs/`:

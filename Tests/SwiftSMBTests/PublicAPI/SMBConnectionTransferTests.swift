@@ -733,6 +733,288 @@ struct SMBConnectionTransferTests {
     }
 }
 
+@Suite(.tags(.integration))
+struct SMBConnectionStreamTransferTests {
+    @Test("streamToRemote uploads a stream of unknown length")
+    func streamToRemoteUploadsStreamOfUnknownLength() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-upload") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let expected = Data((0 ..< 10).map { UInt8($0) })
+        let stream = InputStream(data: expected)
+
+        let reports = SendableBox<[(transferred: UInt64, total: UInt64)]>([])
+        try await connection
+            .streamToRemote(remote: remote, stream: stream, maxBlockSize: 4) { transferred, total, _, _ in
+                reports.value.append((transferred, total))
+                return true
+            }
+
+        await #expect(try connection.loadFile(at: remote) == expected)
+        #expect(reports.value.map(\.transferred) == [4, 8, 10, 10])
+        #expect(reports.value.map(\.total) == [4, 8, 10, 10])
+        #expect(stream.streamStatus != .closed)
+    }
+
+    @Test("streamToRemote stops after length and leaves the rest of the stream unread")
+    func streamToRemoteStopsAfterLength() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-upload-length") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let source = Data((0 ..< 20).map { UInt8(100 + $0) })
+        let stream = InputStream(data: source)
+
+        let reports = SendableBox<[(transferred: UInt64, total: UInt64)]>([])
+        try await connection
+            .streamToRemote(remote: remote, stream: stream, length: 10, maxBlockSize: 4) { transferred, total, _, _ in
+                reports.value.append((transferred, total))
+                return true
+            }
+
+        await #expect(try connection.loadFile(at: remote) == source.prefix(10))
+        #expect(reports.value.map(\.transferred) == [4, 8, 10, 10])
+        #expect(reports.value.map(\.total) == [10, 10, 10, 10])
+
+        var rest = [UInt8](repeating: 0, count: 32)
+        let count = stream.read(&rest, maxLength: rest.count)
+        #expect(Data(rest.prefix(max(count, 0))) == source.suffix(10))
+    }
+
+    @Test("streamToRemote fails without leftovers when the stream ends before length")
+    func streamToRemoteFailsWhenStreamEndsBeforeLength() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let directory = uniquePath("stream-upload-short")
+        try await connection.makeDirectory(at: directory)
+        defer { try? await connection.removeItem(at: directory) }
+
+        let stream = InputStream(data: Data(repeating: 1, count: 6))
+        let expectedError = SMB.Error.posix(
+            code: POSIXErrorCode.EIO.rawValue,
+            operation: "SMB.Connection.streamToRemote",
+            message: "Source ended before the expected transfer length"
+        )
+        await #expect(throws: expectedError) {
+            try await connection
+                .streamToRemote(remote: directory + "/file.bin", stream: stream, length: 10) { _, _, _, _ in true }
+        }
+
+        let names = try await connection.listDirectory(at: directory).map(\.name).filter { $0 != "." && $0 != ".." }
+        #expect(names.isEmpty)
+    }
+
+    @Test("streamToRemote resumes after the remote prefix")
+    func streamToRemoteResumesAfterRemotePrefix() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-upload-resume") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let prefix = Data((0 ..< 8).map { UInt8($0) })
+        let tail = Data((8 ..< 14).map { UInt8($0) })
+        try await connection.dumpToFile(prefix + Data(repeating: 0xEE, count: 4), to: remote)
+
+        try await connection.streamToRemote(
+            remote: remote,
+            stream: InputStream(data: tail),
+            from: .offset(byte: 8),
+            maxBlockSize: 4
+        ) { _, _, _, _ in true }
+
+        await #expect(try connection.loadFile(at: remote) == prefix + tail)
+    }
+
+    @Test("streamToRemote cancellation leaves no remote file")
+    func streamToRemoteCancellationLeavesNoRemoteFile() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-upload-cancel") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let stream = InputStream(data: Data(repeating: 3, count: 12))
+        try await connection.streamToRemote(remote: remote, stream: stream, maxBlockSize: 4) { transferred, _, _, _ in
+            transferred < 4
+        }
+
+        await #expect(throws: (any Error).self) {
+            try await connection.stat(at: remote)
+        }
+    }
+
+    @Test("stream transfers reject a closed stream")
+    func streamTransfersRejectClosedStream() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-closed") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let input = InputStream(data: Data([1, 2, 3]))
+        input.open()
+        input.close()
+        let uploadError = SMB.Error.posix(
+            code: POSIXErrorCode.EBADF.rawValue,
+            operation: "SMB.Connection.streamToRemote",
+            message: "Stream is closed"
+        )
+        await #expect(throws: uploadError) {
+            try await connection.streamToRemote(remote: remote, stream: input) { _, _, _, _ in true }
+        }
+        await #expect(throws: (any Error).self) {
+            try await connection.stat(at: remote)
+        }
+
+        try await connection.dumpToFile(Data([1, 2, 3]), to: remote)
+        let output = OutputStream.toMemory()
+        output.open()
+        output.close()
+        let downloadError = SMB.Error.posix(
+            code: POSIXErrorCode.EBADF.rawValue,
+            operation: "SMB.Connection.streamFromRemote",
+            message: "Stream is closed"
+        )
+        await #expect(throws: downloadError) {
+            try await connection.streamFromRemote(remote: remote, stream: output) { _, _, _, _ in true }
+        }
+    }
+
+    @Test("streamFromRemote writes the remote file to a memory stream")
+    func streamFromRemoteWritesToMemoryStream() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-download") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let expected = Data((0 ..< 10).map { UInt8(200 + $0) })
+        try await connection.dumpToFile(expected, to: remote)
+
+        let stream = OutputStream.toMemory()
+        defer { stream.close() }
+
+        let progress = SendableBox<[UInt64]>([])
+        try await connection
+            .streamFromRemote(remote: remote, stream: stream, maxBlockSize: 4) { transferred, total, _, _ in
+                progress.value.append(transferred)
+                #expect(total == UInt64(expected.count))
+                return true
+            }
+
+        let written = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+        #expect(written == expected)
+        #expect(progress.value == [4, 8, 10, 10])
+        #expect(stream.streamStatus == .open)
+    }
+
+    @Test("streamFromRemote appends to an open stream from an offset")
+    func streamFromRemoteAppendsToOpenStreamFromOffset() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-download-resume") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let source = Data((0 ..< 10).map { UInt8($0) })
+        try await connection.dumpToFile(source, to: remote)
+
+        let stream = OutputStream.toMemory()
+        stream.open()
+        defer { stream.close() }
+        let head = [UInt8]("head".utf8)
+        #expect(stream.write(head, maxLength: head.count) == head.count)
+
+        try await connection
+            .streamFromRemote(
+                remote: remote,
+                stream: stream,
+                from: .offset(byte: 6),
+                maxBlockSize: 4
+            ) { _, total, _, _ in
+                #expect(total == 4)
+                return true
+            }
+
+        let written = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+        #expect(written == Data(head) + source.suffix(4))
+    }
+
+    @Test("streamFromRemote cancellation keeps the bytes written so far")
+    func streamFromRemoteCancellationKeepsWrittenBytes() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-download-cancel") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let source = Data((0 ..< 12).map { UInt8($0) })
+        try await connection.dumpToFile(source, to: remote)
+
+        let stream = OutputStream.toMemory()
+        defer { stream.close() }
+        try await connection.streamFromRemote(remote: remote, stream: stream, maxBlockSize: 4) { transferred, _, _, _ in
+            transferred < 4
+        }
+
+        let written = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+        #expect(written == source.prefix(4))
+    }
+
+    @Test("streamFromRemote fails when the stream is full")
+    func streamFromRemoteFailsWhenStreamIsFull() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-download-full") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data(repeating: 9, count: 10), to: remote)
+
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4)
+        defer { buffer.deallocate() }
+        let stream = OutputStream(toBuffer: buffer, capacity: 4)
+        defer { stream.close() }
+
+        await #expect(throws: (any Error).self) {
+            try await connection
+                .streamFromRemote(remote: remote, stream: stream, maxBlockSize: 4) { _, _, _, _ in true }
+        }
+    }
+
+    @Test("an actor can stream into an output stream it owns")
+    func actorCanStreamIntoOwnStream() async throws {
+        let connection = try await publicConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("stream-download-actor") + ".bin"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let expected = Data("actor".utf8)
+        try await connection.dumpToFile(expected, to: remote)
+
+        let downloader = StreamDownloader()
+        await #expect(try downloader.download(remote, using: connection) == expected)
+    }
+}
+
+/// Keeps an output stream as actor state, so the test above checks that actors can pass their own streams to
+/// `streamFromRemote`.
+private actor StreamDownloader {
+    private let stream = OutputStream.toMemory()
+
+    func download(_ remote: String, using connection: SMB.Connection) async throws -> Data? {
+        try await connection.streamFromRemote(remote: remote, stream: stream) { _, _, _, _ in true }
+        return stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+    }
+}
+
 private func publicConnection() async throws -> SMB.Connection {
     try await SMB.connect(
         server: SMB.Server(host: testServerHost),

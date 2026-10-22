@@ -122,6 +122,40 @@ struct CookbookUploadsDownloadsTests {
         let data = try await connection.loadFile(at: "report.pdf", chunkSize: maxRead)
         _ = data.count
     }
+
+    @Test("streamToRemote and streamFromRemote compile and run")
+    func streamTransfers() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+
+        let remote = uniquePath("cookbook-stream") + ".txt"
+        defer { try? await connection.removeFile(at: remote) }
+
+        let payload = Data("Hello, SMB!".utf8)
+        let input = InputStream(data: payload)
+
+        try await connection.streamToRemote(
+            remote: remote,
+            stream: input,
+            length: UInt64(payload.count)
+        ) { completed, total, _, _ in
+            _ = completed
+            _ = total
+            return true
+        }
+
+        let output = OutputStream.toMemory()
+
+        try await connection.streamFromRemote(remote: remote, stream: output) { completed, total, _, _ in
+            _ = completed
+            _ = total
+            return true
+        }
+
+        let downloaded = output.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
+        output.close()
+        #expect(downloaded == payload)
+    }
 }
 
 /// The actor from the "Awaiting inside the progress closure" example in `docs/uploads-downloads.md`.

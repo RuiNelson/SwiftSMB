@@ -53,6 +53,8 @@ public extension SMB.Error {
         case smb2ShareEnumSync
         case smbConnectionDownloadFile
         case smbConnectionUploadFile
+        case smbConnectionStreamToRemote
+        case smbConnectionStreamFromRemote
         case smbConnectionTransferBlockSize
         case smbConnectionRemoveItem
         case smbConnectionListDirectory
@@ -102,6 +104,8 @@ public extension SMB.Error {
             case .smb2ShareEnumSync: "smb2_share_enum_sync"
             case .smbConnectionDownloadFile: "SMB.Connection.downloadFile"
             case .smbConnectionUploadFile: "SMB.Connection.uploadFile"
+            case .smbConnectionStreamToRemote: "SMB.Connection.streamToRemote"
+            case .smbConnectionStreamFromRemote: "SMB.Connection.streamFromRemote"
             case .smbConnectionTransferBlockSize: "SMB.Connection.transferBlockSize"
             case .smbConnectionRemoveItem: "SMB.Connection.removeItem"
             case .smbConnectionListDirectory: "SMB.Connection.listDirectory"
