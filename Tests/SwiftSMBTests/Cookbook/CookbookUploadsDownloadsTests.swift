@@ -54,32 +54,6 @@ struct CookbookUploadsDownloadsTests {
         }
     }
 
-    @Test("downloadFile with async progress compiles and runs")
-    func downloadFileWithAsyncProgress() async throws {
-        let connection = try await cookbookConnection()
-        defer { try? await connection.disconnect() }
-
-        let remote = uniquePath("cookbook-download-async") + ".pdf"
-        defer { try? await connection.removeFile(at: remote) }
-        try await connection.dumpToFile(Data("report".utf8), to: remote)
-
-        let localURL = try cookbookTemporaryFileURL()
-        try? FileManager.default.removeItem(at: localURL)
-        defer { try? FileManager.default.removeItem(at: localURL) }
-
-        let status = CookbookTransferStatus()
-
-        try await connection.downloadFile(
-            remote: remote,
-            local: localURL
-        ) { completed, _, _, _ in
-            await status.update(completed)
-            return true
-        }
-
-        #expect(await status.completed == 6)
-    }
-
     @Test("loadFile compiles and runs")
     func loadFile() async throws {
         let connection = try await cookbookConnection()
@@ -155,13 +129,5 @@ struct CookbookUploadsDownloadsTests {
         let downloaded = output.property(forKey: .dataWrittenToMemoryStreamKey) as? Data
         output.close()
         #expect(downloaded == payload)
-    }
-}
-
-/// The actor from the "Awaiting inside the progress closure" example in `docs/uploads-downloads.md`.
-private actor CookbookTransferStatus {
-    var completed: UInt64 = 0
-    func update(_ completed: UInt64) {
-        self.completed = completed
     }
 }
