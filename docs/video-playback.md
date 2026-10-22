@@ -80,6 +80,9 @@ When no type can be inferred, `.movie` is used.
 The asset reads through the connection you created it from and keeps it alive for as long as the asset exists. Keep the
 connection connected while playing: after `disconnect()`, further reads fail.
 
+While the asset is alive, it keeps the file open on the server, so other clients can't delete or rename it until
+the asset is released.
+
 Creating the asset doesn't reach the server. Problems such as a missing file, missing permissions, or a lost connection
 show up the way AVFoundation reports any loading failure: `asset.load(_:)` throws, and the player item's `status`
 becomes `.failed` with the SMB error in `error`.
@@ -100,3 +103,8 @@ let observation = item.observe(\.status) { item, _ in
   blocks of `SMB.Connection.acceptedReadBlockSize`. Set `SMB.Configuration.transferBlockSize` to tune it.
 - Operations on one connection run one after another, so playback shares the connection with anything else you do on
   it. Use a separate connection for playback if you run large transfers at the same time.
+
+## Sample app
+
+[SampleApp/SMB+AV](../SampleApp/SMB+AV) is a minimal SwiftUI app that connects to a share and plays an audio or video
+file from it, on iOS and macOS. Its `ContentView.swift` is the whole example.

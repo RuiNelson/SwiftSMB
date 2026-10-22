@@ -72,3 +72,4 @@ tmp/
 .DS_Store
 /build
 /.vscode
+/SampleApp/SMB+AV/MediaPlayerOverSMB.xcodeproj/project.xcworkspace
