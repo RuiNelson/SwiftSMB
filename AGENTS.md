@@ -165,6 +165,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - After moving the pin, inspect the public C headers, especially `Sources/libsmb2/upstream/include/smb2/libsmb2.h`, `.../libsmb2-share-enum.h`, and `.../libsmb2-raw.h`, for new APIs that should be wrapped by `Sources/SwiftSMB/Bridge` and exposed under `SMB`.
 - Do not expose every upstream addition automatically. Prefer APIs that fit SwiftSMB's client-file-management scope. Large optional subsystems such as full DCE/RPC should stay out of the SwiftPM product unless there is a deliberate public API and linking decision.
 - If upstream adds non-C source files under `upstream/lib`, moves headers, or splits libraries (`libdcerpc` already is a separate upstream project that SwiftSMB does not build), update the `Package.swift` excludes/sources, the forwarders, and `include/module.modulemap` so `swift build` compiles only the intended `libsmb2` client surface.
+- Run `swift package clean` after moving the pin. SwiftPM does not rebuild `SwiftSMB` when `libsmb2-private.h` changes, so the bridge keeps the old `struct smb2_context` field offsets (e.g. `clearError` writes `nterror` to the wrong place) and tests fail with stale NT statuses.
 - Run `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test` after dependency updates. If new wrapped functionality touches real SMB server behavior, start the Docker server with `source TestServer/up.sh`, run a focused integration test.
 - Once the build and tests pass, commit the submodule pointer together with any glue changes in `Sources/libsmb2`.
 
