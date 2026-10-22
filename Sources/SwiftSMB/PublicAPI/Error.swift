@@ -88,6 +88,31 @@ public extension SMB {
             debugDescription
         }
 
+        /// The POSIX error code that corresponds to this error, if there is one.
+        ///
+        /// POSIX errors report their own code, and SMB status errors report the code libsmb2 maps their status to, such
+        /// as `ENOENT` for ``SMBStatus/objectNameNotFound``. A closed connection reports `ENOTCONN`, an invalid
+        /// argument `EINVAL`, and a failed context creation `ENOMEM`.
+        public var posixCode: Int32? {
+            switch self {
+            case .contextCreationFailed:
+                ENOMEM
+            case .operationRequestedAfterConnectionClosed:
+                ENOTCONN
+            case .invalidArgument:
+                EINVAL
+            case let .posix(code, _, _),
+                 let .unknownPOSIX(code, _, _):
+                code
+            case let .ntStatus(status, posixCode, _, _):
+                posixCode ?? Self.mappedPOSIXCode(ntStatus: status.rawValue)
+            case let .unknownNTStatus(rawValue, posixCode, _, _):
+                posixCode ?? Self.mappedPOSIXCode(ntStatus: rawValue)
+            case .unknown:
+                nil
+            }
+        }
+
         /// The bridge operation that produced this error, if available.
         public var operation: String? {
             if case let .invalidArgument(_, operation) = self {

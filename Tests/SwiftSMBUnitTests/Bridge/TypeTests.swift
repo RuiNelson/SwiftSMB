@@ -559,6 +559,29 @@ struct SMBErrorTests {
         #expect(error.operation == "smb2_stat")
         #expect(error.description.contains("SMB2_STATUS_NO_SUCH_FILE"))
     }
+
+    @Test("posixCode maps every case to a POSIX code") func posixCodeMapsEveryCase() {
+        #expect(SMB.Error.contextCreationFailed.posixCode == ENOMEM)
+        #expect(SMB.Error.operationRequestedAfterConnectionClosed.posixCode == ENOTCONN)
+        #expect(SMB.Error.invalidArgument(cause: .invalidShareName("x"), onOperation: .smb2ConnectShare)
+            .posixCode == EINVAL)
+        #expect(SMB.Error.posix(code: EEXIST, operation: "smb2_open", message: "").posixCode == EEXIST)
+        #expect(SMB.Error.unknownPOSIX(code: 4242, operation: "smb2_open", message: "").posixCode == 4242)
+        #expect(SMB.Error.unknown(operation: "smb2_connect", message: "").posixCode == nil)
+    }
+
+    @Test("posixCode maps SMB statuses like libsmb2") func posixCodeMapsStatusesLikeLibsmb2() {
+        #expect(SMB.Error.ntStatus(.objectNameNotFound, posixCode: nil, operation: "smb2_open", message: "")
+            .posixCode == ENOENT)
+        #expect(SMB.Error.ntStatus(.accessDenied, posixCode: nil, operation: "smb2_open", message: "")
+            .posixCode == EACCES)
+        // An attached POSIX code wins over the mapped one.
+        #expect(SMB.Error.ntStatus(.accessDenied, posixCode: EPERM, operation: "smb2_open", message: "")
+            .posixCode == EPERM)
+        // libsmb2 maps statuses it doesn't know to EIO.
+        #expect(SMB.Error.unknownNTStatus(rawValue: 0xC0FF_FFFF, posixCode: nil, operation: "smb2_open", message: "")
+            .posixCode == EIO)
+    }
 }
 
 // MARK: - Path validation
