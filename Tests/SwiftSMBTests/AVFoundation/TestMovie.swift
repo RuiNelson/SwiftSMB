@@ -69,10 +69,50 @@
             return url
         }
 
+        /// Writes the movie repeated `repetitions` times to a temporary local file and returns its URL.
+        ///
+        /// The copies are remuxed without re-encoding, so long movies cost no more encoder work than one.
+        @available(macOS 15, iOS 18, tvOS 18, macCatalyst 18, visionOS 2, *)
+        static func makeRepeated(_ repetitions: Int) async throws -> URL {
+            let single = try await make()
+            defer { try? FileManager.default.removeItem(at: single) }
+
+            // A track doesn't keep its asset alive, and the export needs it.
+            let source = AVURLAsset(url: single)
+            let track = try #require(try await source.loadTracks(withMediaType: .video).first)
+            let timeRange = try await track.load(.timeRange)
+            let composition = AVMutableComposition()
+            let output = try #require(composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ))
+            for _ in 0 ..< repetitions {
+                try output.insertTimeRange(timeRange, of: track, at: composition.duration)
+            }
+
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+            let session = try #require(AVAssetExportSession(
+                asset: composition,
+                presetName: AVAssetExportPresetPassthrough
+            ))
+            try await session.export(to: url, as: .mp4)
+            return url
+        }
+
         /// Uploads a freshly generated movie to `path` on the connection's share.
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
         static func upload(to path: String, on connection: SMB.Connection) async throws {
-            let local = try await make()
+            try await upload(make(), to: path, on: connection)
+        }
+
+        /// Uploads a freshly generated movie, repeated `repetitions` times, to `path` on the connection's share.
+        @available(macOS 15, iOS 18, tvOS 18, macCatalyst 18, visionOS 2, *)
+        static func uploadRepeated(_ repetitions: Int, to path: String, on connection: SMB.Connection) async throws {
+            try await upload(makeRepeated(repetitions), to: path, on: connection)
+        }
+
+        /// Uploads a local movie to `path` on the connection's share, then deletes the local file.
+        private static func upload(_ local: URL, to path: String, on connection: SMB.Connection) async throws {
             defer { try? FileManager.default.removeItem(at: local) }
             try await connection.dumpToFile(Data(contentsOf: local), to: path)
         }

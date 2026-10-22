@@ -81,7 +81,8 @@ The asset reads through the connection you created it from and keeps it alive fo
 connection connected while playing: after `disconnect()`, further reads fail.
 
 While the asset is alive, it keeps the file open on the server, so other clients can't delete or rename it until
-the asset is released.
+the asset is released. Releasing the asset, or the player item that holds it, stops the reads still in progress, even
+those AVFoundation never cancels, and then closes the file.
 
 Creating the asset doesn't reach the server. Problems such as a missing file, missing permissions, or a lost connection
 show up the way AVFoundation reports any loading failure: `asset.load(_:)` throws, and the player item's `status`

@@ -119,6 +119,61 @@
             }
         }
 
+        @available(macOS 15, iOS 18, tvOS 18, macCatalyst 18, visionOS 2, *)
+        @Test("releasing a player item stops serving its requests", .timeLimit(.minutes(1)))
+        func releasingPlayerItemStopsServingRequests() async throws {
+            let connection = try await mediaConnection()
+            defer { try? await connection.disconnect() }
+
+            // Five minutes long, so a seek near the end needs data the player hasn't buffered.
+            let path = uniquePath("long-movie") + ".mp4"
+            try await TestMovie.uploadRepeated(100, to: path, on: connection)
+            defer { await removeWhenReleased(path, on: connection) }
+
+            // Another connection holds a lock that a blocking lock on the media connection waits for. Every later
+            // operation on the media connection, including the loader's reads, waits behind it.
+            let owner = try await mediaConnection()
+            defer { try? await owner.disconnect() }
+            let lockPath = uniquePath("stall") + ".txt"
+            defer { try? await owner.removeFile(at: lockPath) }
+            try await owner.dumpToFile(Data("stall".utf8), to: lockPath)
+            let ownerFile = try await owner.openFile(at: lockPath, accessMode: .readWrite)
+            defer { try? await ownerFile.close() }
+            let stalledFile = try await connection.openFile(at: lockPath, accessMode: .readWrite)
+            defer { try? await stalledFile.close() }
+            try await ownerFile.lock(.exclusive, nonBlocking: true)
+
+            // No local may hold the asset or the loader strongly: the test checks that releasing the item frees them.
+            var asset: AVURLAsset? = connection.makeAsset(at: path)
+            weak let loader = (asset as? SMBMediaAsset)?.loader
+            try #require(loader != nil)
+            var item: AVPlayerItem? = asset.map { AVPlayerItem(asset: $0) }
+            asset = nil
+            item?.preferredForwardBufferDuration = 1
+            var player: AVPlayer? = AVPlayer(playerItem: item)
+            try #require(try await eventually(within: 15) { item?.status == .readyToPlay })
+
+            let stall = Task { try await stalledFile.lock(.exclusive, nonBlocking: false) }
+            // Ends the stall however the test exits, before the cleanup above needs the connection.
+            defer { stall.cancel() }
+            // Long enough for the server to answer the lock as pending.
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+
+            let end = CMTime(seconds: 290, preferredTimescale: 600)
+            player?.seek(to: end, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: { _ in })
+            try #require(try await eventually { (loader?.servingRequestCount ?? 0) > 0 })
+
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            item = nil
+            // AVFoundation never cancels the requests of a released item, so the loader must stop serving them itself.
+            #expect(try await eventually { loader == nil }, "The loader outlived its asset while serving a request")
+
+            try await ownerFile.unlock()
+            try await stall.value
+            try await stalledFile.unlock()
+        }
+
         /// Writes a small H.264 movie, uploads it, and runs `body` with its share-relative path.
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
         private func withUploadedMovie(
@@ -156,6 +211,15 @@
             share: TestShare.public,
             configuration: SMB.Configuration(transferBlockSize: 16 * 1024)
         )
+    }
+
+    /// Polls `condition` until it holds or `seconds` pass, and returns whether it holds.
+    private func eventually(within seconds: TimeInterval = 5, _ condition: () -> Bool) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition(), Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return condition()
     }
 
     /// The media type the asset reports to AVFoundation.

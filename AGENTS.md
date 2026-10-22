@@ -64,8 +64,8 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │       └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 │   └── SwiftSMBTests                         # Integration tests; need the Docker test server.
 │       ├── AVFoundation                      # SwiftSMBAVFoundation integration tests.
-│       │   ├── SMBMediaAssetTests.swift      # Asset loading, frame decoding, playback readiness, errors.
-│       │   └── TestMovie.swift               # Generates and uploads a small H.264 movie at test time.
+│       │   ├── SMBMediaAssetTests.swift      # Asset loading, frame decoding, playback readiness, errors, teardown.
+│       │   └── TestMovie.swift               # Generates a small H.264 movie at test time; remuxes long copies of it.
 │       ├── Bridge                            # Bridge-level Samba integration tests.
 │       │   ├── CancelTests.swift             # SMB2 CANCEL of pending notify requests.
 │       │   ├── ConnectionTests.swift         # Context configuration and connection lifecycle tests.
@@ -158,6 +158,12 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   and serves each loading request in its own task with positional reads, so concurrent requests never race on the
   handle offset. It touches `AVAssetResourceLoadingRequest` only on its dedicated delegate queue, skips requests that
   are already cancelled or finished, and never finishes a request it was told to cancel.
+- AVFoundation never cancels the loading requests of an asset it releases, not even after `replaceCurrentItem(with:
+  nil)`. The serving tasks therefore capture a `RequestServer` value and never the loader: releasing the asset releases
+  the loader, whose `deinit` cancels them. A task that retained the loader would keep reading the rest of its range
+  (for `AVPlayer`, often the whole file) with the file open and the connection busy. The teardown test stalls the
+  media connection behind a blocking byte-range lock held by another connection, so a request is reliably still in
+  flight when the item is released.
 - AVFoundation keeps only the code of the error a request finishes with and reads it as a POSIX errno (a plain
   `SMB.Error` would arrive as its enum case index), so failures are finished with `NSPOSIXErrorDomain` errors built from
   `SMB.Error.posixCode`.

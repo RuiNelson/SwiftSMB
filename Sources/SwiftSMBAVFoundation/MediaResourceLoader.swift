@@ -16,21 +16,35 @@
     ///
     /// Each loading request is served by its own task. All tasks share a single read-only file handle and read with
     /// ``SMB/File/read(upTo:atOffset:transferChunkSize:)``, which never moves the handle's offset.
+    ///
+    /// AVFoundation doesn't cancel the requests of an asset it releases, so the tasks never retain the loader:
+    /// releasing the asset releases the loader, and `deinit` cancels the tasks.
     @available(macOS 11, iOS 14, tvOS 14, macCatalyst 14, visionOS 1, *)
     final class MediaResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
         /// The delegate queue. Loading requests are only touched on this queue.
-        let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.MediaResourceLoader")
+        let queue: DispatchQueue
 
         /// The media type reported to AVFoundation.
         let contentType: UTType
 
-        private let source: MediaSource
+        private let server: RequestServer
         private let lock = NSLock()
         private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 
         init(connection: SMB.Connection, path: String, contentType: UTType) {
-            source = MediaSource(connection: connection, path: path)
+            let queue = DispatchQueue(label: "com.ruinelson.SwiftSMB.MediaResourceLoader")
+            self.queue = queue
             self.contentType = contentType
+            server = RequestServer(
+                source: MediaSource(connection: connection, path: path),
+                contentType: contentType,
+                queue: queue
+            )
+        }
+
+        /// The number of loading requests still being served.
+        var servingRequestCount: Int {
+            lock.withLock { tasks.count }
         }
 
         deinit {
@@ -46,10 +60,12 @@
             let request = LoadingRequest(loadingRequest)
             let range = loadingRequest.dataRequest.map(RequestedRange.init)
             let id = ObjectIdentifier(loadingRequest)
-            // Holding the lock while creating the task guarantees it is registered before it can remove itself.
+            let server = server
+            // Holding the lock while creating the task guarantees it is registered before it can remove itself. The
+            // task captures the server, not the loader, so it never keeps the loader alive.
             lock.withLock {
                 tasks[id] = Task { [weak self] in
-                    await self?.serve(request, range: range)
+                    await server.serve(request, range: range)
                     self?.removeTask(id)
                 }
             }
@@ -64,8 +80,17 @@
         private func removeTask(_ id: ObjectIdentifier) -> Task<Void, Never>? {
             lock.withLock { tasks.removeValue(forKey: id) }
         }
+    }
 
-        private func serve(_ request: LoadingRequest, range: RequestedRange?) async {
+    /// Serves loading requests without referencing their loader.
+    @available(macOS 11, iOS 14, tvOS 14, macCatalyst 14, visionOS 1, *)
+    private struct RequestServer: Sendable {
+        let source: MediaSource
+        let contentType: UTType
+        /// The loader's delegate queue.
+        let queue: DispatchQueue
+
+        func serve(_ request: LoadingRequest, range: RequestedRange?) async {
             do {
                 let file = try await source.prepared()
                 let contentType = contentType
@@ -96,7 +121,7 @@
                 onQueue(request) { $0.finishLoading() }
             }
             catch is CancellationError {
-                // AVFoundation cancelled the request, so it must not be finished.
+                // AVFoundation cancelled the request, or released its asset, so it must not be finished.
             }
             catch {
                 let failure = Self.loadingError(for: error)

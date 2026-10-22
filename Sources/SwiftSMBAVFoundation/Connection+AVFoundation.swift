@@ -25,7 +25,8 @@
         /// missing file, `ENOTCONN` for a closed connection.
         ///
         /// The asset keeps this connection alive while it exists. Disconnecting the connection makes further reads
-        /// fail. All reads share the connection with any other operations it performs.
+        /// fail. All reads share the connection with any other operations it performs. Releasing the asset, or the
+        /// player item that holds it, stops the reads still in progress.
         ///
         /// ```swift
         /// let asset = connection.makeAsset(at: "Videos/holiday.mp4")
