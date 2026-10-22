@@ -580,8 +580,7 @@ class Bridge {
     }
 
     private static func _close(context: Context, file: FileHandle) throws {
-        guard context.isAlive else { return }
-        guard let raw = file.takeRaw() else { return }
+        guard context.isAlive, let raw = file.takeRaw() else { return }
         context.fileHandles.removeValue(forKey: ObjectIdentifier(file))
         let state = CloseState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()

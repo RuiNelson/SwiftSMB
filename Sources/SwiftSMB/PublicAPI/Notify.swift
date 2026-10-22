@@ -517,7 +517,7 @@ final class SMBNotifyWatcherState: Sendable {
 
     /// Services the SMB context, delivering each completed notification and re-arming until cancelled.
     private func run() async {
-        var failure: (any Swift.Error)?
+        var failure: any Swift.Error?
         do {
             while !isCancellationRequested {
                 if let result = takeCompletedResult() {

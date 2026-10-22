@@ -106,15 +106,8 @@ private let forbiddenNames = [
 
 extension String: CanBeSMBShareName {
     public var isValidSMBShareName: Bool {
-        guard self.count > 0, self.count <= 80 else {
-            return false
-        }
-
-        guard self.first != ".", self.first != " " else {
-            return false
-        }
-
-        guard self.last != ".", self.last != " " else {
+        guard self.count > 0, self.count <= 80, self.first != ".", self.first != " ", self.last != ".",
+              self.last != " " else {
             return false
         }
 
@@ -122,11 +115,7 @@ extension String: CanBeSMBShareName {
             $0.isLetter || $0.isNumber || $0 == " " || allowedSpecialChars.contains($0)
         }
 
-        guard charsOK else {
-            return false
-        }
-        
-        guard !forbiddenNames.contains(uppercased()) else {
+        guard charsOK, !forbiddenNames.contains(uppercased()) else {
             return false
         }
         
