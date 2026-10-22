@@ -100,9 +100,22 @@
 
             let path = uniquePath("movie") + (fileExtension.map { "." + $0 } ?? "")
             try await TestMovie.upload(to: path, on: connection)
-            defer { try? await connection.removeFile(at: path) }
+            defer { await removeWhenReleased(path, on: connection) }
 
             try await body(connection, path)
+        }
+    }
+
+    /// Removes `path`, retrying while AVFoundation still holds the file open.
+    ///
+    /// The asset's loader keeps one read handle open until AVFoundation releases it, and the server refuses to delete a
+    /// file that is open (`STATUS_SHARING_VIOLATION`).
+    private func removeWhenReleased(_ path: String, on connection: SMB.Connection) async {
+        for _ in 0 ..< 30 {
+            if await (try? connection.removeFile(at: path)) != nil {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
