@@ -104,6 +104,90 @@ struct SMBConnectionDirectoryTests {
             try await connection.makeDirectory(at: file + "/child", makePath: true)
         }
     }
+
+    @Test("directory contains(where:) stops after the first match")
+    func directoryContainsStopsAfterFirstMatch() async throws {
+        let connection = try await publicDirectoryConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = try await makeDirectoryWithFiles(["a.txt", "b.txt", "c.txt"], on: connection)
+        defer { try? await connection.removeItem(at: root) }
+
+        let directory = try await connection.openDirectory(at: root)
+        defer { await directory.close() }
+
+        #expect(try await directory.contains { $0.name == "b.txt" })
+        let remaining = try await directory.readAll().map(\.name)
+        #expect(!remaining.contains("b.txt"))
+    }
+
+    @Test("directory contains(where:) exhausts the stream without a match")
+    func directoryContainsExhaustsStreamWithoutMatch() async throws {
+        let connection = try await publicDirectoryConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = try await makeDirectoryWithFiles(["a.txt"], on: connection)
+        defer { try? await connection.removeItem(at: root) }
+
+        let directory = try await connection.openDirectory(at: root)
+        defer { await directory.close() }
+
+        #expect(try await !directory.contains { $0.name == "missing.txt" })
+        #expect(try await directory.readNext() == nil)
+
+        try await directory.rewind()
+        #expect(try await directory.contains { $0.name == "a.txt" })
+    }
+
+    @Test("directory contains(where:) propagates predicate errors")
+    func directoryContainsPropagatesPredicateErrors() async throws {
+        struct PredicateError: Error, Equatable {
+        }
+
+        let connection = try await publicDirectoryConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = try await makeDirectoryWithFiles(["a.txt"], on: connection)
+        defer { try? await connection.removeItem(at: root) }
+
+        let directory = try await connection.openDirectory(at: root)
+        defer { await directory.close() }
+
+        await #expect(throws: PredicateError()) {
+            try await directory.contains { _ in throw PredicateError() }
+        }
+    }
+
+    @Test("directory contains(where:) checks cancellation before reading")
+    func directoryContainsChecksCancellationBeforeReading() async throws {
+        let connection = try await publicDirectoryConnection()
+        defer { try? await connection.disconnect() }
+
+        let root = try await makeDirectoryWithFiles(["a.txt"], on: connection)
+        defer { try? await connection.removeItem(at: root) }
+
+        let directory = try await connection.openDirectory(at: root)
+        defer { await directory.close() }
+
+        let search = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await directory.contains { _ in true }
+        }
+        await #expect(throws: CancellationError.self) {
+            try await search.value
+        }
+        #expect(try await directory.readAll().map(\.name).contains("a.txt"))
+    }
+}
+
+/// Creates a uniquely named directory containing empty files with the given names, and returns its path.
+private func makeDirectoryWithFiles(_ names: [String], on connection: SMB.Connection) async throws -> String {
+    let root = uniquePath("contains")
+    try await connection.makeDirectory(at: root)
+    for name in names {
+        try await connection.dumpToFile(Data(), to: root + "/" + name)
+    }
+    return root
 }
 
 private func publicDirectoryConnection() async throws -> SMB.Connection {

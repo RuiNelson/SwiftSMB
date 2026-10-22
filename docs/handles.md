@@ -225,6 +225,15 @@ Or read all remaining entries at once:
 let entries = try await directory.readAll()
 ```
 
+Or check whether any of the remaining entries matches a predicate, which may throw:
+
+```swift
+let hasPDF = try await directory.contains { $0.name.hasSuffix(".pdf") }
+```
+
+`contains(where:)` stops at the first match, so the stream continues after that entry, or is exhausted when nothing
+matches. Rewind or seek to read the entries again.
+
 ## Directory stream positioning
 
 You can bookmark a position and return to it later:

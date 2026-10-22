@@ -166,6 +166,16 @@ struct CookbookHandlesTests {
         }
     }
 
+    @Test("directory contains(where:) compiles and runs")
+    func directoryContains() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let directory = try await connection.openDirectory(at: "Anna/Inbox")
+        defer { await directory.close() }
+        let hasPDF = try await directory.contains { $0.name.hasSuffix(".pdf") }
+        _ = hasPDF
+    }
+
     @Test("directory tell and seek compiles and runs")
     func directoryTellAndSeek() async throws {
         let connection = try await cookbookConnection()
