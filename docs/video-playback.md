@@ -85,14 +85,21 @@ the asset is released.
 
 Creating the asset doesn't reach the server. Problems such as a missing file, missing permissions, or a lost connection
 show up the way AVFoundation reports any loading failure: `asset.load(_:)` throws, and the player item's `status`
-becomes `.failed` with the SMB error in `error`.
+becomes `.failed`. AVFoundation reports its own error and keeps only a POSIX code from the SMB error,
+``SMB.Error.posixCode``, as its underlying `NSPOSIXErrorDomain` error: `ENOENT` for a missing file, `EACCES` for missing
+permissions, and `ENOTCONN` after `disconnect()`.
 
 ```swift
 let item = connection.makePlayerItem(at: "Videos/holiday.mp4")
 // Keep the observation alive for as long as you need it.
 let observation = item.observe(\.status) { item, _ in
-    if item.status == .failed {
-        print("Playback failed: \(String(describing: item.error))")
+    guard item.status == .failed, let error = item.error as NSError? else { return }
+    let posixError = error.userInfo[NSUnderlyingErrorKey] as? NSError
+    if posixError?.domain == NSPOSIXErrorDomain, posixError?.code == Int(ENOENT) {
+        print("The file doesn't exist")
+    }
+    else {
+        print("Playback failed: \(error)")
     }
 }
 ```

@@ -99,7 +99,8 @@
                 // AVFoundation cancelled the request, so it must not be finished.
             }
             catch {
-                onQueue(request) { $0.finishLoading(with: error) }
+                let failure = Self.loadingError(for: error)
+                onQueue(request) { $0.finishLoading(with: failure) }
             }
         }
 
@@ -113,6 +114,17 @@
                 guard !loadingRequest.isCancelled, !loadingRequest.isFinished else { return }
                 body(loadingRequest)
             }
+        }
+
+        /// The error to finish a failed request with.
+        ///
+        /// AVFoundation keeps only the code of that error and reads it as a POSIX code, so an ``SMB/Error`` becomes the
+        /// POSIX error that matches it.
+        private static func loadingError(for error: any Error) -> any Error {
+            guard let error = error as? SMB.Error else {
+                return error
+            }
+            return NSError(domain: NSPOSIXErrorDomain, code: Int(error.posixCode ?? EIO))
         }
     }
 

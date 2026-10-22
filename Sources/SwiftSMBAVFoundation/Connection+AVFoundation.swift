@@ -20,7 +20,9 @@
         /// The asset reads the file on demand through this connection, so playback can start before the whole file has
         /// been transferred and seeking only fetches the byte ranges AVFoundation asks for. Nothing reaches the server
         /// until AVFoundation loads the asset; failures, such as a missing file or a closed connection, surface as the
-        /// asset's loading errors or as ``AVPlayerItem/status`` `.failed`.
+        /// asset's loading errors or as ``AVPlayerItem/status`` `.failed`. AVFoundation keeps only the SMB error's
+        /// ``SMB/Error/posixCode``, as the loading error's underlying `NSPOSIXErrorDomain` error: `ENOENT` for a
+        /// missing file, `ENOTCONN` for a closed connection.
         ///
         /// The asset keeps this connection alive while it exists. Disconnecting the connection makes further reads
         /// fail. All reads share the connection with any other operations it performs.

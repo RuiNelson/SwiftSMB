@@ -90,13 +90,32 @@
         }
 
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
-        @Test("missing file fails to load") func missingFileFailsToLoad() async throws {
+        @Test("missing file fails with a file-not-found error") func missingFileFailsToLoad() async throws {
             let connection = try await mediaConnection()
             defer { try? await connection.disconnect() }
 
             let asset = connection.makeAsset(at: uniquePath("missing") + ".mp4")
-            await #expect(throws: (any Error).self) {
+            do {
                 _ = try await asset.load(.duration)
+                Issue.record("Expected loading a missing file to fail")
+            }
+            catch {
+                #expect(posixCodes(in: error).contains(Int(ENOENT)), "\(error)")
+            }
+        }
+
+        @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
+        @Test("closed connection fails with a not-connected error") func closedConnectionFailsToLoad() async throws {
+            let connection = try await mediaConnection()
+            let asset = connection.makeAsset(at: uniquePath("closed") + ".mp4")
+            try await connection.disconnect()
+
+            do {
+                _ = try await asset.load(.duration)
+                Issue.record("Expected loading through a closed connection to fail")
+            }
+            catch {
+                #expect(posixCodes(in: error).contains(Int(ENOTCONN)), "\(error)")
             }
         }
 
@@ -143,5 +162,20 @@
     @available(macOS 11, iOS 14, tvOS 14, macCatalyst 14, visionOS 1, *)
     private func contentType(of asset: AVURLAsset) throws -> UTType {
         try #require(asset as? SMBMediaAsset).loader.contentType
+    }
+
+    /// The POSIX codes in `error` and its underlying errors.
+    ///
+    /// AVFoundation wraps a loading failure in its own error and keeps only its code, as a POSIX underlying error.
+    private func posixCodes(in error: any Error) -> [Int] {
+        var codes: [Int] = []
+        var current: NSError? = error as NSError
+        while let error = current {
+            if error.domain == NSPOSIXErrorDomain {
+                codes.append(error.code)
+            }
+            current = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return codes
     }
 #endif

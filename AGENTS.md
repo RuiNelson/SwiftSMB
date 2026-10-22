@@ -158,6 +158,9 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   and serves each loading request in its own task with positional reads, so concurrent requests never race on the
   handle offset. It touches `AVAssetResourceLoadingRequest` only on its dedicated delegate queue, skips requests that
   are already cancelled or finished, and never finishes a request it was told to cancel.
+- AVFoundation keeps only the code of the error a request finishes with and reads it as a POSIX errno (a plain
+  `SMB.Error` would arrive as its enum case index), so failures are finished with `NSPOSIXErrorDomain` errors built from
+  `SMB.Error.posixCode`.
 
 ## Testing
 
