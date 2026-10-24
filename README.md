@@ -172,6 +172,26 @@ player.play()
 
 See [Playing media with AVFoundation](docs/video-playback.md).
 
+### Reading and editing image metadata
+
+The `SwiftSMBEXIFKit` product reads the EXIF of images on the share with
+[EXIFKit](https://github.com/RuiNelson/EXIFKit), fetching only the byte ranges that hold metadata instead of the whole
+image:
+
+```swift
+import SwiftSMBEXIFKit // Re-exports EXIFKit.
+import UIKit
+
+let metadata = try await connection.imageMetadata(at: "Photos/IMG_0001.JPG")
+print(metadata.make, metadata.dateTimeOriginal)
+
+if let data = try await metadata.readThumbnail(), let thumbnail = UIImage(data: data) {
+    imageView.image = thumbnail
+}
+```
+
+To edit or remove metadata, see [Reading and editing image metadata](docs/image-metadata.md).
+
 ### More advanced cookbooks
 
 Longer examples belong in `docs/`:
@@ -182,6 +202,7 @@ Longer examples belong in `docs/`:
 - [Changing properties of files](docs/file-properties.md)
 - [Watching file system changes](docs/watching-changes.md)
 - [Playing media with AVFoundation](docs/video-playback.md)
+- [Reading and editing image metadata](docs/image-metadata.md)
 
 ## Adding this package to your Project
 
@@ -206,7 +227,8 @@ Then add `SwiftSMB` to the target that uses it:
 )
 ```
 
-To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`.
+To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`. To read and
+edit image metadata, also add `.product(name: "SwiftSMBEXIFKit", package: "SwiftSMB")`.
 
 SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.2.
 

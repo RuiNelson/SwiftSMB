@@ -51,10 +51,15 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │           ├── PathValidation.swift      # Share-name and share-relative path validation.
 │   │           ├── Protected.swift           # Mutex/NSLock-backed state wrapper for Sendable handles.
 │   │           └── ProtectedHandle.swift     # Protected<Handle?> wrapper shared by File/Directory/Connection.
-│   └── SwiftSMBAVFoundation                  # Optional AVFoundation integration (empty on watchOS/Linux/Android).
-│       ├── Connection+AVFoundation.swift     # Public makeAsset/makePlayerItem on SMB.Connection.
-│       ├── MediaResourceLoader.swift         # AVAssetResourceLoaderDelegate serving byte ranges with positional reads.
-│       └── SMBMediaAsset.swift               # AVURLAsset subclass that retains its loader; custom URL scheme.
+│   ├── SwiftSMBAVFoundation                  # Optional AVFoundation integration (empty on watchOS/Linux/Android).
+│   │   ├── Connection+AVFoundation.swift     # Public makeAsset/makePlayerItem on SMB.Connection.
+│   │   ├── MediaResourceLoader.swift         # AVAssetResourceLoaderDelegate serving byte ranges with positional reads.
+│   │   └── SMBMediaAsset.swift               # AVURLAsset subclass that retains its loader; custom URL scheme.
+│   └── SwiftSMBEXIFKit                       # Optional EXIFKit integration; re-exports EXIFKit.
+│       ├── Access.swift                      # Public EXIFKit/SMB.File/SMB.Connection read, edit, and strip APIs.
+│       ├── Exports.swift                     # `@_exported import EXIFKit`.
+│       ├── SMBFileHandleForEXIFKit.swift     # Internal AbstractFileHandle over an SMB.File, with positional I/O.
+│       └── SMBFileHandleForEXIFKitError.swift # Public errors neither SwiftSMB nor EXIFKit describe.
 ├── Tests
 │   ├── SwiftSMBUnitTests                     # Unit tests (no server needed); always run in CI.
 │   │   ├── Bridge
@@ -75,6 +80,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │       │   ├── OpLockTests.swift             # Oplock and lease bridge tests.
 │       │   └── ShareTests.swift              # Share enumeration and info tests.
 │       ├── Cookbook                          # README/docs example coverage.
+│       ├── EXIFKit                           # SwiftSMBEXIFKit integration tests.
 │       ├── PublicAPI                         # Public API integration tests.
 │       │   ├── SMBConnectionAuthTests.swift  # Authentication and connection setup tests.
 │       │   ├── SMBConnectionDirectoryTests.swift # Directory convenience public API tests.
@@ -135,7 +141,8 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Add DocC comments to public API at Apple documentation quality. Private and internal members may use concise one-line comments where useful. `SMB.SMBStatus` does not need exhaustive DocC.
 - Public share names and share-relative paths are validated through `SMBPathValidation.swift` using PathWorks. Leading `/` is normalized away for paths; the share root is accepted only when the operation explicitly allows it.
 - File convenience methods are named `loadFile(at:)` and `dumpToFile(_:to:)`; avoid reintroducing the older `readFile`/`writeFile` names.
-- `SMB.File.read(upTo:atOffset:transferChunkSize:)` reads through `smb2_pread`, which `Bridge.read(context:file:count:offset:)` wraps so the handle's current offset is restored. Keep it that way: concurrent positional reads on one handle (as `SwiftSMBAVFoundation` does) rely on it. `upTo` is required so a positional read is never unbounded.
+- `SMB.File.read(upTo:atOffset:transferChunkSize:)` reads through `smb2_pread`, which `Bridge.read(context:file:count:offset:)` wraps so the handle's current offset is restored. Keep it that way: concurrent positional reads on one handle (as `SwiftSMBAVFoundation` and `SwiftSMBEXIFKit` do) rely on it. `upTo` is required so a positional read is never unbounded.
+- `SMB.File.write(_:atOffset:transferChunkSize:)` is its counterpart through `smb2_pwrite` (`Bridge.write(context:file:data:offset:)`), which restores the offset the same way and ignores `.append`.
 - Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
 - File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe. The helpers resume awaiting callers from their queue instead of blocking them. Task cancellation is checked between blocks and throws `CancellationError`; returning `false` from the progress closure still cancels without throwing.
 - Stream transfers (`streamToRemote`/`streamFromRemote`) share the upload pipeline and transfer engine with the file transfers through the `UploadBlockReader`/`DownloadBlockWriter` protocols. The caller owns the stream: the methods open it if needed but never close it, touch it only on its worker's serial queue, never read past `length`, and wait for pending read-ahead or writes before returning. `Stream` isn't `Sendable`, so both methods are `nonisolated(nonsending)`, which lets actors pass streams they own; wrap the stream in its `@unchecked Sendable` worker before handing anything to the other async helpers, which run off the caller's actor.
@@ -169,6 +176,27 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - AVFoundation keeps only the code of the error a request finishes with and reads it as a POSIX errno (a plain
   `SMB.Error` would arrive as its enum case index), so failures are finished with `NSPOSIXErrorDomain` errors built from
   `SMB.Error.posixCode`.
+
+## EXIFKit Integration
+
+- `SwiftSMBEXIFKit` is a separate product so the core `SwiftSMB` target never links EXIFKit. It mirrors
+  `SwiftSFTPEXIFKit` (in the sibling SwiftSFTP repository): keep the two APIs aligned, apart from SwiftSMB's `at:` path
+  labels and the SFTP-only `synchronizesWithFsync` option (SMB FLUSH is always available). EXIFKit supports every
+  platform SwiftSMB does, so the module is never empty and the dependency is unconditional.
+- `Exports.swift` re-exports EXIFKit, because every public API takes or returns its types.
+- Like `SwiftSMBAVFoundation`, the module uses only the public `SwiftSMB` API; `SMB.File.write(_:atOffset:)` was added to
+  `SwiftSMB` for it.
+- `SMBFileHandleForEXIFKit` adapts an `SMB.File` to EXIFKit's `AbstractFileHandle` with positional reads and writes, so
+  unlike the SFTP adapter it needs no serial queue: EXIFKit's concurrent reads share one handle safely. It never closes
+  the handle, and checks the file size only after a short read, to tell `invalidRange` from `shortRead` without an
+  extra round trip on the common path.
+- The `SMB.Connection` edits write a temporary `.<name>.<random>.exifkit.tmp` file next to the destination and rename it
+  over the destination. libsmb2 renames with `ReplaceIfExists = 0`, so an existing destination first moves to a
+  `.exifkit.bak` sibling, which is moved back if the rename fails and removed afterwards. Both handles are closed
+  before the rename, because a server may refuse to rename a file that is open, as the source is in an in-place edit.
+- The public edits reject the same `SMB.File` as source and destination
+  (`SMBFileHandleForEXIFKitError.sameSourceAndDestination`): EXIFKit compares adapter identities, and each call wraps
+  the handles anew.
 
 ## Testing
 

@@ -17,7 +17,7 @@ if includeIntegrationTests {
     testTargets.append(
         .testTarget(
             name: "SwiftSMBTests",
-            dependencies: ["SwiftSMB", "SwiftSMBAVFoundation"],
+            dependencies: ["SwiftSMB", "SwiftSMBAVFoundation", "SwiftSMBEXIFKit"],
             path: "Tests/SwiftSMBTests",
         )
     )
@@ -44,6 +44,10 @@ let package = Package(
             targets: ["SwiftSMBAVFoundation"],
         ),
         .library(
+            name: "SwiftSMBEXIFKit",
+            targets: ["SwiftSMBEXIFKit"],
+        ),
+        .library(
             name: "libsmb2",
             type: .dynamic,
             targets: ["libsmb2"],
@@ -51,6 +55,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/RuiNelson/PathWorks.git", from: "2.0.1"),
+        .package(url: "https://github.com/RuiNelson/EXIFKit.git", from: "0.3.0"),
     ],
     targets: [
         .target(
@@ -92,6 +97,14 @@ let package = Package(
             name: "SwiftSMBAVFoundation",
             dependencies: [
                 "SwiftSMB",
+                .product(name: "PathWorks", package: "PathWorks"),
+            ],
+        ),
+        .target(
+            name: "SwiftSMBEXIFKit",
+            dependencies: [
+                "SwiftSMB",
+                .product(name: "EXIFKit", package: "EXIFKit"),
                 .product(name: "PathWorks", package: "PathWorks"),
             ],
         ),
