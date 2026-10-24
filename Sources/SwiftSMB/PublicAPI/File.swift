@@ -6,6 +6,9 @@
 // Copyright its respective authors
 //
 
+#if canImport(Android)
+    import Android
+#endif
 import Dispatch
 import Foundation
 
@@ -212,6 +215,54 @@ public extension SMB {
             }
         }
 
+        /// Reads bytes from the file, starting at an explicit offset.
+        ///
+        /// Unlike ``read(upTo:transferChunkSize:)``, this method doesn't use or move the file's current offset, so
+        /// concurrent tasks can read different ranges of the same handle without coordinating seeks.
+        ///
+        /// - Parameters:
+        ///   - upTo: The maximum number of bytes to read.
+        ///   - offset: The absolute file offset at which reading starts.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum read size.
+        /// - Returns: The bytes read. The value is shorter than `upTo` when the end of the file is reached, and empty
+        /// when `offset` is at or past the end of the file.
+        /// - Throws: ``SMB/Error`` if the read fails, or `CancellationError` if the task is cancelled between chunks.
+        public func read(
+            upTo: Int64,
+            atOffset offset: UInt64,
+            transferChunkSize: Int64? = nil
+        ) async throws -> Data {
+            try await connection.withOperation {
+                guard upTo > 0 else {
+                    return Data()
+                }
+
+                // Clamps to the server maximum and rejects non-positive sizes.
+                let chunkSize = try await connection
+                    .acceptedReadBlockSize(transferChunkSize.map { Int(clamping: $0) } ?? .max)
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Pread)
+
+                var result = Data()
+                var remaining = upTo
+                var position = offset
+
+                while remaining > 0 {
+                    try Task.checkCancellation()
+                    let byteCount = Int(min(remaining, Int64(chunkSize)))
+                    let data = try await Bridge.read(context: context, file: handle, count: byteCount, offset: position)
+                    guard !data.isEmpty else { break }
+                    result.append(data)
+                    remaining -= Int64(data.count)
+                    let (next, overflow) = position.addingReportingOverflow(UInt64(data.count))
+                    guard !overflow else { break }
+                    position = next
+                }
+
+                return result
+            }
+        }
+
         /// Writes bytes to the file.
         ///
         /// Data larger than the transfer chunk size is automatically split into accepted block sizes.
@@ -258,6 +309,74 @@ public extension SMB {
                     guard count > 0 else {
                         throw SMB.Error.unknown(
                             operation: "smb2_write",
+                            message: "Write made no progress before all data was written"
+                        )
+                    }
+                    written += Int64(count)
+                }
+
+                return written
+            }
+        }
+
+        /// Writes bytes to the file, starting at an explicit offset.
+        ///
+        /// Unlike ``write(_:transferChunkSize:)``, this method doesn't use or move the file's current offset, so
+        /// concurrent tasks can write different ranges of the same handle without coordinating seeks. Writing past the
+        /// end of the file extends it; the server fills the gap as its file system does, usually with zeros. The
+        /// ``OpenOptions/append`` option doesn't apply: the bytes always go to `offset`.
+        ///
+        /// - Parameters:
+        ///   - data: The bytes to write.
+        ///   - offset: The absolute file offset at which writing starts.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum write size.
+        /// Values above the server maximum are clamped.
+        /// - Returns: The total number of bytes written.
+        /// - Throws: ``SMB/Error`` if the write fails, makes no progress, or would end past the largest representable
+        /// offset, or `CancellationError` if the task is cancelled between chunks. Chunks written before cancellation
+        /// stay written.
+        @discardableResult
+        public func write(
+            _ data: Data,
+            atOffset offset: UInt64,
+            transferChunkSize: Int64? = nil
+        ) async throws -> Int64 {
+            try await connection.withOperation {
+                let maxWriteSize = try await Int64(connection.maxWriteSize)
+                let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
+                guard chunkSize > 0 else {
+                    throw SMB.Error.invalidArgument(
+                        cause: .blockSizeMustBeGreaterThanZero,
+                        onOperation: .smb2Pwrite
+                    )
+                }
+                guard UInt64(data.count) <= UInt64.max - offset else {
+                    throw SMB.Error.posix(
+                        code: POSIXErrorCode.EFBIG.rawValue,
+                        operation: "smb2_pwrite",
+                        message: "Write would end past the largest representable file offset"
+                    )
+                }
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Pwrite)
+
+                // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
+                let maxChunk = Int(min(chunkSize, Int64(data.count)))
+                var written: Int64 = 0
+
+                while written < data.count {
+                    try Task.checkCancellation()
+                    let start = data.startIndex + Int(written)
+                    let end = min(start + maxChunk, data.endIndex)
+                    let count = try await Bridge.write(
+                        context: context,
+                        file: handle,
+                        data: data.subdata(in: start ..< end),
+                        offset: offset + UInt64(written)
+                    )
+                    guard count > 0 else {
+                        throw SMB.Error.unknown(
+                            operation: "smb2_pwrite",
                             message: "Write made no progress before all data was written"
                         )
                     }

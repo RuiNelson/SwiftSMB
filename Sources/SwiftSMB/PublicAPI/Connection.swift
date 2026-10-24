@@ -31,6 +31,9 @@ public extension SMB {
         /// The configuration used to create the connection.
         public let configuration: Configuration
 
+        /// The credentials used to connect, kept so ``fork()`` can authenticate another connection.
+        private let credentials: Credentials?
+
         /// The maximum read size negotiated when connecting. It does not change afterwards.
         private let negotiatedMaxReadSize: UInt32
 
@@ -151,6 +154,7 @@ public extension SMB {
             server: Server,
             share: String,
             configuration: Configuration,
+            credentials: Credentials?,
             context: Bridge.Context,
             maxReadSize: UInt32,
             maxWriteSize: UInt32
@@ -158,6 +162,7 @@ public extension SMB {
             self.server = server
             self.share = share
             self.configuration = configuration
+            self.credentials = credentials
             negotiatedMaxReadSize = maxReadSize
             negotiatedMaxWriteSize = maxWriteSize
             self.context = context
@@ -209,6 +214,50 @@ public extension SMB {
                 await Bridge.waitForPendingOperations(on: context)
             }
             try await disconnect()
+        }
+
+        /// Opens another connection to the same share.
+        ///
+        /// The new connection has its own SMB session, so operations on it run in parallel with operations on this
+        /// connection, and each connection is disconnected independently. It authenticates with the credentials this
+        /// connection was opened with and uses its ``configuration``, except for two values that follow what is in
+        /// effect on this connection rather than what was configured:
+        ///
+        /// - ``Configuration/transferBlockSize`` is the larger of ``acceptedReadBlockSize`` and
+        /// ``acceptedWriteBlockSize``. Each direction is still clamped to the server maximum, so the new connection
+        /// reads and writes in the same blocks as this one.
+        /// - ``Configuration/timeout`` is the current command timeout, including changes made with ``setTimeout(_:)``.
+        ///
+        /// The dialect and the other negotiation options are negotiated again from the configured preferences.
+        ///
+        /// - Returns: A new connection to ``share``.
+        /// - Throws: ``SMB/Error`` if this connection is closed or the new connection cannot be established.
+        public func fork() async throws -> Connection {
+            try await self.withOperation {
+                let context = try requireContext()
+                var configuration = configuration
+
+                // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form.
+                let timeout = try await Int(Bridge.getTimeout(on: context))
+                if timeout != configuration.timeout ?? 0 {
+                    configuration.timeout = timeout
+                }
+
+                // An invalid block size or server maximum leaves the configured value, which then fails transfers on
+                // the new connection just as it does on this one.
+                let readBlockSize = try? await acceptedReadBlockSize()
+                let writeBlockSize = try? await acceptedWriteBlockSize()
+                if let blockSize = [readBlockSize, writeBlockSize].compactMap(\.self).max() {
+                    configuration.transferBlockSize = blockSize
+                }
+
+                return try await SMB.connect(
+                    server: server,
+                    credentials: credentials,
+                    share: share,
+                    configuration: configuration
+                )
+            }
         }
 
         /// Sends an SMB echo request and returns the round-trip latency.

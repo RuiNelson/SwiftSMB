@@ -53,4 +53,11 @@ extension SMB.Error {
 
         return .unknown(operation: operation, message: message)
     }
+
+    /// The POSIX code libsmb2 maps an NT status to, or `nil` when it maps it to none.
+    static func mappedPOSIXCode(ntStatus rawValue: UInt32) -> Int32? {
+        let code = nterror_to_errno(rawValue)
+        // libsmb2 maps success to 0 and STATUS_SHUTDOWN to a negative value.
+        return code > 0 ? code : nil
+    }
 }

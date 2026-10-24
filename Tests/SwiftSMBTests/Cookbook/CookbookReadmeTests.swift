@@ -38,6 +38,16 @@ struct CookbookReadmeTests {
         _ = connection.isConnected
     }
 
+    @Test("fork compiles and runs")
+    func forkCompilesAndRuns() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+
+        let secondConnection = try await connection.fork()
+        defer { try? await secondConnection.disconnect() }
+        _ = secondConnection.isConnected
+    }
+
     @Test("listDirectory compiles and runs")
     func listDirectoryCompilesAndRuns() async throws {
         let connection = try await cookbookConnection()

@@ -64,6 +64,7 @@ struct ConnectionInputRegressionTests {
             server: SMB.Server(host: "server"),
             share: "share",
             configuration: SMB.Configuration(),
+            credentials: nil,
             context: context,
             maxReadSize: 1024,
             maxWriteSize: 1024
@@ -95,6 +96,7 @@ struct ConnectionInputRegressionTests {
             server: SMB.Server(host: "server"),
             share: "share",
             configuration: SMB.Configuration(),
+            credentials: nil,
             context: context,
             maxReadSize: 1024,
             maxWriteSize: 1024

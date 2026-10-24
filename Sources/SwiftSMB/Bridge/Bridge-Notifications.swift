@@ -218,7 +218,9 @@ extension Bridge {
 
             let nextEntryOffset = readLittleEndianUInt32(from: buffer, at: offset)
             let action = readLittleEndianUInt32(from: buffer, at: offset + 4)
-            let nameLength = Int(readLittleEndianUInt32(from: buffer, at: offset + 8))
+            // Clamping keeps a server-supplied length that does not fit a 32-bit `Int` from trapping; the bounds checks
+            // below reject it.
+            let nameLength = Int(clamping: readLittleEndianUInt32(from: buffer, at: offset + 8))
             let nameOffset = offset + notifyChangeEntryHeaderLength
 
             guard nameLength % 2 == 0,
@@ -235,7 +237,7 @@ extension Bridge {
                 return .success(changes)
             }
 
-            let nextOffsetDelta = Int(nextEntryOffset)
+            let nextOffsetDelta = Int(clamping: nextEntryOffset)
             guard nextOffsetDelta >= notifyChangeEntryHeaderLength + nameLength,
                   nextOffsetDelta % 4 == 0,
                   nextOffsetDelta <= buffer.count - offset else {

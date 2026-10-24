@@ -1338,7 +1338,13 @@ class Bridge {
     /// Converts a date to libsmb2's basic-information timestamp representation without trapping.
     static func basicInfoTimeval(from date: Date?) throws -> smb2_timeval {
         guard let date else {
-            return smb2_timeval(tv_sec: 0xFFFF_FFFF, tv_usec: CLong(truncatingIfNeeded: UInt32.max))
+            // libsmb2 treats `tv_sec == 0xffffffff && tv_usec == 0xffffffff` as "leave unchanged". C converts both
+            // sides to the wider type, so the fields must hold 4294967295 when they are 64-bit and -1 (the same bits)
+            // when they are 32-bit, as on arm64_32.
+            return smb2_timeval(
+                tv_sec: time_t(truncatingIfNeeded: UInt32.max),
+                tv_usec: CLong(truncatingIfNeeded: UInt32.max)
+            )
         }
         let interval = date.timeIntervalSince1970
         let maximumInterval = Double(UInt64.max) / 10_000_000 - 11_644_473_600
@@ -1797,7 +1803,7 @@ class Bridge {
         var budget = UInt64(limits.maxTotalLength)
         // The advertised count is a maximum, so a smaller client cap is valid and prevents an untrusted server from
         // making us allocate billions of tiny chunks.
-        let maximumChunkCount = min(Int(limits.maxChunkCount), 256)
+        let maximumChunkCount = Int(min(limits.maxChunkCount, 256))
         while position < fileSize, chunks.count < maximumChunkCount, budget > 0 {
             let length = min(UInt64(limits.maxChunkLength), fileSize - position, budget)
             chunks.append(CopyChunk(sourceOffset: position, targetOffset: position, length: UInt32(length)))
