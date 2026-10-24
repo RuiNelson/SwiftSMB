@@ -2,9 +2,7 @@ name: Linux
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: linux-${{ github.workflow }}-${{ github.ref }}

@@ -2,9 +2,7 @@ name: Apple
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: apple-${{ github.workflow }}-${{ github.ref }}

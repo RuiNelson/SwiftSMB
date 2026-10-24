@@ -2,9 +2,7 @@ name: Android
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: android-${{ github.workflow }}-${{ github.ref }}
