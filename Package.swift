@@ -26,12 +26,13 @@ if includeIntegrationTests {
 let package = Package(
     name: "SwiftSMB",
     platforms: [
-        .macOS("10.15.4"),
-        .iOS("13.4"),
-        .macCatalyst("13.4"),
-        .tvOS("13.4"),
+        .macOS(.v11),
+        .iOS(.v14),
         .visionOS(.v1),
-        .watchOS("6.2"),
+        .watchOS(.v7),
+        .tvOS(.v14),
+        .macCatalyst(.v14),
+        .custom("android", versionString: "28"),
     ],
     products: [
         .library(
