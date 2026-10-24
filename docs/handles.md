@@ -175,6 +175,13 @@ try await file.seek(offset: 4096, from: .start)
 try await file.write(data)
 ```
 
+Or pass the offset to `write(_:atOffset:)`, which, like `read(upTo:atOffset:)`, neither uses nor moves the current
+offset. Writing past the end of the file extends it, and the gap reads back as zeros on Windows and Samba servers:
+
+```swift
+try await file.write(data, atOffset: 4096)
+```
+
 ## Seeking
 
 ``SMB.File.seek(offset:from:)`` moves the current file offset:

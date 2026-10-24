@@ -316,6 +316,74 @@ public extension SMB {
             }
         }
 
+        /// Writes bytes to the file, starting at an explicit offset.
+        ///
+        /// Unlike ``write(_:transferChunkSize:)``, this method doesn't use or move the file's current offset, so
+        /// concurrent tasks can write different ranges of the same handle without coordinating seeks. Writing past the
+        /// end of the file extends it; the server fills the gap as its file system does, usually with zeros. The
+        /// ``OpenOptions/append`` option doesn't apply: the bytes always go to `offset`.
+        ///
+        /// - Parameters:
+        ///   - data: The bytes to write.
+        ///   - offset: The absolute file offset at which writing starts.
+        ///   - transferChunkSize: The preferred transfer block size, or `nil` to use the server's maximum write size.
+        /// Values above the server maximum are clamped.
+        /// - Returns: The total number of bytes written.
+        /// - Throws: ``SMB/Error`` if the write fails, makes no progress, or would end past the largest representable
+        /// offset, or `CancellationError` if the task is cancelled between chunks. Chunks written before cancellation
+        /// stay written.
+        @discardableResult
+        public func write(
+            _ data: Data,
+            atOffset offset: UInt64,
+            transferChunkSize: Int64? = nil
+        ) async throws -> Int64 {
+            try await connection.withOperation {
+                let maxWriteSize = try await Int64(connection.maxWriteSize)
+                let chunkSize = min(transferChunkSize ?? maxWriteSize, maxWriteSize)
+                guard chunkSize > 0 else {
+                    throw SMB.Error.invalidArgument(
+                        cause: .blockSizeMustBeGreaterThanZero,
+                        onOperation: .smb2Pwrite
+                    )
+                }
+                guard UInt64(data.count) <= UInt64.max - offset else {
+                    throw SMB.Error.posix(
+                        code: POSIXErrorCode.EFBIG.rawValue,
+                        operation: "smb2_pwrite",
+                        message: "Write would end past the largest representable file offset"
+                    )
+                }
+                let context = try connection.requireContext()
+                let handle = try requireHandle(operation: .smb2Pwrite)
+
+                // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
+                let maxChunk = Int(min(chunkSize, Int64(data.count)))
+                var written: Int64 = 0
+
+                while written < data.count {
+                    try Task.checkCancellation()
+                    let start = data.startIndex + Int(written)
+                    let end = min(start + maxChunk, data.endIndex)
+                    let count = try await Bridge.write(
+                        context: context,
+                        file: handle,
+                        data: data.subdata(in: start ..< end),
+                        offset: offset + UInt64(written)
+                    )
+                    guard count > 0 else {
+                        throw SMB.Error.unknown(
+                            operation: "smb2_pwrite",
+                            message: "Write made no progress before all data was written"
+                        )
+                    }
+                    written += Int64(count)
+                }
+
+                return written
+            }
+        }
+
         /// Moves the current file offset.
         ///
         /// - Parameters:

@@ -454,6 +454,53 @@ struct SMBConnectionFileTests {
             #expect(data == content[range])
         }
     }
+
+    @Test("write at offset writes the range without moving the file offset, and past the end leaves zeros")
+    func writeAtOffsetLeavesFileOffset() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let path = uniquePath("pwrite") + ".bin"
+        defer { try? await connection.removeFile(at: path) }
+
+        let file = try await connection.openFile(at: path, accessMode: .readWrite, options: [.create, .truncate])
+        defer { try? await file.close() }
+
+        try await file.write(Data("0123456789".utf8))
+        try await file.seek(offset: 2, from: .start)
+        // Chunk size 2 forces multiple positional writes.
+        #expect(try await file.write(Data("abcde".utf8), atOffset: 4, transferChunkSize: 2) == 5)
+        #expect(try await file.seek(offset: 0, from: .current) == 2)
+        #expect(try await file.write(Data(), atOffset: 100) == 0)
+        #expect(try await file.write(Data([9]), atOffset: 12) == 1)
+
+        #expect(try await file.read(upTo: 100, atOffset: 0) == Data("0123abcde9".utf8) + [0, 0, 9])
+    }
+
+    @Test("concurrent writes at offsets on one handle land in their own ranges")
+    func concurrentWritesAtOffsets() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let path = uniquePath("pwrite") + ".bin"
+        defer { try? await connection.removeFile(at: path) }
+
+        let content = Data((0 ..< 64 * 1024).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        let file = try await connection.openFile(at: path, accessMode: .readWrite, options: [.create, .truncate])
+        defer { try? await file.close() }
+
+        let ranges = stride(from: 0, to: content.count, by: 4096).map { $0 ..< min($0 + 4096, content.count) }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for range in ranges {
+                group.addTask {
+                    try await file.write(content[range], atOffset: UInt64(range.lowerBound), transferChunkSize: 1000)
+                }
+            }
+            try await group.waitForAll()
+        }
+
+        #expect(try await connection.loadFile(at: path) == content)
+    }
 }
 
 private func publicFileConnection() async throws -> SMB.Connection {
