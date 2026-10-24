@@ -13,6 +13,8 @@ env:
 
 jobs:
   android:
+    # Pushes already run CI for this repository's branches; only pull requests from forks need their own run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     name: Android (aarch64)
     uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@0.0.11
     with:

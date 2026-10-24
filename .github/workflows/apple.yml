@@ -14,6 +14,8 @@ env:
 
 jobs:
   macos:
+    # Pushes already run CI for this repository's branches; only pull requests from forks need their own run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     name: macOS
     runs-on: macos-15
     timeout-minutes: 30
