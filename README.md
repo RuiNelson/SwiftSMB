@@ -212,7 +212,7 @@ Add SwiftSMB to your package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "3.0.0"),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.4.0"),
 ]
 ```
 
@@ -230,7 +230,7 @@ Then add `SwiftSMB` to the target that uses it:
 To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`. To read and
 edit image metadata, also add `.product(name: "SwiftSMBEXIFKit", package: "SwiftSMB")`.
 
-SwiftSMB currently declares support for macOS 10.15.4+, iOS 13.4+, macCatalyst 13.4+, tvOS 13.4+, visionOS 1+, and watchOS 6.2+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.2.
+SwiftSMB currently declares support for macOS 11+, iOS 14+, macCatalyst 14+, tvOS 14+, visionOS 1+, and watchOS 7+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
 
 ### Xcode Project
 
