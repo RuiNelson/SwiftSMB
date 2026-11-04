@@ -31,7 +31,7 @@ jobs:
         run: swift --version
 
       - name: Build
-        run: swift build --scratch-path /tmp/swift-build -v
+        run: swift build --scratch-path /tmp/swift-build --traits EXIFKit -v
 
       - name: Test (offline)
-        run: swift test --scratch-path /tmp/swift-test
+        run: swift test --scratch-path /tmp/swift-test --traits EXIFKit

@@ -182,7 +182,11 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - `SwiftSMBEXIFKit` is a separate product so the core `SwiftSMB` target never links EXIFKit. It mirrors
   `SwiftSFTPEXIFKit` (in the sibling SwiftSFTP repository): keep the two APIs aligned, apart from SwiftSMB's `at:` path
   labels and the SFTP-only `synchronizesWithFsync` option (SMB FLUSH is always available). EXIFKit supports every
-  platform SwiftSMB does, so the module is never empty and the dependency is unconditional.
+  platform SwiftSMB does, so the dependency has no platform condition.
+- The EXIFKit dependency sits behind the `EXIFKit` package trait, disabled by default, so consumers of the core
+  products never resolve or fetch EXIFKit. Every `SwiftSMBEXIFKit` source and EXIFKit test is wrapped in
+  `#if canImport(EXIFKit)`, so without the trait the module and those tests compile empty. Pass `--traits EXIFKit` to
+  `swift build`/`swift test` to build and run them; CI does.
 - `Exports.swift` re-exports EXIFKit, because every public API takes or returns its types.
 - Like `SwiftSMBAVFoundation`, the module uses only the public `SwiftSMB` API; `SMB.File.write(_:atOffset:)` was added to
   `SwiftSMB` for it.
@@ -202,7 +206,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 - Unit tests (no server needed): `Tests/SwiftSMBUnitTests` covers value types, error cases, enum raw values, and context configuration. These always run, including in CI.
 - Integration tests (need server): `Tests/SwiftSMBTests`, including the Bridge-level Samba tests, the Cookbook examples, and the public API integration suites. Tagged with `.integration`. Skip them by setting `SWIFTSMB_SKIP_INTEGRATION_TESTS=1`.
-- Run all tests: `swift test`
+- Run all tests: `swift test --traits EXIFKit`
 - Run a subset: `swift test --filter 'ConnectionTests'`
 - Notification-focused tests: `swift test --filter 'SMBNotify'`
 - The test server is a Docker-based Samba container.
@@ -230,7 +234,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Do not expose every upstream addition automatically. Prefer APIs that fit SwiftSMB's client-file-management scope. Large optional subsystems such as full DCE/RPC should stay out of the SwiftPM product unless there is a deliberate public API and linking decision.
 - If upstream adds non-C source files under `upstream/lib`, moves headers, or splits libraries (`libdcerpc` already is a separate upstream project that SwiftSMB does not build), update the `Package.swift` excludes/sources, the forwarders, and `include/module.modulemap` so `swift build` compiles only the intended `libsmb2` client surface.
 - Run `swift package clean` after moving the pin. SwiftPM does not rebuild `SwiftSMB` when `libsmb2-private.h` changes, so the bridge keeps the old `struct smb2_context` field offsets (e.g. `clearError` writes `nterror` to the wrong place) and tests fail with stale NT statuses.
-- Run `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test` after dependency updates. If new wrapped functionality touches real SMB server behavior, start the Docker server with `source TestServer/up.sh`, run a focused integration test.
+- Run `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test --traits EXIFKit` after dependency updates. If new wrapped functionality touches real SMB server behavior, start the Docker server with `source TestServer/up.sh`, run a focused integration test.
 - Once the build and tests pass, commit the submodule pointer together with any glue changes in `Sources/libsmb2`.
 
 ## Concurrency & Dispatch

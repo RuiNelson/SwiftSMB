@@ -9,7 +9,16 @@ The module builds on every platform SwiftSMB supports, including Linux and Andro
 
 ## Adding the product
 
-Add `SwiftSMBEXIFKit` next to `SwiftSMB` in your target:
+Enable SwiftSMB's `EXIFKit` package trait:
+
+```swift
+.package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.5.0", traits: ["EXIFKit"])
+```
+
+The trait is disabled by default: packages that don't enable it never resolve or fetch EXIFKit, and the
+`SwiftSMBEXIFKit` module is then empty. In Xcode, enable the trait on the package dependency (Xcode 26.4 or later).
+
+Then add `SwiftSMBEXIFKit` next to `SwiftSMB` in your target:
 
 ```swift
 .target(

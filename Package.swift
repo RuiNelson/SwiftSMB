@@ -23,6 +23,10 @@ if includeIntegrationTests {
     )
 }
 
+// Opt-in trait for the EXIFKit integration. While it is disabled, SwiftPM neither resolves nor fetches EXIFKit, and
+// the SwiftSMBEXIFKit module is empty.
+let exifKitTrait = "EXIFKit"
+
 let package = Package(
     name: "SwiftSMB",
     platforms: [
@@ -52,6 +56,14 @@ let package = Package(
             type: .dynamic,
             targets: ["libsmb2"],
         ),
+    ],
+    traits: [
+        .trait(
+            name: exifKitTrait,
+            description: "Adds EXIF metadata access over SMB to the SwiftSMBEXIFKit product, through EXIFKit.",
+        ),
+        // Disabled by default, so consumers of the core products never resolve EXIFKit.
+        .default(enabledTraits: []),
     ],
     dependencies: [
         .package(url: "https://github.com/RuiNelson/PathWorks.git", .upToNextMajor(from: "2.0.1")),
@@ -104,7 +116,7 @@ let package = Package(
             name: "SwiftSMBEXIFKit",
             dependencies: [
                 "SwiftSMB",
-                .product(name: "EXIFKit", package: "EXIFKit"),
+                .product(name: "EXIFKit", package: "EXIFKit", condition: .when(traits: [exifKitTrait])),
                 .product(name: "PathWorks", package: "PathWorks"),
             ],
         ),

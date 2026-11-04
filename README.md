@@ -174,7 +174,7 @@ See [Playing media with AVFoundation](docs/video-playback.md).
 
 ### Reading and editing image metadata
 
-The `SwiftSMBEXIFKit` product reads the EXIF of images on the share with
+With the package's `EXIFKit` trait enabled, the `SwiftSMBEXIFKit` product reads the EXIF of images on the share with
 [EXIFKit](https://github.com/RuiNelson/EXIFKit), fetching only the byte ranges that hold metadata instead of the whole
 image:
 
@@ -227,8 +227,19 @@ Then add `SwiftSMB` to the target that uses it:
 )
 ```
 
-To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`. To read and
-edit image metadata, also add `.product(name: "SwiftSMBEXIFKit", package: "SwiftSMB")`.
+To play media with AVFoundation, also add `.product(name: "SwiftSMBAVFoundation", package: "SwiftSMB")`.
+
+To read and edit image metadata, enable the `EXIFKit` trait and also add
+`.product(name: "SwiftSMBEXIFKit", package: "SwiftSMB")`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.5.0", traits: ["EXIFKit"]),
+]
+```
+
+The trait is disabled by default, so packages that don't enable it never resolve or fetch EXIFKit; without it, the
+`SwiftSMBEXIFKit` module is empty.
 
 SwiftSMB currently declares support for macOS 11+, iOS 14+, macCatalyst 14+, tvOS 14+, visionOS 1+, and watchOS 7+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
 
@@ -245,6 +256,9 @@ SwiftSMB currently declares support for macOS 11+, iOS 14+, macCatalyst 14+, tvO
 import SwiftSMB
 ```
 
+For image metadata, also add the `SwiftSMBEXIFKit` product and enable the package's `EXIFKit` trait (Xcode 26.4 or
+later).
+
 ## Building
 
 ### Command Line
@@ -252,15 +266,17 @@ import SwiftSMB
 Just enter:
 
 ```bash
-swift build
+swift build --traits EXIFKit
 ```
+
+The `EXIFKit` trait builds the EXIFKit integration; without it, `SwiftSMBEXIFKit` and its tests compile empty.
 
 Some tests are integration tests and expect the Docker-based Samba test server to be running:
 
 ```bash
 docker ps --filter ancestor=swiftsmb-test-server
 source TestServer/up.sh
-swift test
+swift test --traits EXIFKit
 ```
 
 ## Licensing
