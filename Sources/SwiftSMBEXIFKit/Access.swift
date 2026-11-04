@@ -20,8 +20,7 @@
         ///
         /// The returned structure keeps `file` to read its thumbnail later, with `readThumbnail()` or when passed to
         /// ``write(_:from:to:format:options:)``. Close `file` once you no longer need either. Reads are positional, so
-        /// they
-        /// neither use nor move the handle's current offset.
+        /// they neither use nor move the handle's current offset.
         ///
         /// - Parameters:
         ///   - file: An SMB file handle opened for reading. It stays yours to close.

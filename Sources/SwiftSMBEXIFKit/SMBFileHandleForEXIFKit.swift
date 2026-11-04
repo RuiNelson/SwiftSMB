@@ -20,9 +20,8 @@
     ///
     /// Reads and writes go through `SMB.File.read(upTo:atOffset:transferChunkSize:)` and
     /// `SMB.File.write(_:atOffset:transferChunkSize:)`, which neither use nor move the handle's current offset.
-    /// EXIFKit's
-    /// concurrent reads therefore share one handle without coordinating, and the handle stays usable for other
-    /// positional reads while EXIFKit works with it.
+    /// EXIFKit's concurrent reads therefore share one handle without coordinating, and the handle stays usable for
+    /// other positional reads while EXIFKit works with it.
     ///
     /// ### Ownership
     ///
