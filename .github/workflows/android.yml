@@ -28,4 +28,4 @@ jobs:
       android_sdk_triples: '["aarch64-unknown-linux-android28"]'
       android_sdk_pre_build_command: |
         git submodule update --init --recursive
-      android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build -v
+      android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build --traits EXIFKit -v
