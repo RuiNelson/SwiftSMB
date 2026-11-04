@@ -212,7 +212,7 @@ Add SwiftSMB to your package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.4.0"),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.5.0"),
 ]
 ```
 
