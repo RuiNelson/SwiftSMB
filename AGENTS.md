@@ -37,6 +37,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │       ├── Connection.swift              # Connection handle, state, and primitive bridge operations.
 │   │       ├── Connection-Conv.swift         # Connection convenience methods built from primitives.
 │   │       ├── Connection-Conv-Transfer.swift # Upload/download and stream transfer convenience methods.
+│   │       ├── Connection-Conv-Compare.swift # Block-by-block file comparison (remote/remote, local/remote).
 │   │       ├── File.swift                    # OOP file handle.
 │   │       ├── Directory.swift               # OOP directory handle.
 │   │       ├── Directory-Conv.swift          # Directory convenience methods built from primitives.
@@ -66,6 +67,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   │   ├── ConnectionConfigurationTests.swift # Context configuration unit tests.
 │   │   │   └── TypeTests.swift               # Value types, errors, and enum raw-value unit tests.
 │   │   └── PublicAPI
+│   │       ├── FileCompareTests.swift        # compareFiles block grid, scan order, and comparison loop.
 │   │       └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 │   └── SwiftSMBTests                         # Integration tests; need the Docker test server.
 │       ├── AVFoundation                      # SwiftSMBAVFoundation integration tests.
@@ -83,6 +85,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │       ├── EXIFKit                           # SwiftSMBEXIFKit integration tests.
 │       ├── PublicAPI                         # Public API integration tests.
 │       │   ├── SMBConnectionAuthTests.swift  # Authentication and connection setup tests.
+│       │   ├── SMBConnectionCompareTests.swift # compareFiles public API tests.
 │       │   ├── SMBConnectionDirectoryTests.swift # Directory convenience public API tests.
 │       │   ├── SMBConnectionFileTests.swift  # File convenience public API tests.
 │       │   ├── SMBConnectionTransferTests.swift # Upload/download convenience public API tests.
@@ -145,6 +148,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - `SMB.File.write(_:atOffset:transferChunkSize:)` is its counterpart through `smb2_pwrite` (`Bridge.write(context:file:data:offset:)`), which restores the offset the same way and ignores `.append`.
 - Directory conveniences include recursive `makeDirectory(at:makePath:)`, recursive `removeItem(at:)`, `listDirectory(at:)`, and `itemExists(at:)`.
 - File transfer convenience APIs (`uploadFile`/`downloadFile`) support cancellation/progress and may create temporary remote paths for atomic uploads. They overlap local disk I/O with the network transfer using small queue-confined helpers in `Connection-Conv-Transfer.swift`; keep local disk work off the caller thread but do not reintroduce a general producer/consumer pipe. The helpers resume awaiting callers from their queue instead of blocking them. Task cancellation is checked between blocks and throws `CancellationError`; returning `false` from the progress closure still cancels without throwing.
+- `compareFiles` (`Connection-Conv-Compare.swift`) mirrors SwiftSFTP's `compareFiles` (block grid, `FileCompareScan` order, coverage stop); keep the two aligned. SMB reads are positional (`read(upTo:atOffset:)`), so there is no read-ahead limit to pass. Local blocks are read on the comparison's own serial queue.
 - Stream transfers (`streamToRemote`/`streamFromRemote`) share the upload pipeline and transfer engine with the file transfers through the `UploadBlockReader`/`DownloadBlockWriter` protocols. The caller owns the stream: the methods open it if needed but never close it, touch it only on its worker's serial queue, never read past `length`, and wait for pending read-ahead or writes before returning. `Stream` isn't `Sendable`, so both methods are `nonisolated(nonsending)`, which lets actors pass streams they own; wrap the stream in its `@unchecked Sendable` worker before handing anything to the other async helpers, which run off the caller's actor.
 - Public notifications are an `AsyncSequence`: `SMB.Connection.watchDirectory(...)` is `async` and returns an already-armed `SMB.NotifyWatcher` whose elements are `[SMB.NotifyChange]` batches. The notification loop runs in a `Task` that hops to the context queue. The iterator retains its watcher so ARC cannot cancel it mid-iteration. Cancellation (`cancel()`, cancelling the iterating task, disconnect, or deinit) is idempotent and ends iteration normally; errors end it by throwing.
 - `watchDirectory` returns only after the server has registered the first notify request: `armRequest` only queues it, so an echo round trip on the same connection follows (requests on a connection are sent and processed in order). Tests and clients rely on that instead of sleeps or timing assumptions.

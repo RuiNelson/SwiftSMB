@@ -75,6 +75,39 @@ try await connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
 The source file must exist and must not be a directory. If the destination file already exists, an error is thrown. If
 the copy fails partway, the partially written destination is removed, so the call can simply be retried.
 
+## Comparing files
+
+SMB has no command to hash a file on the server, so
+``SMB.Connection.compareFiles(_:_:scan:maximumBlockSize:minimumCoverage:)`` compares two files on the share by reading
+them block by block. ``SMB.Connection.compareFiles(local:remote:scan:maximumBlockSize:minimumCoverage:)`` compares a
+local file with a remote one, for example to verify an upload or a download:
+
+```swift
+// Did the server-side copy succeed?
+let same = try await connection.compareFiles("Photos/vacation.jpg", "Photos/vacation_backup.jpg")
+
+// Did the upload arrive intact?
+let uploaded = try await connection.compareFiles(local: localURL, remote: "Backups/archive.zip")
+```
+
+Both return `false` when the sizes differ, a block differs, or a path doesn't exist or isn't a regular file. Sizes are
+compared first, so files of different sizes are never read.
+
+The files are divided into equal blocks of at most `maximumBlockSize` bytes (1 MiB by default). To check large files
+quickly, pass a `minimumCoverage` below `1.0`: the comparison stops once that fraction of the bytes matched, and `true`
+then only vouches for the blocks it read. The default ``SMB/FileCompareScan/bisection`` order reads the first block, then
+the last, then the middle of each remaining gap, so a partial comparison spreads evenly over the file and catches
+truncated or interrupted copies first:
+
+```swift
+// Spot-check a quarter of a large video
+let probablySame = try await connection.compareFiles(
+    "Videos/holiday.mov",
+    "Archive/holiday.mov",
+    minimumCoverage: 0.25
+)
+```
+
 ## Setting access control
 
 ``SMB.Connection.setSecurityDescriptor(_:at:)`` updates the non-`nil` owner, group, and DACL components of a security

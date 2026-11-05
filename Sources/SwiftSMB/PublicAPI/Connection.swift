@@ -720,7 +720,7 @@ public extension SMB {
     }
 }
 
-private extension SMB.Error {
+extension SMB.Error {
     /// A Boolean value indicating whether the error represents a missing path.
     var isPathNotFound: Bool {
         switch self {

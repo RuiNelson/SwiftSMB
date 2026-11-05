@@ -73,6 +73,31 @@ struct CookbookFileManagementTests {
         try await connection.move(from: to, to: folder + "/" + to)
     }
 
+    @Test("compareFiles compiles and runs")
+    func compareFiles() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let folder = uniquePath("cookbook-compare")
+        defer { try? await connection.removeItem(at: folder) }
+        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent(uniquePath("cookbook-compare"))
+        defer { try? FileManager.default.removeItem(at: localURL) }
+
+        let content = Data((0 ..< 5000).map { UInt8(truncatingIfNeeded: $0) })
+        try content.write(to: localURL)
+        try await connection.makeDirectory(at: folder)
+        try await connection.dumpToFile(content, to: folder + "/vacation.jpg")
+        try await connection.dumpToFile(content, to: folder + "/vacation_backup.jpg")
+
+        let same = try await connection.compareFiles(folder + "/vacation.jpg", folder + "/vacation_backup.jpg")
+        let uploaded = try await connection.compareFiles(local: localURL, remote: folder + "/vacation.jpg")
+        let probablySame = try await connection.compareFiles(
+            folder + "/vacation.jpg",
+            folder + "/vacation_backup.jpg",
+            minimumCoverage: 0.25
+        )
+        #expect(same && uploaded && probablySame)
+    }
+
     @Test("itemExists compiles and runs")
     func itemExists() async throws {
         let connection = try await cookbookConnection()
