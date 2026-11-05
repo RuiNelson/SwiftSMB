@@ -12,7 +12,7 @@ The module builds on every platform SwiftSMB supports, including Linux and Andro
 Enable SwiftSMB's `EXIFKit` package trait:
 
 ```swift
-.package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.5.0", traits: ["EXIFKit"])
+.package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "4.6.0", traits: ["EXIFKit"])
 ```
 
 The trait is disabled by default: packages that don't enable it never resolve or fetch EXIFKit, and the
