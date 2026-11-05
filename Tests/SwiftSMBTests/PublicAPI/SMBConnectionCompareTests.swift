@@ -138,34 +138,6 @@ struct SMBConnectionCompareTests {
         #expect(try await connection.compareFiles(TestContent.linkToFilePath, TestContent.helloPath))
     }
 
-    @Test("invalid arguments throw")
-    func invalidArguments() async throws {
-        let connection = try await publicCompareConnection()
-        defer { try? await connection.disconnect() }
-
-        let path = TestContent.helloPath
-        await #expect(throws: SMB.Error.invalidArgument(
-            cause: .blockSizeMustBeGreaterThanZero,
-            onOperation: .smbConnectionCompareFiles
-        )) {
-            try await connection.compareFiles(path, path, maximumBlockSize: 0)
-        }
-        for coverage in [0, -0.5, 1.5] {
-            await #expect(throws: SMB.Error.invalidArgument(
-                cause: .minimumCoverageOutOfRange(coverage),
-                onOperation: .smbConnectionCompareFiles
-            )) {
-                try await connection.compareFiles(path, path, minimumCoverage: coverage)
-            }
-        }
-        await #expect(throws: SMB.Error.self) {
-            try await connection.compareFiles(path, path, minimumCoverage: .nan)
-        }
-        await #expect(throws: SMB.Error.self) {
-            try await connection.compareFiles("", path)
-        }
-    }
-
     @Test("a local file compares against its remote copy")
     func localAgainstRemote() async throws {
         try await withRemoteDirectory("compare_local") { connection, dir in

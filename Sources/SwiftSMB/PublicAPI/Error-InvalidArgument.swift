@@ -61,7 +61,6 @@ public extension SMB.Error {
         case smbConnectionReadFile
         case smbConnectionWriteFile
         case smbConnectionCopyFile
-        case smbConnectionCompareFiles
         case smbConnectionSetSecurityDescriptor
         case smb2Flock
 
@@ -113,7 +112,6 @@ public extension SMB.Error {
             case .smbConnectionReadFile: "SMB.Connection.loadFile"
             case .smbConnectionWriteFile: "SMB.Connection.dumpToFile"
             case .smbConnectionCopyFile: "SMB.Connection.copyFile"
-            case .smbConnectionCompareFiles: "SMB.Connection.compareFiles"
             case .smbConnectionSetSecurityDescriptor: "SMB.Connection.setSecurityDescriptor"
             case .smb2Flock: "smb2_flock"
             }
@@ -152,7 +150,6 @@ public extension SMB.Error {
         case securityIdentifierAuthorityOutOfRange
         case securityIdentifierHasTooManySubauthorities(Int)
         case accessControlListHasTooManyEntries(Int)
-        case minimumCoverageOutOfRange(Double)
 
         var description: String {
             switch self {
@@ -187,8 +184,6 @@ public extension SMB.Error {
                 "Security identifier has \(count) subauthorities; SMB supports at most 15"
             case let .accessControlListHasTooManyEntries(count):
                 "Access-control list has \(count) entries; SMB supports at most \(UInt16.max)"
-            case let .minimumCoverageOutOfRange(coverage):
-                "Minimum coverage \(coverage) must be greater than 0 and at most 1"
             }
         }
     }

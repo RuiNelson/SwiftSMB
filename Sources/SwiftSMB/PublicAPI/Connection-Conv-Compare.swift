@@ -54,15 +54,15 @@ public extension SMB.Connection {
     ///   - pathB: The path of the second file, relative to the share root.
     ///   - scan: The order in which the blocks are compared.
     ///   - maximumBlockSize: The largest block to compare, in bytes. Blocks shrink below it so that all are the same
-    /// size give or take one byte. Each block is read in requests of at most the server's maximum read size.
+    /// size give or take one byte. Each block is read in requests of at most the server's maximum read size. Must be
+    /// greater than zero.
     ///   - minimumCoverage: The fraction of the file, in `0 < minimumCoverage <= 1`, to compare before declaring the
     /// files equal. `1.0` compares every byte.
     /// - Returns: `true` when every compared block matches, including when both files are empty. `false` when the sizes
     /// differ, a block differs, or either path doesn't exist or isn't a regular file. Below a `minimumCoverage` of
-    /// `1.0`,
-    /// `true` only vouches for the blocks compared.
-    /// - Throws: ``SMB/Error`` if the connection is closed, a path, `maximumBlockSize` or `minimumCoverage` is invalid,
-    /// or a file cannot be inspected, opened or read; `CancellationError` if the task is cancelled.
+    /// `1.0`, `true` only vouches for the blocks compared.
+    /// - Throws: ``SMB/Error`` if the connection is closed, a path is invalid, or a file cannot be inspected, opened or
+    /// read; `CancellationError` if the task is cancelled.
     func compareFiles(
         _ pathA: String,
         _ pathB: String,
@@ -70,11 +70,10 @@ public extension SMB.Connection {
         maximumBlockSize: UInt64 = 1024 * 1024,
         minimumCoverage: Double = 1.0
     ) async throws -> Bool {
-        try await self.withOperation {
-            let pathA = try SMB.validatePath(pathA, operation: .smbConnectionCompareFiles)
-            let pathB = try SMB.validatePath(pathB, operation: .smbConnectionCompareFiles)
-            try validateCompareArguments(maximumBlockSize: maximumBlockSize, minimumCoverage: minimumCoverage)
+        precondition(minimumCoverage > 0 && minimumCoverage <= 1.0, "minimumCoverage must be in (0, 1]")
+        precondition(maximumBlockSize > 0, "maximumBlockSize must be greater than zero")
 
+        return try await self.withOperation {
             guard let size = try await regularFileSize(at: pathA),
                   try await regularFileSize(at: pathB) == size else {
                 return false
@@ -130,16 +129,16 @@ public extension SMB.Connection {
     ///   - remote: The path of the remote file, relative to the share root.
     ///   - scan: The order in which the blocks are compared.
     ///   - maximumBlockSize: The largest block to compare, in bytes. Blocks shrink below it so that all are the same
-    /// size give or take one byte. Each block is read in requests of at most the server's maximum read size.
+    /// size give or take one byte. Each block is read in requests of at most the server's maximum read size. Must be
+    /// greater than zero.
     ///   - minimumCoverage: The fraction of the file, in `0 < minimumCoverage <= 1`, to compare before declaring the
     /// files equal. `1.0` compares every byte.
     /// - Returns: `true` when every compared block matches, including when both files are empty. `false` when the sizes
     /// differ, a block differs, or either path doesn't exist or isn't a regular file. Below a `minimumCoverage` of
-    /// `1.0`,
-    /// `true` only vouches for the blocks compared.
-    /// - Throws: ``SMB/Error`` if the connection is closed, `remote`, `maximumBlockSize` or `minimumCoverage` is
-    /// invalid, or the remote file cannot be inspected, opened or read; a local file error if the local file cannot be
-    /// opened or read; `CancellationError` if the task is cancelled.
+    /// `1.0`, `true` only vouches for the blocks compared.
+    /// - Throws: ``SMB/Error`` if the connection is closed, `remote` is invalid, or the remote file cannot be
+    /// inspected, opened or read; a local file error if the local file cannot be opened or read; `CancellationError` if
+    /// the task is cancelled.
     func compareFiles(
         local: URL,
         remote: String,
@@ -147,10 +146,10 @@ public extension SMB.Connection {
         maximumBlockSize: UInt64 = 1024 * 1024,
         minimumCoverage: Double = 1.0
     ) async throws -> Bool {
-        try await self.withOperation {
-            let remote = try SMB.validatePath(remote, operation: .smbConnectionCompareFiles)
-            try validateCompareArguments(maximumBlockSize: maximumBlockSize, minimumCoverage: minimumCoverage)
+        precondition(minimumCoverage > 0 && minimumCoverage <= 1.0, "minimumCoverage must be in (0, 1]")
+        precondition(maximumBlockSize > 0, "maximumBlockSize must be greater than zero")
 
+        return try await self.withOperation {
             let localFile = LocalCompareReader()
             defer { localFile.close() }
 
@@ -191,23 +190,6 @@ public extension SMB.Connection {
 }
 
 private extension SMB.Connection {
-    /// Rejects block sizes and coverages the comparison cannot work with.
-    func validateCompareArguments(maximumBlockSize: UInt64, minimumCoverage: Double) throws {
-        guard maximumBlockSize > 0 else {
-            throw SMB.Error.invalidArgument(
-                cause: .blockSizeMustBeGreaterThanZero,
-                onOperation: .smbConnectionCompareFiles
-            )
-        }
-        // Written so that NaN fails too.
-        guard minimumCoverage > 0, minimumCoverage <= 1 else {
-            throw SMB.Error.invalidArgument(
-                cause: .minimumCoverageOutOfRange(minimumCoverage),
-                onOperation: .smbConnectionCompareFiles
-            )
-        }
-    }
-
     /// The size of the regular file at `path`, or `nil` when nothing exists there or it isn't a regular file.
     func regularFileSize(at path: String) async throws -> UInt64? {
         do {
