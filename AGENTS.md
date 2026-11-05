@@ -258,5 +258,5 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 - This project follows **Semantic Versioning** (`MAJOR.MINOR.PATCH`).
 - Use the Conventional Commits specification for all commit messages.
-- Use the release notes template at `etc/Release Template.md` for all GitHub releases.
+- Use the `github-release` skill to draft the notes, choose the version, and publish.
 - Omit sections that have no content (e.g., skip "Migration Guide" if there are no breaking changes).
