@@ -298,10 +298,23 @@ struct FileBlockComparison {
     /// Compares one block: returns whether the `length` bytes at `offset` match.
     typealias CompareBlock = (_ offset: UInt64, _ length: Int) async throws -> Bool
 
+    /// The number of bytes to compare before the files count as equal: `minimumCoverage` of `size`, rounded up.
+    ///
+    /// `Double` holds integers exactly only up to 2^53, so `Double(size)` can round below `size` (a full comparison
+    /// would then skip its last blocks) or up to 2^64 (which `UInt64` cannot hold). A full coverage therefore never
+    /// goes through `Double`, and a partial one is clamped to `size`.
+    static func targetBytes(size: UInt64, minimumCoverage: Double) -> UInt64 {
+        guard minimumCoverage < 1 else {
+            return size
+        }
+        let target = (minimumCoverage * Double(size)).rounded(.up)
+        return target < Double(size) ? UInt64(target) : size
+    }
+
     func run(_ compareBlock: CompareBlock) async throws -> Bool {
         // A block is held in memory as `Data`, so its length must fit in `Int`.
         let grid = FileCompareGrid(size: size, maximumBlockSize: min(maximumBlockSize, UInt64(Int.max)))
-        let targetBytes = min(size, UInt64((minimumCoverage * Double(size)).rounded(.up)))
+        let targetBytes = Self.targetBytes(size: size, minimumCoverage: minimumCoverage)
 
         var compared: UInt64 = 0
         for index in FileCompareBlockOrder(blockCount: grid.blockCount, scan: scan) {

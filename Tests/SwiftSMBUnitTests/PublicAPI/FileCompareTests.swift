@@ -270,6 +270,49 @@ struct FileBlockComparisonTests {
         #expect(await recorder.blocks.map(\.offset) == [0, 1000, 2000])
     }
 
+    @Test("full coverage targets every byte, even beyond what Double holds exactly", arguments: [
+        UInt64(0),
+        1,
+        10500,
+        1 << 53,
+        (1 << 53) + 1,
+        (1 << 63) + 1,
+        .max - 1,
+        .max,
+    ])
+    func fullCoverageTargetsEveryByte(size: UInt64) {
+        #expect(FileBlockComparison.targetBytes(size: size, minimumCoverage: 1) == size)
+    }
+
+    @Test("partial coverage rounds up and never exceeds the file size")
+    func partialCoverageTarget() {
+        #expect(FileBlockComparison.targetBytes(size: 10000, minimumCoverage: 0.25) == 2500)
+        #expect(FileBlockComparison.targetBytes(size: 10001, minimumCoverage: 0.25) == 2501)
+        #expect(FileBlockComparison.targetBytes(size: 1, minimumCoverage: .leastNonzeroMagnitude) == 1)
+        // Just below full coverage, the target is 2^64 - 2^11: it stays partial and fits in UInt64.
+        let justBelowFull = UInt64.max - 2047
+        #expect(FileBlockComparison.targetBytes(size: .max, minimumCoverage: 1.0.nextDown) == justBelowFull)
+        #expect(FileBlockComparison.targetBytes(size: .max, minimumCoverage: 0.5) == 1 << 63)
+    }
+
+    @Test("full coverage of a huge file does not trap")
+    func hugeFileFullCoverage() async throws {
+        let recorder = Recorder()
+        let result = try await FileBlockComparison(
+            size: .max,
+            scan: .bisection,
+            maximumBlockSize: 1 << 20,
+            minimumCoverage: 1
+        )
+        .run { offset, length in
+            await recorder.record(offset, length)
+            return false
+        }
+
+        #expect(!result)
+        #expect(await recorder.blocks.map(\.offset) == [0])
+    }
+
     @Test("an end-to-start scan reads the last block first")
     func endToStart() async throws {
         let recorder = Recorder()
