@@ -30,9 +30,8 @@ public extension SMB {
     ///
     /// Every lookup starts a request with an identifier of its own: ``retrieveBlock(path:offset:upTo:request:)``,
     /// ``retrieveStat(path:request:)``, and ``retrieveDirectoryListing(path:request:)``. When the cache does not
-    /// answer,
-    /// or answers only part of a read, the connection asks the server and hands over the answer with a store call that
-    /// carries the same identifier. A stat of a file the connection has open starts its request with
+    /// answer, or answers only part of a read, the connection asks the server and hands over the answer with a store
+    /// call that carries the same identifier. A stat of a file the connection has open starts its request with
     /// ``beginRequest(_:)`` instead, since the connection asks the server whatever the cache holds. Then the connection
     /// calls ``requestEnded(_:)`` for that identifier exactly once, after the store if there was one, however the
     /// request ended: answered by the cache, stored, at the end of the file, failed, or cancelled.
@@ -59,12 +58,11 @@ public extension SMB {
     ///
     /// The same file can arrive under different paths. Most SMB servers compare names without regard to case, so
     /// `Photos/A.jpg` and `photos/a.JPG` usually name the same file, though a share can be case-sensitive. Whether
-    /// names
-    /// that differ only in Unicode normalization name the same file depends on the server: Windows and Samba compare
-    /// their bytes, macOS compares them as equal. `String` compares such names as equal in `==` and as dictionary keys,
-    /// so an implementation that must tell them apart compares their bytes. A file can also be reached through a
-    /// symbolic link, or through several hard links (``SMB/Stat/linkCount`` above one), and the connection reports a
-    /// change only under the path it made the change through.
+    /// names that differ only in Unicode normalization name the same file depends on the server: Windows and Samba
+    /// compare their bytes, macOS compares them as equal. `String` compares such names as equal in `==` and as
+    /// dictionary keys, so an implementation that must tell them apart compares their bytes. A file can also be reached
+    /// through a symbolic link, or through several hard links (``SMB/Stat/linkCount`` above one), and the connection
+    /// reports a change only under the path it made the change through.
     ///
     /// A file renamed through the connection, or one of its forks, while open reports from then on under its new path,
     /// if it was renamed by the path it was opened with or by a directory above it. A file that a call through the
@@ -143,9 +141,8 @@ public extension SMB {
         ///
         /// A stat the connection made because ``retrieveStat(path:request:)`` did not answer, for
         /// ``SMB/Connection/stat(at:)`` or ``SMB/Connection/itemExists(at:)``, comes with that request. A stat of a
-        /// file
-        /// the connection has open comes with the request ``beginRequest(_:)`` started before the connection asked the
-        /// server: the connection makes one when it opens a file with ``SMB/File/AccessMode/readOnly`` or
+        /// file the connection has open comes with the request ``beginRequest(_:)`` started before the connection asked
+        /// the server: the connection makes one when it opens a file with ``SMB/File/AccessMode/readOnly`` or
         /// ``SMB/File/AccessMode/readWrite``, and for every ``SMB/File/stat()``. Before closing a file it wrote to, the
         /// connection stats it that way and reports the result here, describing the file the written blocks belong to;
         /// when that stat is skipped, because the connection is closed, or fails, it calls ``invalidate(path:)``

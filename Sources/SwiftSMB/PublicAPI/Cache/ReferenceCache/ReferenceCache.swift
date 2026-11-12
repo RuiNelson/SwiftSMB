@@ -147,8 +147,7 @@ public extension SMB {
         /// and the control connection must not use one. Use `control` for nothing else afterwards.
         ///
         /// `control` stays the caller's: the cache never disconnects it. Disconnect it after ``close()``, once the
-        /// cache
-        /// is done with it.
+        /// cache is done with it.
         ///
         /// - Parameters:
         ///   - storage: Where the bytes of cached files are kept. A new ``SMB/InMemoryCacheStorage`` by default.

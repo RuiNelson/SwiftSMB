@@ -11,8 +11,7 @@
 /// One clock counts every change. A path's generation is the clock value of the last change at the path or at a
 /// directory above it, so changing a directory changes everything under it. Generations only grow. The
 /// ``SMB/ReferenceCache`` records changes under equivalence keys (``CachePath/equivalenceKey(_:)``), so a change
-/// reaches
-/// every spelling of a path that may name the same file.
+/// reaches every spelling of a path that may name the same file.
 struct ChangeLog {
     /// Most paths whose last change is remembered, and most directories whose last change below them is. Past either,
     /// the log forgets them all and raises ``floor`` instead, as if everything had changed: answers in flight are
