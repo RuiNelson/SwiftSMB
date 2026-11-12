@@ -46,6 +46,23 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │       ├── Error.swift                   # Public error type.
 │   │       ├── Error-InvalidArgument.swift   # Typed invalid-argument operations and causes.
 │   │       ├── Error-Status.swift            # SMB.SMBStatus and SMB.SMBStatusSeverity.
+│   │       ├── Cache                         # Block-level read cache (port of SwiftSFTP's).
+│   │       │   ├── BlockLevelReadCache.swift # SMB.BlockLevelReadCache protocol: the contract a connection reports to.
+│   │       │   ├── Connection-Cache.swift    # attachCache/detachCache/hasCacheAttached; internal SMBCacheAttachment.
+│   │       │   ├── CacheRequestID.swift      # SMB.CacheRequestID: ties a lookup to its store and requestEnded.
+│   │       │   ├── CachedStat.swift          # SMB.CachedStat: a stat answered by a cache.
+│   │       │   ├── CacheBlockSource.swift    # SMB.CacheBlockSource: downloaded or uploaded bytes.
+│   │       │   ├── Connection-CacheReports.swift # withCacheRequest; change/rename reporting helpers on SMB.Connection.
+│   │       │   ├── File-Cache.swift          # SMB.File reads through the cache; write, stat, and close reports.
+│   │       │   ├── MemoryPressureObserver.swift # Darwin memory-pressure source on its own serial queue.
+│   │       │   ├── OpenFileRegistry.swift    # Files open per attachment: rebased by renames, silenced by deletes, overlap tracking.
+│   │       │   ├── ProcessUniqueCounter.swift # Lock-protected counter behind the cache identifiers.
+│   │       │   ├── ReferenceCache            # SMB.ReferenceCache and its Configuration/TrustPolicy/MetadataPolicy/PathMatching.
+│   │       │   │   ├── CachePath.swift       # Share-relative path normalization; exact, case-insensitive, and equivalence keys.
+│   │       │   │   ├── Generations.swift     # ChangeLog, RequestLog, and PathIndex (subtree lookups without full scans).
+│   │       │   │   ├── ReferenceCache+Checks.swift # statOnServer/sampleBlocks checks; grid sample plan and bisection positions.
+│   │       │   │   └── ReferenceCache+Entries.swift # FileEntry, FileVersion, stored stats and listings.
+│   │       │   └── Storage                   # SMB.CacheStorage, SMB.CacheFileID, ByteRanges; InMemoryCacheStorage (+ FileBlocks).
 │   │       └── Util
 │   │           ├── Date+.swift               # Date helpers for SMB timestamp values.
 │   │           ├── OptionSet+.swift          # Shared debug formatting helpers.
@@ -67,6 +84,10 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   │   ├── ConnectionConfigurationTests.swift # Context configuration unit tests.
 │   │   │   └── TypeTests.swift               # Value types, errors, and enum raw-value unit tests.
 │   │   └── PublicAPI
+│   │       ├── Cache                         # ByteRanges, identifiers, attach API, OpenFileRegistry, ReferenceCache unit/edge/path-matching/fuzz, InMemoryCacheStorage.
+│   │       │   ├── CacheSimulation.swift     # Simulated client steps around a real ReferenceCache and OpenFileRegistry.
+│   │       │   ├── SimulatedServer.swift     # Miniature SMB share: name folding, Samba refusals, history for checks.
+│   │       │   └── ReferenceCacheSimulationTests.swift # Randomized simulation runs (SWIFTSMB_CACHE_FUZZ_SEED/_SCALE/_LOG_LINES).
 │   │       ├── FileCompareTests.swift        # compareFiles block grid, scan order, and comparison loop.
 │   │       └── SMBPublicAPITests.swift       # URL parsing and public value type tests.
 │   └── SwiftSMBTests                         # Integration tests; need the Docker test server.
@@ -81,6 +102,17 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │       │   ├── IntegrationSupport.swift      # Shared helpers and server credentials for integration tests.
 │       │   ├── OpLockTests.swift             # Oplock and lease bridge tests.
 │       │   └── ShareTests.swift              # Share enumeration and info tests.
+│       ├── Cache                             # Block-level cache integration tests.
+│       │   ├── RecordingCache.swift          # Cache that records every call; used to check what each operation reports.
+│       │   ├── BlockLevelCacheTests.swift    # Reads served from the cache, fork inheritance, detach, open files after detach.
+│       │   ├── CacheReportsTests.swift       # Operation → cache calls, including failure paths.
+│       │   ├── EXIFKit+Cache.swift           # EXIFKit edits through a cached connection.
+│       │   ├── GatedCache.swift              # ReferenceCache wrapper that holds chosen calls; withCachedConnections helpers.
+│       │   ├── ReferenceCacheIntegrationTests.swift # statOnServer/sampleBlocks checks and close() against the server.
+│       │   ├── ReferenceCacheRaceIntegrationTests.swift # Orderings forced with GatedCache on the live server.
+│       │   ├── ReferenceCacheDifferentialIntegrationTests.swift # Random operations, cached vs uncached connection.
+│       │   ├── ReferenceCachePolicyIntegrationTests.swift # Trust and metadata policies through a live connection.
+│       │   └── StalledConnection+Cache.swift # Cache reports on a connection stalled behind a blocking lock.
 │       ├── Cookbook                          # README/docs example coverage.
 │       ├── EXIFKit                           # SwiftSMBEXIFKit integration tests.
 │       ├── PublicAPI                         # Public API integration tests.
@@ -155,6 +187,16 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+.swift` for consistent debug output.
 - `Connection-Conv-Transfer.swift`'s private helpers are file-scope free functions taking `on connection: SMB.Connection` as their first argument, while `Connection-Conv.swift`'s private helpers are `private extension SMB.Connection` methods. Both styles are intentional — don't "fix" one file to match the other.
 - `SMB.Configuration.Dialect` (negotiation preference, includes `.any`/`.anySMB2`/`.anySMB3`) and `SMB.NegotiatedDialect` (the actual dialect a server negotiated, with an `.unknown(UInt16)` fallback) are intentionally separate types with different case sets — don't merge them.
+
+## Block-Level Cache
+
+- The cache (`PublicAPI/Cache`, guide in `docs/block-level-cache.md`) mirrors SwiftSFTP's (`Sources/SwiftSFTP/Layer 1/Cache` in the sibling repository); keep the two aligned. SMB drops what has no SMB counterpart: `followLink`, recursive listings, the shell agent and `hashOnServer`, symlink deduplication, and `minimumHitLength` (SMB reads are positional, so there is no read-ahead to protect).
+- A cache never makes an operation fail: on any doubt the connection reads from the server or reports an invalidation.
+- While a cache is attached, every readable open fstats the file (the ReferenceCache needs its version and size; libsmb2's handle keeps no times), and closing a written file stats it first. Samba refuses fstat on write-only handles, so that final stat goes by the file's current registry path. With no cache attached there is no extra round trip.
+- `OpenFileRegistry` matches renames and deletes byte by byte, but counts changes (and relates changes to renames) across paths that differ only in case or Unicode normalization.
+- `ReferenceCache` keys paths per `PathMatching` (`.exact` by default), but every change drops all spellings that may name the same entry (equivalence key: case-folded and NFC). Lookups use `PathIndex` subtrees; never add a scan over every tracked file. `samplePlan` must stay proportional to the cached blocks, not the file's block grid.
+- `didRename` with identical `from` and `to` is a real change: Samba allows case-only renames and respells the stored name, so it drops metadata around the path (blocks are kept).
+- Samba refuses to rename or delete open files (SHARING_VIOLATION), so the orderings that need it are covered only by the simulation in `Tests/SwiftSMBUnitTests/PublicAPI/Cache`. Fuzz and simulation runs honour `SWIFTSMB_CACHE_FUZZ_SEED`, `_SCALE` and `_LOG_LINES`.
 
 ## AVFoundation Integration
 
