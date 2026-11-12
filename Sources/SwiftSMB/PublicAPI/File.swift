@@ -145,16 +145,52 @@ public extension SMB {
             }
         }
 
+        /// The access mode the file was opened with.
+        let accessMode: AccessMode
+
+        /// The options the file was opened with.
+        let options: OpenOptions
+
+        /// The connection's cache attachment when the file was opened, kept until the file closes. See
+        /// ``Connection/attachCache(_:)``.
+        let cacheAttachment: SMBCacheAttachment?
+
+        /// The file's registration in the attachment's ``OpenFileRegistry``, made before the server opened it.
+        let registration: UInt64?
+
+        /// Whether a write was attempted, so closing the file reports its final metadata to the cache.
+        let protectedWroteToFile = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.File.wroteToFile")
+
         /// Creates a public file wrapper around an open bridge handle.
-        init(connection: Connection, path: String, handle: Bridge.FileHandle) {
+        ///
+        /// - Parameters:
+        ///   - cacheAttachment: The connection's cache attachment when the file was opened.
+        ///   - registration: The file's registration with the attachment's ``OpenFileRegistry``.
+        init(
+            connection: Connection,
+            path: String,
+            handle: Bridge.FileHandle,
+            accessMode: AccessMode = .readOnly,
+            options: OpenOptions = [],
+            cacheAttachment: SMBCacheAttachment? = nil,
+            registration: UInt64? = nil
+        ) {
             self.connection = connection
             self.path = path
+            self.accessMode = accessMode
+            self.options = options
+            self.cacheAttachment = cacheAttachment
+            self.registration = cacheAttachment == nil ? nil : registration
             self.handle = handle
         }
 
         deinit {
-            if let handle = takeHandle(), let context = try? connection.requireContext() {
+            let handle = takeHandle()
+            if let handle, let context = try? connection.requireContext() {
                 Bridge.closeInBackground(context: context, file: handle)
+            }
+            if handle != nil {
+                abandonCacheReportsInBackground()
             }
         }
 
@@ -165,19 +201,27 @@ public extension SMB {
 
         /// Closes the file handle.
         ///
-        /// Calling this method more than once is allowed.
+        /// A file written while it used a cache stats itself before closing, one more round trip, so the cache learns
+        /// which version of the file the written blocks belong to. Calling this method more than once is allowed.
         ///
         /// - Throws: ``SMB/Error`` if the server reports a close error.
         public func close() async throws {
             guard let handle = takeHandle() else { return }
-            let context = try connection.requireContext()
-            try await Bridge.close(context: context, file: handle)
+            guard cacheAttachment != nil else {
+                let context = try connection.requireContext()
+                try await Bridge.close(context: context, file: handle)
+                return
+            }
+            try await closeReportingToCache(handle)
         }
         
         /// Reads bytes from the file.
         ///
         /// When `upTo` is `nil`, reads until end of file. Reading to end of file may consume unbounded memory for large
         /// files.
+        ///
+        /// A file opened for reading while a cache was attached reads what the cache holds first, and only the rest
+        /// from the server. A read that fails then leaves the file's current offset where it was.
         ///
         /// - Parameters:
         ///   - upTo: The maximum number of bytes to read, or `nil` to read to EOF.
@@ -199,6 +243,15 @@ public extension SMB {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Read)
 
+                if consultsCache {
+                    return try await readAtPositionThroughCache(
+                        upTo: upTo,
+                        chunkSize: chunkSize,
+                        context: context,
+                        handle: handle
+                    )
+                }
+
                 var result = Data()
                 var remaining = upTo
 
@@ -218,7 +271,8 @@ public extension SMB {
         /// Reads bytes from the file, starting at an explicit offset.
         ///
         /// Unlike ``read(upTo:transferChunkSize:)``, this method doesn't use or move the file's current offset, so
-        /// concurrent tasks can read different ranges of the same handle without coordinating seeks.
+        /// concurrent tasks can read different ranges of the same handle without coordinating seeks. Like it, the
+        /// method reads what an attached cache holds first.
         ///
         /// - Parameters:
         ///   - upTo: The maximum number of bytes to read.
@@ -243,24 +297,44 @@ public extension SMB {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Pread)
 
-                var result = Data()
-                var remaining = upTo
-                var position = offset
-
-                while remaining > 0 {
-                    try Task.checkCancellation()
-                    let byteCount = Int(min(remaining, Int64(chunkSize)))
-                    let data = try await Bridge.read(context: context, file: handle, count: byteCount, offset: position)
-                    guard !data.isEmpty else { break }
-                    result.append(data)
-                    remaining -= Int64(data.count)
-                    let (next, overflow) = position.addingReportingOverflow(UInt64(data.count))
-                    guard !overflow else { break }
-                    position = next
-                }
-
-                return result
+                return try await readThroughCache(
+                    upTo: Int(clamping: upTo),
+                    atOffset: offset,
+                    chunkSize: chunkSize,
+                    context: context,
+                    handle: handle
+                )
             }
+        }
+
+        /// Reads up to `upTo` bytes from the server starting at `offset`, in blocks of `chunkSize`, without moving the
+        /// file's current offset.
+        ///
+        /// - Returns: The bytes read, shorter than `upTo` at the end of the file.
+        func readFromServer(
+            upTo: Int,
+            atOffset offset: UInt64,
+            chunkSize: Int,
+            context: Bridge.Context,
+            handle: Bridge.FileHandle
+        ) async throws -> Data {
+            var result = Data()
+            var remaining = upTo
+            var position = offset
+
+            while remaining > 0 {
+                try Task.checkCancellation()
+                let byteCount = min(remaining, chunkSize)
+                let data = try await Bridge.read(context: context, file: handle, count: byteCount, offset: position)
+                guard !data.isEmpty else { break }
+                result.append(data)
+                remaining -= data.count
+                let (next, overflow) = position.addingReportingOverflow(UInt64(data.count))
+                guard !overflow else { break }
+                position = next
+            }
+
+            return result
         }
 
         /// Writes bytes to the file.
@@ -293,28 +367,66 @@ public extension SMB {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Write)
 
+                // The server decides where appended bytes land, so only other writes need the position they start at.
+                let appends = options.contains(.append)
+                let cacheOffset: UInt64? = if cacheAttachment != nil, !appends {
+                    try await Bridge.seek(context: context, file: handle, offset: 0, whence: SEEK_CUR)
+                }
+                else {
+                    nil
+                }
+                let snapshot = changeSnapshot
+                if !data.isEmpty {
+                    protectedWroteToFile.current = true
+                }
+
                 // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
                 let maxChunk = Int(min(chunkSize, Int64(data.count)))
                 var written: Int64 = 0
+                // Bytes handed to a write call that has not returned, which may reach the file if it fails.
+                var inFlight = 0
 
-                while written < data.count {
-                    try Task.checkCancellation()
-                    let start = data.startIndex + Int(written)
-                    let end = min(start + maxChunk, data.endIndex)
-                    let count = try await Bridge.write(
-                        context: context,
-                        file: handle,
-                        data: data.subdata(in: start ..< end)
-                    )
-                    guard count > 0 else {
-                        throw SMB.Error.unknown(
-                            operation: "smb2_write",
-                            message: "Write made no progress before all data was written"
+                do {
+                    while written < data.count {
+                        try Task.checkCancellation()
+                        let start = data.startIndex + Int(written)
+                        let end = min(start + maxChunk, data.endIndex)
+                        inFlight = end - start
+                        let count = try await Bridge.write(
+                            context: context,
+                            file: handle,
+                            data: data.subdata(in: start ..< end)
                         )
+                        inFlight = 0
+                        guard count > 0 else {
+                            throw SMB.Error.unknown(
+                                operation: "smb2_write",
+                                message: "Write made no progress before all data was written"
+                            )
+                        }
+                        written += Int64(count)
                     }
-                    written += Int64(count)
+                }
+                catch {
+                    await reportWrite(
+                        data,
+                        at: cacheOffset,
+                        appends: appends,
+                        acknowledged: Int(written),
+                        inFlight: inFlight,
+                        since: snapshot
+                    )
+                    throw error
                 }
 
+                await reportWrite(
+                    data,
+                    at: cacheOffset,
+                    appends: appends,
+                    acknowledged: Int(written),
+                    inFlight: 0,
+                    since: snapshot
+                )
                 return written
             }
         }
@@ -359,30 +471,59 @@ public extension SMB {
                 }
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Pwrite)
+                let snapshot = changeSnapshot
+                if !data.isEmpty {
+                    protectedWroteToFile.current = true
+                }
 
                 // Index relative to startIndex: `data` may be a slice whose indices do not begin at zero.
                 let maxChunk = Int(min(chunkSize, Int64(data.count)))
                 var written: Int64 = 0
+                // Bytes handed to a write call that has not returned, which may reach the file if it fails.
+                var inFlight = 0
 
-                while written < data.count {
-                    try Task.checkCancellation()
-                    let start = data.startIndex + Int(written)
-                    let end = min(start + maxChunk, data.endIndex)
-                    let count = try await Bridge.write(
-                        context: context,
-                        file: handle,
-                        data: data.subdata(in: start ..< end),
-                        offset: offset + UInt64(written)
-                    )
-                    guard count > 0 else {
-                        throw SMB.Error.unknown(
-                            operation: "smb2_pwrite",
-                            message: "Write made no progress before all data was written"
+                do {
+                    while written < data.count {
+                        try Task.checkCancellation()
+                        let start = data.startIndex + Int(written)
+                        let end = min(start + maxChunk, data.endIndex)
+                        inFlight = end - start
+                        let count = try await Bridge.write(
+                            context: context,
+                            file: handle,
+                            data: data.subdata(in: start ..< end),
+                            offset: offset + UInt64(written)
                         )
+                        inFlight = 0
+                        guard count > 0 else {
+                            throw SMB.Error.unknown(
+                                operation: "smb2_pwrite",
+                                message: "Write made no progress before all data was written"
+                            )
+                        }
+                        written += Int64(count)
                     }
-                    written += Int64(count)
+                }
+                catch {
+                    await reportWrite(
+                        data,
+                        at: offset,
+                        appends: false,
+                        acknowledged: Int(written),
+                        inFlight: inFlight,
+                        since: snapshot
+                    )
+                    throw error
                 }
 
+                await reportWrite(
+                    data,
+                    at: offset,
+                    appends: false,
+                    acknowledged: Int(written),
+                    inFlight: 0,
+                    since: snapshot
+                )
                 return written
             }
         }
@@ -422,7 +563,15 @@ public extension SMB {
             try await connection.withOperation {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Ftruncate)
-                try await Bridge.truncate(context: context, file: handle, length: length)
+                do {
+                    try await Bridge.truncate(context: context, file: handle, length: length)
+                }
+                catch {
+                    // The truncation may have reached the server anyway.
+                    await reportContentsChange()
+                    throw error
+                }
+                await reportContentsChange()
             }
         }
 
@@ -434,7 +583,7 @@ public extension SMB {
             try await connection.withOperation {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Fstat)
-                return try await Stat(Bridge.fileStatistics(context: context, file: handle))
+                return try await statReportingToCache(context: context, handle: handle)
             }
         }
         
@@ -597,7 +746,7 @@ public extension SMB {
         }
 
         /// Returns the live bridge handle or throws if the file is closed.
-        private func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.FileHandle {
+        func requireHandle(operation: SMB.Error.InvalidArgumentOperation) throws -> Bridge.FileHandle {
             try protectedHandle.require {
                 .invalidArgument(cause: .fileAlreadyClosed, onOperation: operation)
             }

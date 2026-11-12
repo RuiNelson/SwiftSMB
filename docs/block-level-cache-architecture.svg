@@ -1,0 +1,95 @@
+<svg viewBox="0 0 930 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Block-level cache architecture: SMB.Connection uses the SMB.BlockLevelReadCache protocol; SMB.ReferenceCache conforms to it and keeps bytes in the SMB.CacheStorage protocol; SMB.InMemoryCacheStorage conforms to SMB.CacheStorage.">
+<style>
+    .surface { fill: #fcfcfb; }
+    .card-stroke { stroke: rgba(11,11,11,0.10); }
+    .ink { fill: #0b0b0b; }
+    .secondary { fill: #52514e; }
+    .muted { fill: #898781; }
+    .line { stroke: #52514e; }
+    .head { fill: #52514e; }
+    .hollow { fill: #fcfcfb; stroke: #52514e; }
+    .protocol { fill: #fcfcfb; stroke: #52514e; }
+    .impl { fill: #eaf2fc; stroke: #2a78d6; }
+    .client { fill: #eeede7; stroke: rgba(11,11,11,0.25); }
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #1a1a19; }
+      .card-stroke { stroke: rgba(255,255,255,0.10); }
+      .ink { fill: #ffffff; }
+      .secondary { fill: #c3c2b7; }
+      .muted { fill: #898781; }
+      .line { stroke: #c3c2b7; }
+      .head { fill: #c3c2b7; }
+      .hollow { fill: #1a1a19; stroke: #c3c2b7; }
+      .protocol { fill: #1a1a19; stroke: #c3c2b7; }
+      .impl { fill: #1b2a3c; stroke: #3987e5; }
+      .client { fill: #2c2c2a; stroke: rgba(255,255,255,0.25); }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
+    .name { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 700; }
+    .stereo { font-size: 11px; font-style: italic; }
+    .role { font-size: 11.5px; }
+    .label { font-size: 12px; }
+    .legend { font-size: 11.5px; }
+</style>
+
+<rect x="8" y="8" width="914" height="454" rx="24" ry="24" class="surface card-stroke" stroke-width="1"/>
+<text x="465" y="44" text-anchor="middle" font-size="19" font-weight="700" class="ink">Block-Level Cache</text>
+
+<!-- Row 0: SMB.Connection -->
+<rect x="30" y="70" width="250" height="72" rx="10" class="client" stroke-width="1.5"/>
+<text x="155" y="102" text-anchor="middle" class="name ink">SMB.Connection</text>
+<text x="155" y="122" text-anchor="middle" class="role secondary">reads, writes, and changes files</text>
+
+<!-- SMB.Connection uses SMB.BlockLevelReadCache -->
+<line x1="155" y1="142" x2="155" y2="180" class="line" stroke-width="1.5"/>
+<polygon points="155,190 149,179 161,179" class="head"/>
+<text x="168" y="162" class="label secondary">asks before reading,</text>
+<text x="168" y="177" class="label secondary">reports every change</text>
+
+<!-- Row 1: SMB.BlockLevelReadCache (protocol) -->
+<rect x="30" y="190" width="250" height="72" rx="10" class="protocol" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="155" y="208" text-anchor="middle" class="stereo muted">«protocol»</text>
+<text x="155" y="228" text-anchor="middle" class="name ink">SMB.BlockLevelReadCache</text>
+<text x="155" y="248" text-anchor="middle" class="role secondary">which bytes are still current</text>
+
+<!-- SMB.ReferenceCache conforms to SMB.BlockLevelReadCache -->
+<line x1="294" y1="226" x2="340" y2="226" class="line" stroke-width="1.5" stroke-dasharray="5 4"/>
+<polygon points="281,226 294,219 294,233" class="hollow" stroke-width="1.5"/>
+
+<!-- Row 1: SMB.ReferenceCache -->
+<rect x="340" y="190" width="250" height="72" rx="10" class="impl" stroke-width="1.5"/>
+<text x="465" y="222" text-anchor="middle" class="name ink">SMB.ReferenceCache</text>
+<text x="465" y="242" text-anchor="middle" class="role secondary">the cache this package ships</text>
+
+<!-- SMB.ReferenceCache uses SMB.CacheStorage -->
+<line x1="465" y1="262" x2="465" y2="300" class="line" stroke-width="1.5"/>
+<polygon points="465,310 459,299 471,299" class="head"/>
+<text x="478" y="290" class="label secondary">keeps bytes in</text>
+
+<!-- Row 2: SMB.CacheStorage (protocol) -->
+<rect x="340" y="310" width="250" height="72" rx="10" class="protocol" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="465" y="328" text-anchor="middle" class="stereo muted">«protocol»</text>
+<text x="465" y="348" text-anchor="middle" class="name ink">SMB.CacheStorage</text>
+<text x="465" y="368" text-anchor="middle" class="role secondary">where bytes live, how many to keep</text>
+
+<!-- SMB.InMemoryCacheStorage conforms to SMB.CacheStorage -->
+<line x1="604" y1="346" x2="650" y2="346" class="line" stroke-width="1.5" stroke-dasharray="5 4"/>
+<polygon points="591,346 604,339 604,353" class="hollow" stroke-width="1.5"/>
+
+<!-- Row 2: SMB.InMemoryCacheStorage -->
+<rect x="650" y="310" width="250" height="72" rx="10" class="impl" stroke-width="1.5"/>
+<text x="775" y="342" text-anchor="middle" class="name ink">SMB.InMemoryCacheStorage</text>
+<text x="775" y="362" text-anchor="middle" class="role secondary">the storage this package ships</text>
+
+<!-- Legend -->
+<rect x="85" y="418" width="26" height="16" rx="4" class="protocol" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="119" y="430" class="legend secondary">protocol</text>
+<rect x="225" y="418" width="26" height="16" rx="4" class="impl" stroke-width="1.5"/>
+<text x="259" y="430" class="legend secondary">implementation (replaceable)</text>
+<polygon points="470,426 481,420 481,432" class="hollow" stroke-width="1.5"/>
+<line x1="481" y1="426" x2="512" y2="426" class="line" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="522" y="430" class="legend secondary">conforms to</text>
+<line x1="650" y1="426" x2="674" y2="426" class="line" stroke-width="1.5"/>
+<polygon points="684,426 673,420 673,432" class="head"/>
+<text x="694" y="430" class="legend secondary">uses</text>
+</svg>

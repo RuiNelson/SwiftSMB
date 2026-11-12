@@ -53,6 +53,11 @@ public extension SMB {
             [:],
             label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers"
         )
+        /// The cache attached with ``attachCache(_:)``, or `nil`.
+        let protectedCacheAttachment = Protected<SMBCacheAttachment?>(
+            nil,
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.cacheAttachment"
+        )
 
         /// The live bridge context, if the connection is still open.
         private var context: Bridge.Context? {
@@ -181,13 +186,16 @@ public extension SMB {
 
         /// Disconnects from the share and destroys the underlying context.
         ///
-        /// Active directory watchers are cancelled first. Calling this method more than once is allowed. After
-        /// disconnection, operations on this connection or handles created from it throw
+        /// Active directory watchers are cancelled first. An attached cache is detached, but a connection the cache
+        /// holds of its own stays connected. Calling this method more than once is allowed. After disconnection,
+        /// operations on this connection or handles created from it throw
         /// ``SMB/Error/operationRequestedAfterConnectionClosed``.
         ///
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
         public func disconnect() async throws {
             let resources = takeContextAndNotifyWatchers()
+            // After the context is gone, so that `attachCache(_:)` cannot attach a cache again.
+            detachCache()
             guard let context = resources.context else { return }
             for watcher in resources.watchers {
                 await watcher.cancelAndWait()
@@ -203,7 +211,8 @@ public extension SMB {
         /// Once graceful disconnection begins, new operations throw
         /// ``SMB/Error/operationRequestedAfterConnectionClosed``. Nested work and cleanup belonging to an admitted
         /// operation can continue until that operation finishes. An explicit ``disconnect()`` takes precedence and can
-        /// interrupt the operations being drained.
+        /// interrupt the operations being drained. An attached cache stays attached while they drain, and is detached
+        /// when the share is disconnected.
         ///
         /// Calling this method more than once is allowed.
         ///
@@ -230,11 +239,16 @@ public extension SMB {
         ///
         /// The dialect and the other negotiation options are negotiated again from the configured preferences.
         ///
+        /// A cache attached with ``attachCache(_:)`` when this method is called is attached to the new connection too,
+        /// which shares it with this one: renames and deletes through either connection reach the files the other has
+        /// open with that cache. To run operations without the cache, detach it from the new connection.
+        ///
         /// - Returns: A new connection to ``share``.
         /// - Throws: ``SMB/Error`` if this connection is closed or the new connection cannot be established.
         public func fork() async throws -> Connection {
             try await self.withOperation {
                 let context = try requireContext()
+                let cacheAttachment = cacheAttachment
                 var configuration = configuration
 
                 // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form.
@@ -251,12 +265,15 @@ public extension SMB {
                     configuration.transferBlockSize = blockSize
                 }
 
-                return try await SMB.connect(
+                let forked = try await SMB.connect(
                     server: server,
                     credentials: credentials,
                     share: share,
                     configuration: configuration
                 )
+                // The same attachment, not a new one, so both connections share its registry of open files.
+                forked.protectedCacheAttachment.current = cacheAttachment
+                return forked
             }
         }
 
@@ -303,13 +320,23 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smbConnectionSetSecurityDescriptor)
                 let context = try requireContext()
-                try await Bridge.setSecurityDescriptor(context: context, path: path, descriptor: descriptor.bridgeValue)
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.setSecurityDescriptor(
+                        context: context,
+                        path: path,
+                        descriptor: descriptor.bridgeValue
+                    )
+                }
             }
         }
 
         // MARK: Handles
 
         /// Opens a file on the connected share.
+        ///
+        /// The file keeps the cache attached with ``attachCache(_:)`` when it is opened until it closes. While a cache
+        /// is attached, opening a file for reading also stats it, one more round trip, so the cache can tell whether
+        /// the blocks it holds belong to the file now at `path`.
         ///
         /// - Parameters:
         ///   - path: The path to the file, relative to the share root.
@@ -339,15 +366,55 @@ public extension SMB {
                     leaseKey = nil
                 }
 
-                let handle = try await Bridge.open(
-                    context: context,
+                func open() async throws -> Bridge.FileHandle {
+                    try await Bridge.open(
+                        context: context,
+                        path: path,
+                        flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
+                        opLockLevel: opLock.bridgeValue,
+                        leaseState: bridgeLeaseState,
+                        leaseKey: leaseKey
+                    )
+                }
+
+                // The file keeps the cache attached now until it closes. Creating or truncating it may change it, or
+                // its directory's listing, also when the open fails. It is registered before the server opens it, so
+                // that a rename or a delete of its path meanwhile reaches it.
+                let attachment = cacheAttachment
+                let registration = attachment?.openFiles.beginOpen(path: path)
+                let handle: Bridge.FileHandle
+                do {
+                    handle = if attachment != nil, !options.isDisjoint(with: [.create, .truncate]) {
+                        try await reportingChange(at: [path], to: attachment, removing: false) {
+                            try await open()
+                        }
+                    }
+                    else {
+                        try await open()
+                    }
+                }
+                catch {
+                    if let registration {
+                        attachment?.openFiles.unregister(registration)
+                    }
+                    throw error
+                }
+
+                if let registration {
+                    attachment?.openFiles.finishOpen(registration)
+                }
+                let file = File(
+                    connection: self,
                     path: path,
-                    flags: Bridge.OpenFlags(accessMode.bridgeValue, options: options.bridgeValue),
-                    opLockLevel: opLock.bridgeValue,
-                    leaseState: bridgeLeaseState,
-                    leaseKey: leaseKey
+                    handle: handle,
+                    accessMode: accessMode,
+                    options: options,
+                    cacheAttachment: attachment,
+                    registration: registration
                 )
-                return File(connection: self, path: path, handle: handle)
+                // One more round trip while a cache is attached: the cache compares the file with what it holds.
+                await file.reportMetadataAfterOpen()
+                return file
             }
         }
 
@@ -408,7 +475,9 @@ public extension SMB {
                 }
 
                 let context = try requireContext()
-                try await Bridge.makeDir(context: context, path: path)
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.makeDir(context: context, path: path)
+                }
             }
         }
 
@@ -420,7 +489,9 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2Rmdir)
                 let context = try requireContext()
-                try await Bridge.removeDir(context: context, path: path)
+                try await reportingChange(at: [path], to: cacheAttachment, removing: true) {
+                    try await Bridge.removeDir(context: context, path: path)
+                }
             }
         }
 
@@ -432,7 +503,9 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2Unlink)
                 let context = try requireContext()
-                try await Bridge.unlink(context: context, path: path)
+                try await reportingChange(at: [path], to: cacheAttachment, removing: true) {
+                    try await Bridge.unlink(context: context, path: path)
+                }
             }
         }
 
@@ -447,7 +520,9 @@ public extension SMB {
                 let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
                 let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
                 let context = try requireContext()
-                try await Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
+                try await reportingRename(from: oldPath, to: newPath, attachment: cacheAttachment) {
+                    try await Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
+                }
             }
         }
 
@@ -461,7 +536,9 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2Truncate)
                 let context = try requireContext()
-                try await Bridge.truncate(context: context, path: path, length: length)
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.truncate(context: context, path: path, length: length)
+                }
             }
         }
 
@@ -536,13 +613,15 @@ public extension SMB {
 
             try await self.withOperation {
                 let context = try requireContext()
-                try await Bridge.makeLink(
-                    context: context,
-                    path: path,
-                    destination: pointingTo,
-                    isDirectory: isDirectory,
-                    isAbsolute: isAbsolute
-                )
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.makeLink(
+                        context: context,
+                        path: path,
+                        destination: pointingTo,
+                        isDirectory: isDirectory,
+                        isAbsolute: isAbsolute
+                    )
+                }
             }
         }
 
@@ -560,11 +639,16 @@ public extension SMB {
                 let path = try SMB.validatePath(path, operation: .smb2Link)
                 let existingPath = try SMB.validatePath(existingPath, operation: .smb2Link)
                 let context = try requireContext()
-                try await Bridge.makeHardLink(context: context, existingPath: existingPath, newPath: path)
+                // The existing file's link count and change time change too.
+                try await reportingChange(at: [path, existingPath], to: cacheAttachment, removing: false) {
+                    try await Bridge.makeHardLink(context: context, existingPath: existingPath, newPath: path)
+                }
             }
         }
 
         /// Returns metadata for a path.
+        ///
+        /// While a cache is attached with ``attachCache(_:)``, the cache may answer instead of the server.
         ///
         /// - Parameter path: The path to inspect, relative to the share root.
         /// - Returns: File metadata.
@@ -573,7 +657,31 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2Stat, allowRoot: true)
                 let context = try requireContext()
-                return try await Stat(Bridge.fileStatistics(context: context, path: path))
+                guard let cache else {
+                    return try await Stat(Bridge.fileStatistics(context: context, path: path))
+                }
+
+                return try await withCacheRequest(on: cache) { request in
+                    switch await cache.retrieveStat(path: path, request: request) {
+                    case let .exists(stat):
+                        return stat
+                    case .doesNotExist:
+                        throw SMB.Error.cachedPathNotFound(path)
+                    case nil:
+                        break
+                    }
+
+                    let stat: Stat
+                    do {
+                        stat = try await Stat(Bridge.fileStatistics(context: context, path: path))
+                    }
+                    catch let error as SMB.Error where error.isPathNotFound {
+                        await cache.storeStat(nil, path: path, request: request)
+                        throw error
+                    }
+                    await cache.storeStat(stat, path: path, request: request)
+                    return stat
+                }
             }
         }
 
@@ -626,14 +734,16 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
                 let context = try requireContext()
-                try await Bridge.setStats(
-                    context: context,
-                    path: path,
-                    creationTime: creation,
-                    lastAccessTime: access,
-                    lastWriteTime: write,
-                    changeTime: change
-                )
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.setStats(
+                        context: context,
+                        path: path,
+                        creationTime: creation,
+                        lastAccessTime: access,
+                        lastWriteTime: write,
+                        changeTime: change
+                    )
+                }
             }
         }
 
@@ -671,11 +781,13 @@ public extension SMB {
                 let new = change(current)
                 // On the wire, FileAttributes 0 means "leave unchanged" (MS-FSCC); clearing every flag must be sent as
                 // FILE_ATTRIBUTE_NORMAL instead.
-                try await Bridge.setStats(
-                    context: context,
-                    path: path,
-                    fileAttributes: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue
-                )
+                try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
+                    try await Bridge.setStats(
+                        context: context,
+                        path: path,
+                        fileAttributes: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue
+                    )
+                }
             }
         }
 

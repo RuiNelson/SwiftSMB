@@ -90,15 +90,34 @@ public extension SMB.Connection {
 
     /// Lists all entries in a directory.
     ///
+    /// While a cache is attached with ``SMB/Connection/attachCache(_:)``, the cache may answer instead of the server.
+    /// Directories read through an ``SMB/Directory`` handle never use the cache.
+    ///
     /// - Parameter path: The directory path, relative to the share root.
     /// - Returns: The directory entries returned by the server.
     /// - Throws: ``SMB/Error`` if the directory cannot be opened or read.
     func listDirectory(at path: String = "") async throws -> [SMB.DirectoryEntry] {
         try await self.withOperation {
             let path = try SMB.validatePath(path, operation: .smbConnectionListDirectory, allowRoot: true)
-            let directory = try await openDirectory(at: path)
-            defer { await directory.close() }
-            return try await directory.readAll()
+            func listOnServer() async throws -> [SMB.DirectoryEntry] {
+                let directory = try await openDirectory(at: path)
+                defer { await directory.close() }
+                return try await directory.readAll()
+            }
+
+            guard let cache else {
+                return try await listOnServer()
+            }
+
+            return try await withCacheRequest(on: cache) { request in
+                if let entries = await cache.retrieveDirectoryListing(path: path, request: request) {
+                    return entries
+                }
+
+                let entries = try await listOnServer()
+                await cache.storeDirectoryListing(entries, path: path, request: request)
+                return entries
+            }
         }
     }
 
@@ -165,12 +184,20 @@ public extension SMB.Connection {
                 )
             }
 
-            try await Bridge.serverSideCopy(
-                context: context,
-                sourcePath: sourcePath,
-                destinationPath: destinationPath,
-                exclusiveDestination: true
-            )
+            // A copy that fails removes the destination it created.
+            try await reportingChange(
+                at: [destinationPath],
+                to: cacheAttachment,
+                removing: false,
+                removingIfFailed: true
+            ) {
+                try await Bridge.serverSideCopy(
+                    context: context,
+                    sourcePath: sourcePath,
+                    destinationPath: destinationPath,
+                    exclusiveDestination: true
+                )
+            }
         }
     }
 

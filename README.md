@@ -192,6 +192,20 @@ if let data = try await metadata.readThumbnail(), let thumbnail = UIImage(data: 
 
 To edit or remove metadata, see [Reading and editing image metadata](docs/image-metadata.md).
 
+### Caching what you read
+
+An optional block-level cache keeps what a connection reads from the share so that reading it again costs nothing.
+Attach an `SMB.ReferenceCache` and files, transfers, streams, `compareFiles`, and the AVFoundation and EXIFKit
+integrations read through it:
+
+```swift
+let cache = SMB.ReferenceCache(configuration: .init()) // Up to 256 MiB in memory.
+connection.attachCache(cache)
+```
+
+You can choose the memory budget, check cached files against the server, match paths without regard to case, replace
+the storage backend, or plug in a cache of your own. See [Block-Level Cache](docs/block-level-cache.md).
+
 ### More advanced cookbooks
 
 Longer examples belong in `docs/`:
@@ -203,6 +217,11 @@ Longer examples belong in `docs/`:
 - [Watching file system changes](docs/watching-changes.md)
 - [Playing media with AVFoundation](docs/video-playback.md)
 - [Reading and editing image metadata](docs/image-metadata.md)
+- [Block-Level Cache](docs/block-level-cache.md) — caching what a connection reads:
+  - [Getting started](docs/block-level-cache.md#getting-started)
+  - [How the cache APIs are organized](docs/block-level-cache.md#how-the-cache-apis-are-organized)
+  - [A custom storage backend for `ReferenceCache`](docs/block-level-cache.md#a-custom-storage-backend-for-referencecache)
+  - [A custom cache](docs/block-level-cache.md#a-custom-cache)
 
 ## Adding this package to your Project
 
