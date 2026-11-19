@@ -44,7 +44,7 @@ SwiftSFTP/SwiftSMB skills; only `Project Conventions` differs between them.
 - Build: `swift build --traits EXIFKit`.
 - Test: `SWIFTSMB_SKIP_INTEGRATION_TESTS=1 swift test --traits EXIFKit`. If the release touches real SMB server
   behavior, start the Docker test server (`source TestServer/up.sh`) and run focused integration tests.
-- Vendored sources: libsmb2 comes from the pinned `Sources/libsmb2/upstream` submodule; keep it read-only.
+- Vendored sources: libsmb2 comes from our fork, the `Vendored/libsmb2-SwiftSMB` submodule; changes to it go to the fork, each listed in its `MODS.md`. Name the libsmb2 release (or upstream commit) the fork contains in the release notes.
 - Version snippets: `README.md` and `docs/`.
 
 ## Release Notes Format

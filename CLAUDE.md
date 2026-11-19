@@ -14,10 +14,10 @@ SwiftSMB uses its own fork of libsmb2 directly:
   to drop it. Update it in the same commit as the change, and update its "Upstream base" table after every merge.
 - Code added to the fork must have an LGPL-2.1-compatible license (libsmb2 is LGPL-2.1-or-later): no Apache-2.0
   (OpenSSL 3+) or LGPL-3/GPL code. Bring in third-party code only for what libsmb2 lacks.
+- Mark every change to an upstream file with a `libsmb2-SwiftSMB (MODS.md Mx)` comment, and keep the fork's own
+  CMake and autotools builds working: they and the upstream CI run on every push to the fork.
 - Report bugs and offer fixes upstream, and drop a modification once upstream has an equivalent.
+- Commit and push the fork before committing the submodule pointer in SwiftSMB.
 
-The move is in progress. SwiftSMB still builds from the old submodule `Sources/libsmb2/upstream` (pinned to
-`libsmb2-7.0.0`), with the modifications in `Sources/libsmb2/patches`, `Sources/libsmb2/gcm` and
-`Sources/libsmb2/include`. `MODS.md` lists them as M1–M5. Until they move into the fork and `Package.swift` builds
-from `Vendored/libsmb2-SwiftSMB`, the libsmb2 rules in `AGENTS.md` describe that old layout. Where they disagree with
-this section, this section wins. Update `AGENTS.md` as part of the move.
+`Package.swift` compiles the fork's `lib/` directly; `Sources/libsmb2` only holds the SwiftPM glue (configuration
+selector, module map, header forwarders). The "Dependency Updates" section of `AGENTS.md` has the details.

@@ -72,44 +72,42 @@ let package = Package(
     targets: [
         .target(
             name: "libsmb2",
-            path: "Sources/libsmb2",
+            // libsmb2 is our fork, RuiNelson/libsmb2-SwiftSMB, in Vendored/libsmb2-SwiftSMB (its MODS.md lists what
+            // it changes). The SwiftPM glue (configuration selector, module map, header forwarders) lives in
+            // Sources/libsmb2, so the target spans the package root, as SwiftSFTP's libssh2 target does.
+            path: ".",
             exclude: [
-                // Replaced by the files of the same name in patches/, which include them.
-                "upstream/lib/aes.c",
-                "upstream/lib/aes128ccm.c",
-                "upstream/lib/smb2-cmd-negotiate.c",
-                "upstream/lib/smb3-seal.c",
-                // BearSSL's files are compiled through the gcm/bearssl_*.c wrappers, which rename their symbols.
-                "gcm/bearssl",
-                "gcm/UPSTREAM.md",
-                "upstream/lib/CMakeLists.txt",
-                "upstream/lib/libsmb2.syms",
-                "upstream/lib/Makefile.am",
-                "upstream/lib/Makefile.AMIGA",
-                "upstream/lib/Makefile.AMIGA_AROS",
-                "upstream/lib/Makefile.AMIGA_OS3",
-                "upstream/lib/Makefile.PS3_PPU",
-                "upstream/lib/dreamcast",
-                "upstream/lib/ps2",
+                "Vendored/libsmb2-SwiftSMB/lib/CMakeLists.txt",
+                "Vendored/libsmb2-SwiftSMB/lib/libsmb2.syms",
+                "Vendored/libsmb2-SwiftSMB/lib/Makefile.am",
+                "Vendored/libsmb2-SwiftSMB/lib/Makefile.AMIGA",
+                "Vendored/libsmb2-SwiftSMB/lib/Makefile.AMIGA_AROS",
+                "Vendored/libsmb2-SwiftSMB/lib/Makefile.AMIGA_OS3",
+                "Vendored/libsmb2-SwiftSMB/lib/Makefile.PS3_PPU",
+                "Vendored/libsmb2-SwiftSMB/lib/dreamcast",
+                "Vendored/libsmb2-SwiftSMB/lib/ps2",
+                // BearSSL's own files, which lib/bearssl/bearssl_*.c compile with renamed symbols.
+                "Vendored/libsmb2-SwiftSMB/lib/bearssl/upstream",
+                "Vendored/libsmb2-SwiftSMB/lib/bearssl/UPSTREAM.md",
             ],
             sources: [
-                "upstream/lib",
-                "patches",
-                "gcm",
-                "xcode_compat.c",
+                "Vendored/libsmb2-SwiftSMB/lib",
+                "Sources/libsmb2/xcode_compat.c",
             ],
-            publicHeadersPath: "include",
+            publicHeadersPath: "Sources/libsmb2/include",
             cSettings: [
-                .headerSearchPath("include"),
-                .headerSearchPath("upstream/include/smb2"),
-                .headerSearchPath("upstream/lib"),
-                // AES-GCM (see gcm/UPSTREAM.md): <openssl/evp.h> for patches/smb3-seal.c, then BearSSL's headers. Keep
-                // these after "include", so libsmb2's "config.h" wins over BearSSL's src/config.h.
-                .headerSearchPath("gcm/include"),
-                .headerSearchPath("gcm/bearssl/inc"),
-                .headerSearchPath("gcm/bearssl/src"),
+                // Sources/libsmb2/include comes first, so its config.h, the configuration selector, is the one
+                // libsmb2's "config.h" finds. BearSSL's inner.h finds its own config.h next to itself.
+                .headerSearchPath("Sources/libsmb2/include"),
+                .headerSearchPath("Vendored/libsmb2-SwiftSMB/include/smb2"),
+                .headerSearchPath("Vendored/libsmb2-SwiftSMB/lib"),
+                .headerSearchPath("Vendored/libsmb2-SwiftSMB/lib/bearssl/upstream/inc"),
+                .headerSearchPath("Vendored/libsmb2-SwiftSMB/lib/bearssl/upstream/src"),
                 .define("_U_", to: "__attribute__((unused))"),
                 .define("HAVE_CONFIG_H", to: "1"),
+                // AES-128-GCM and AES-256-GCM without OpenSSL (the fork's MODS.md M4). On the command line rather than
+                // in config.h, because the BearSSL wrappers must not include config.h.
+                .define("HAVE_BUILTIN_AES_GCM", to: "1"),
                 .disableWarning("conversion")
             ],
         ),

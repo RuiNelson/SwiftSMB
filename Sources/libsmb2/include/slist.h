@@ -1,1 +1,1 @@
-#include "../upstream/include/slist.h"
+#include "../../../Vendored/libsmb2-SwiftSMB/include/slist.h"

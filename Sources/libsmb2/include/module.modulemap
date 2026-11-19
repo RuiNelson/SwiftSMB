@@ -1,20 +1,20 @@
 module SMB2 [system] [extern_c] {
     header "config.h"
-    header "../upstream/include/smb2/smb2-errors.h"
-    header "../upstream/include/smb2/smb2.h"
-    header "../upstream/include/smb2/libsmb2.h"
-    header "../upstream/include/smb2/libsmb2-share-enum.h"
+    header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/smb2-errors.h"
+    header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/smb2.h"
+    header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/libsmb2.h"
+    header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/libsmb2-share-enum.h"
 
     module Internal {
-        header "../upstream/include/libsmb2-private.h"
+        header "../../../Vendored/libsmb2-SwiftSMB/include/libsmb2-private.h"
     }
 
     explicit module GCM {
-        header "swiftsmb-gcm.h"
+        header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/swiftsmb-gcm.h"
     }
 
     explicit module Raw {
-        header "../upstream/include/smb2/libsmb2-raw.h"
+        header "../../../Vendored/libsmb2-SwiftSMB/include/smb2/libsmb2-raw.h"
     }
 
     export *

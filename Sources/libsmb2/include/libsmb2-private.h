@@ -1,1 +1,1 @@
-#include "../upstream/include/libsmb2-private.h"
+#include "../../../Vendored/libsmb2-SwiftSMB/include/libsmb2-private.h"

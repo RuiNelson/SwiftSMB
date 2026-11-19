@@ -1,1 +1,1 @@
-#include "../upstream/include/portable-endian.h"
+#include "../../../Vendored/libsmb2-SwiftSMB/include/portable-endian.h"

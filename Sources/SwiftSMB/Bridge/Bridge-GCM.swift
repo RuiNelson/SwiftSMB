@@ -15,8 +15,8 @@ import SMB2.GCM
 
 extension Bridge {
     /// Hands libsmb2's AES-128-GCM and AES-256-GCM sealing to CryptoKit, which uses the AES and GHASH instructions of
-    /// the CPU and runs in constant time. Without CryptoKit, libsmb2 seals with the portable code in
-    /// `Sources/libsmb2/gcm` (BearSSL's GCM).
+    /// the CPU and runs in constant time. Without CryptoKit, libsmb2 seals with BearSSL's GCM (the fork's
+    /// `lib/aes-gcm.c`, `Vendored/libsmb2-SwiftSMB/MODS.md` M4).
     ///
     /// Runs once, before the first context is created.
     static let installGCMSeal: Void = {
