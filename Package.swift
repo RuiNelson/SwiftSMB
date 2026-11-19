@@ -108,7 +108,13 @@ let package = Package(
                 // AES-128-GCM and AES-256-GCM without OpenSSL (the fork's MODS.md M4). On the command line rather than
                 // in config.h, because the BearSSL wrappers must not include config.h.
                 .define("HAVE_BUILTIN_AES_GCM", to: "1"),
+                // On Linux, the system's OpenSSL, loaded with dlopen, seals GCM before BearSSL does (the fork's
+                // MODS.md M6). Not on Android, whose system libcrypto is not available to applications.
+                .define("SMB2_GCM_DLOPEN_OPENSSL", to: "1", .when(platforms: [.linux])),
                 .disableWarning("conversion")
+            ],
+            linkerSettings: [
+                .linkedLibrary("dl", .when(platforms: [.linux])),
             ],
         ),
         .target(
