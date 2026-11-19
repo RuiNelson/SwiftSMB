@@ -9,6 +9,10 @@ module SMB2 [system] [extern_c] {
         header "../upstream/include/libsmb2-private.h"
     }
 
+    explicit module GCM {
+        header "swiftsmb-gcm.h"
+    }
+
     explicit module Raw {
         header "../upstream/include/smb2/libsmb2-raw.h"
     }

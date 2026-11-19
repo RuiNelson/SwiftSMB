@@ -74,6 +74,14 @@ let package = Package(
             name: "libsmb2",
             path: "Sources/libsmb2",
             exclude: [
+                // Replaced by the files of the same name in patches/, which include them.
+                "upstream/lib/aes.c",
+                "upstream/lib/aes128ccm.c",
+                "upstream/lib/smb2-cmd-negotiate.c",
+                "upstream/lib/smb3-seal.c",
+                // BearSSL's files are compiled through the gcm/bearssl_*.c wrappers, which rename their symbols.
+                "gcm/bearssl",
+                "gcm/UPSTREAM.md",
                 "upstream/lib/CMakeLists.txt",
                 "upstream/lib/libsmb2.syms",
                 "upstream/lib/Makefile.am",
@@ -86,6 +94,8 @@ let package = Package(
             ],
             sources: [
                 "upstream/lib",
+                "patches",
+                "gcm",
                 "xcode_compat.c",
             ],
             publicHeadersPath: "include",
@@ -93,6 +103,11 @@ let package = Package(
                 .headerSearchPath("include"),
                 .headerSearchPath("upstream/include/smb2"),
                 .headerSearchPath("upstream/lib"),
+                // AES-GCM (see gcm/UPSTREAM.md): <openssl/evp.h> for patches/smb3-seal.c, then BearSSL's headers. Keep
+                // these after "include", so libsmb2's "config.h" wins over BearSSL's src/config.h.
+                .headerSearchPath("gcm/include"),
+                .headerSearchPath("gcm/bearssl/inc"),
+                .headerSearchPath("gcm/bearssl/src"),
                 .define("_U_", to: "__attribute__((unused))"),
                 .define("HAVE_CONFIG_H", to: "1"),
                 .disableWarning("conversion")

@@ -87,6 +87,7 @@ class Bridge {
     ///
     /// The new context is not shared yet, so this runs on the caller's thread.
     static func createContext() throws -> Context {
+        installGCMSeal
         guard let raw = lifecycleLock.withLock({ _ in smb2_init_context() }) else {
             throw SMB.Error.contextCreationFailed
         }
