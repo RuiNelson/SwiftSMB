@@ -45,6 +45,23 @@
 /* Define to 1 if you have the <poll.h> header file. */
 #define HAVE_POLL_H 1
 
+/* Cryptographically strong source for smb2_random_bytes(), which provides
+ * the NTLMv2 client challenge, the SMB 3.1.1 preauth salt, the client GUID
+ * and the nonce of every sealed PDU. Without one it falls back to random(),
+ * which is predictable and not thread-safe.
+ *
+ * Every libc a Swift toolchain ships for has getrandom(2) (glibc >= 2.25,
+ * musl >= 1.1.20); libsmb2 calls it with GRND_NONBLOCK and falls back to
+ * /dev/urandom under seccomp filters and on old kernels. Bionic only
+ * declares getrandom() from API 28 when the target API level says so, so
+ * Android relies on /dev/urandom alone, as upstream's apple/config.h does
+ * for its own Linux builds. */
+#ifndef __ANDROID__
+#define HAVE_SYS_RANDOM_H 1
+#define HAVE_GETRANDOM 1
+#endif
+#define HAVE_DEV_URANDOM 1
+
 /* Whether sockaddr struct has sa_len */
 /* #undef HAVE_SOCKADDR_LEN */
 

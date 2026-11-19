@@ -21,8 +21,8 @@ class Bridge {
     //
     // `libsmb2` contexts are not thread-safe. Every call that touches a shared context runs on that context's serial
     // queue through `perform(on:_:)`, so operations on one context are serialized while different contexts run in
-    // parallel. Creating and destroying contexts additionally takes `lifecycleLock`, because `smb2_init_context` and
-    // `smb2_destroy_context` mutate process-wide libsmb2 state (the active-context list and the `srandom` seed).
+    // parallel. Creating and destroying contexts additionally takes `lifecycleLock`, because `smb2_init_context`
+    // reseeds the process-wide `srandom` state. (Client contexts no longer go on libsmb2's active-context list.)
     //
     // Blocking libsmb2 calls never run on the Swift concurrency cooperative pool: callers suspend while the work runs
     // on the context queue.
