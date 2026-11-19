@@ -302,8 +302,8 @@ swift test --traits EXIFKit
 
 SwiftSMB is distributed under the Apache License, version 2.0. A copy of the license is included in [LICENSE](LICENSE).
 
-The bundled [`libsmb2`](https://github.com/sahlberg/libsmb2) sources keep their own license, the GNU Lesser General Public License, version 2.1. If you distribute an app or product that links with SwiftSMB/libsmb2, make sure you preserve license notices, provide access to the LGPL-covered `libsmb2` source, and allow users to replace or relink the LGPL-covered library as required by that license.
+The bundled libsmb2 sources are SwiftSMB's own fork, [`libsmb2-SwiftSMB`](https://github.com/RuiNelson/libsmb2-SwiftSMB) (a fork of [`sahlberg/libsmb2`](https://github.com/sahlberg/libsmb2), its changes listed in the fork's `MODS.md`). They keep libsmb2's license, the GNU Lesser General Public License, version 2.1. The fork also contains unmodified code from [BearSSL](https://bearssl.org) (AES-GCM and AES-256 where the platform has no faster implementation), under the MIT license; its notice is kept in `lib/bearssl/upstream/LICENSE.txt` of the fork. On Linux the library can use the system's OpenSSL for AES-GCM if there is one; it loads it at run time and does not link or include it. If you distribute an app or product that links with SwiftSMB/libsmb2, make sure you preserve license notices, provide access to the LGPL-covered `libsmb2` source, and allow users to replace or relink the LGPL-covered library as required by that license.
 
 To help with that last requirement, `Package.swift` declares `libsmb2` as a dynamic library product (`.library(name: "libsmb2", type: .dynamic, ...)`), so the LGPL-covered code is linked dynamically and ships as a separate, replaceable binary instead of being statically absorbed into your app.
 
-This section is only a project summary, not legal advice. Review the Apache 2.0 and LGPL v2.1 terms for your distribution model.
+This section is only a project summary, not legal advice. Review the Apache 2.0, LGPL v2.1 and MIT terms for your distribution model.
