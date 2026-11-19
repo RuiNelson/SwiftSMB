@@ -13,7 +13,7 @@ SwiftSMB uses its own fork of libsmb2 directly:
 - `MODS.md` at the root of the fork lists every difference from upstream: what, why, files, upstream issue, and when
   to drop it. Update it in the same commit as the change, and update its "Upstream base" table after every merge.
 - Code added to the fork must have an LGPL-2.1-compatible license (libsmb2 is LGPL-2.1-or-later): no Apache-2.0
-  (OpenSSL 3+) or LGPL-3/GPL code. Bring in third-party code only for what libsmb2 lacks.
+  (OpenSSL 3+) or LGPL-3/GPL code. Improvements over upstream are welcome in the fork, including third-party code (kept unmodified in its own directory) for what libsmb2 lacks or does worse.
 - Mark every change to an upstream file with a `libsmb2-SwiftSMB (MODS.md Mx)` comment, and keep the fork's own
   CMake and autotools builds working: they and the upstream CI run on every push to the fork.
 - Report bugs and offer fixes upstream, and drop a modification once upstream has an equivalent.
