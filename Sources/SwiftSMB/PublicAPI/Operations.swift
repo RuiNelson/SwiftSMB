@@ -36,7 +36,7 @@ public extension SMB {
             credentials: credentials,
             server: server
         )
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
 
         return try await Bridge.listShares(
             context: context,
@@ -80,8 +80,8 @@ public extension SMB {
                 share: share,
                 user: credentials?.user
             )
-            let maxReadSize = try await Bridge.getMaxReadSize(context: context)
-            let maxWriteSize = try await Bridge.getMaxWriteSize(context: context)
+            let maxReadSize = try await Bridge.maxReadSize(context: context)
+            let maxWriteSize = try await Bridge.maxWriteSize(context: context)
             return Connection(
                 server: server,
                 share: share,
@@ -93,7 +93,7 @@ public extension SMB {
             )
         }
         catch {
-            await Bridge.destroyContext(context)
+            await Bridge.destroyContext(context: context)
             throw error
         }
     }
@@ -127,7 +127,7 @@ public extension SMB {
             return context
         }
         catch {
-            await Bridge.destroyContext(context)
+            await Bridge.destroyContext(context: context)
             throw error
         }
     }
@@ -141,32 +141,32 @@ public extension SMB {
                     onOperation: .smb2SetTimeout
                 )
             }
-            try await Bridge.setTimeout(Int32(timeout), on: context)
+            try await Bridge.setTimeout(context: context, seconds: timeout)
         }
 
         if let dialect = configuration.dialect {
-            try await Bridge.setVersion(dialect.bridgeValue, on: context)
+            try await Bridge.setDialect(context: context, dialect: dialect.bridgeValue)
         }
 
         if let securityMode = configuration.securityMode {
-            try await Bridge.setSecurityMode(securityMode.bridgeValue, on: context)
+            try await Bridge.setSecurityMode(context: context, mode: securityMode.bridgeValue)
         }
 
         switch configuration.encryption {
         case .automatic:
             break
         case .disabled:
-            try await Bridge.setSeal(false, on: context)
+            try await Bridge.setSeal(context: context, enabled: false)
         case .required:
-            try await Bridge.setSeal(true, on: context)
+            try await Bridge.setSeal(context: context, enabled: true)
         }
 
         if let requiresSigning = configuration.requiresSigning {
-            try await Bridge.setSign(requiresSigning, on: context)
+            try await Bridge.setSign(context: context, required: requiresSigning)
         }
 
         if let authentication = configuration.authentication {
-            try await Bridge.setAuthentication(authentication.bridgeValue, on: context)
+            try await Bridge.setAuthentication(context: context, method: authentication.bridgeValue)
         }
     }
 
@@ -178,19 +178,19 @@ public extension SMB {
     ) async throws {
         if let user = credentials?.user {
             try validateCString(user, operation: .smb2SetUser)
-            try await Bridge.setUser(user, on: context)
+            try await Bridge.setUser(context: context, user: user)
         }
         if let password = credentials?.password {
             try validateCString(password, operation: .smb2SetPassword)
-            try await Bridge.setPassword(password, on: context)
+            try await Bridge.setPassword(context: context, password: password)
         }
         if let domain = credentials?.domain ?? server.domain {
             try validateCString(domain, operation: .smb2SetDomain)
-            try await Bridge.setDomain(domain, on: context)
+            try await Bridge.setDomain(context: context, domain: domain)
         }
         if let workstation = credentials?.workstation {
             try validateCString(workstation, operation: .smb2SetWorkstation)
-            try await Bridge.setWorkstation(workstation, on: context)
+            try await Bridge.setWorkstation(context: context, workstation: workstation)
         }
     }
 }

@@ -15,11 +15,11 @@ struct BridgeRegressionTests {
     @Test("captured file handles reject every operation after close")
     func capturedFileHandleRejectsOperationsAfterClose() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
         // A stale pointer must never reach C. Removing it on the queue models a close that ran after a caller captured
         // the wrapper but before that caller's operation was enqueued.
         let file = Bridge.FileHandle(raw: OpaquePointer(bitPattern: 1)!)
-        _ = try await Bridge.perform(on: context) { file.takeRaw() != nil }
+        _ = try await Bridge.perform(context: context) { file.takeRaw() != nil }
 
         await #expect(throws: closedFileError(.smb2Read)) {
             try await Bridge.read(context: context, file: file, count: 1)
@@ -57,11 +57,11 @@ struct BridgeRegressionTests {
     @Test("captured directory handles reject operations after close")
     func capturedDirectoryHandleRejectsOperationsAfterClose() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
         let pointer = UnsafeMutablePointer<smb2dir>.allocate(capacity: 1)
         defer { pointer.deallocate() }
         let directory = Bridge.DirectoryHandle(raw: pointer)
-        _ = try await Bridge.perform(on: context) { directory.takeRaw() != nil }
+        _ = try await Bridge.perform(context: context) { directory.takeRaw() != nil }
 
         await #expect(throws: closedDirectoryError(.smb2Readdir)) {
             try await Bridge.readDir(context: context, directory: directory)
@@ -90,16 +90,16 @@ struct BridgeRegressionTests {
 
     @Test("basic information timestamps handle the Unix epoch and invalid dates")
     func basicInformationTimestamps() throws {
-        var epoch = try Bridge.basicInfoTimeval(from: Date(timeIntervalSince1970: 0))
+        var epoch = try Bridge.BasicInfoTime(date: Date(timeIntervalSince1970: 0)).timeval
         #expect(epoch.tv_sec != 0 || epoch.tv_usec != 0)
         #expect(smb2_timeval_to_win(&epoch) == 116_444_736_000_000_000)
 
-        let omitted = try Bridge.basicInfoTimeval(from: nil)
+        let omitted = try Bridge.BasicInfoTime(date: nil).timeval
         #expect(omitted.tv_sec == 0xFFFF_FFFF)
         #expect(UInt32(truncatingIfNeeded: omitted.tv_usec) == UInt32.max)
         for interval in [Double.nan, .infinity, -.infinity, Double.greatestFiniteMagnitude, -11_644_473_601] {
             #expect(throws: SMB.Error.self) {
-                try Bridge.basicInfoTimeval(from: Date(timeIntervalSince1970: interval))
+                try Bridge.BasicInfoTime(date: Date(timeIntervalSince1970: interval))
             }
         }
     }
@@ -107,7 +107,7 @@ struct BridgeRegressionTests {
     @Test("oversized ACL wire lengths are rejected before queuing a request")
     func oversizedACLRejected() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
         let entry = Bridge.AccessControlEntry(
             kind: 0,
             flags: 0,
@@ -134,7 +134,7 @@ struct BridgeRegressionTests {
     @Test("invalid lease key lengths are rejected before C reads their bytes")
     func invalidLeaseKeyLengthsRejected() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
         for count in [0, 1, 15, 17] {
             await #expect(throws: SMB.Error.posix(
                 code: POSIXErrorCode.EINVAL.rawValue,

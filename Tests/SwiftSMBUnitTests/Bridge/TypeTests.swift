@@ -878,3 +878,26 @@ struct LinkTargetLookupTests {
         #expect(lookup("../x", from: "link") == nil)
     }
 }
+
+// MARK: - SMB.Stat times before 1970
+
+@Suite("SMB.Stat times before 1970")
+struct StatPre1970Tests {
+    @Test("negative seconds from libsmb2 come out as dates before 1970")
+    func negativeSeconds() {
+        // 1960-01-01T00:00:00Z. libsmb2 7.0.0 stores the negative `time_t` in the `uint64_t` field.
+        let seconds: Int64 = -315_619_200
+        var raw = smb2_stat_64()
+        raw.smb2_mtime = UInt64(bitPattern: seconds)
+        raw.smb2_mtime_nsec = 500_000_000
+        raw.smb2_btime = UInt64(bitPattern: seconds)
+
+        let stat = SMB.Stat(Bridge.Stat(raw))
+
+        #expect(stat.modificationTimeSeconds == seconds)
+        #expect(stat.birthTimeSeconds == seconds)
+        let expectedModification = Date(timeIntervalSince1970: -315_619_199.5)
+        #expect(stat.modificationTime == expectedModification)
+        #expect(stat.birthTime == Date(timeIntervalSince1970: -315_619_200))
+    }
+}

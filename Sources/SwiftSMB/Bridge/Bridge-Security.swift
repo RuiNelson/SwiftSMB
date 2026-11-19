@@ -282,7 +282,7 @@ extension Bridge {
         path: String,
         descriptor: SecurityDescriptor
     ) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _setSecurityDescriptor(context: context, path: path, descriptor: descriptor)
         }
     }

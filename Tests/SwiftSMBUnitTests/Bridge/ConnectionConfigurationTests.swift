@@ -16,22 +16,22 @@ import Testing
 struct ContextConfigurationTests {
     @Test("set and get user") func setAndGetUser() async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setUser("alice", on: ctx)
-            #expect(try await Bridge.getUser(on: ctx) == "alice")
+            try await Bridge.setUser(context: ctx, user: "alice")
+            #expect(try await Bridge.user(context: ctx) == "alice")
         }
     }
 
     @Test("set and get domain") func setAndGetDomain() async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setDomain("CORP", on: ctx)
-            #expect(try await Bridge.getDomain(on: ctx) == "CORP")
+            try await Bridge.setDomain(context: ctx, domain: "CORP")
+            #expect(try await Bridge.domain(context: ctx) == "CORP")
         }
     }
 
     @Test("set and get workstation") func setAndGetWorkstation() async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setWorkstation("MYPC", on: ctx)
-            #expect(try await Bridge.getWorkstation(on: ctx) == "MYPC")
+            try await Bridge.setWorkstation(context: ctx, workstation: "MYPC")
+            #expect(try await Bridge.workstation(context: ctx) == "MYPC")
         }
     }
 
@@ -60,7 +60,7 @@ struct ContextConfigurationTests {
                 buffer.copyBytes(from: wireBytes)
             }
 
-            let guid = try await Bridge.getServerGUID(on: ctx)
+            let guid = try await Bridge.serverGUID(context: ctx)
             #expect(guid.uuidString == "00112233-4455-6677-8899-AABBCCDDEEFF")
         }
     }
@@ -82,13 +82,13 @@ struct ContextConfigurationTests {
     @Test("operations on a destroyed context throw instead of touching it")
     func operationsOnDestroyedContextThrow() async throws {
         let ctx = try Bridge.createContext()
-        await Bridge.destroyContext(ctx)
+        await Bridge.destroyContext(context: ctx)
 
         await #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
-            try await Bridge.getUser(on: ctx)
+            try await Bridge.user(context: ctx)
         }
         // Destroying twice is a no-op.
-        await Bridge.destroyContext(ctx)
+        await Bridge.destroyContext(context: ctx)
     }
 
     @Test("commands on a context without a connection fail instead of hanging")
@@ -101,7 +101,7 @@ struct ContextConfigurationTests {
                 operation: "smb2_service",
                 message: "No connection exists"
             )) {
-                try await Bridge.getFileAttributes(context: ctx, path: "missing")
+                try await Bridge.fileAttributes(context: ctx, path: "missing")
             }
         }
     }
@@ -112,8 +112,8 @@ struct ContextConfigurationTests {
             for index in 0 ..< 32 {
                 group.addTask {
                     try await withFreshContext { ctx in
-                        try await Bridge.setUser("user\(index)", on: ctx)
-                        #expect(try await Bridge.getUser(on: ctx) == "user\(index)")
+                        try await Bridge.setUser(context: ctx, user: "user\(index)")
+                        #expect(try await Bridge.user(context: ctx) == "user\(index)")
                     }
                 }
             }
@@ -172,6 +172,6 @@ struct URLParsingTests {
 @discardableResult
 private func withFreshContext<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
     let ctx = try Bridge.createContext()
-    defer { await Bridge.destroyContext(ctx) }
+    defer { await Bridge.destroyContext(context: ctx) }
     return try await body(ctx)
 }

@@ -77,6 +77,12 @@ let serverID: UUID = try await connection.serverGUID
 
 The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidString`.
 
+``SMB/libsmb2Version`` tells which libsmb2 release SwiftSMB is built on, which is useful in bug reports:
+
+```swift
+print("libsmb2 \(SMB.libsmb2Version)") // libsmb2 7.0.0
+```
+
 ## Opening a file handle
 
 ``SMB.Connection.openFile(at:accessMode:options:)`` returns an ``SMB.File`` handle:
@@ -349,6 +355,46 @@ try await file.unlock(range: 1024..<2048)
 ```
 
 Only one mode can be active at a time—shared and exclusive are mutually exclusive. The lock is associated with the open handle and is automatically released when the file is closed.
+
+## Oplocks, leases, and their breaks
+
+An oplock or a lease lets the client cache a file: reads (``SMB/File/LeaseState/readCaching``), writes
+(``SMB/File/LeaseState/writeCaching``), and the open handle itself (``SMB/File/LeaseState/handleCaching``). Ask for one
+when opening the file:
+
+```swift
+let file = try await connection.openFile(
+    at: "report.docx",
+    accessMode: .readWrite,
+    opLock: .lease([.readCaching, .writeCaching, .handleCaching])
+)
+```
+
+When another client opens the file in a way that conflicts with that caching, the server breaks the oplock or lease:
+it lowers what this client may cache. ``SMB/File/opLockBreaks`` delivers those breaks. For a lease that held write
+caching, the server holds the other client's open back until this client has written its cached changes and
+acknowledged the break:
+
+```swift
+for try await opLockBreak in file.opLockBreaks {
+    if case let .lease(_, to) = opLockBreak.change, !to.contains(.writeCaching) {
+        try await writeCachedChanges(to: file)
+    }
+    if opLockBreak.requiresAcknowledgement {
+        try await file.acknowledgeOpLockBreak()
+    }
+}
+```
+
+- While the breaks are iterated, SwiftSMB services the connection in the background, so breaks arrive even when the
+  connection is otherwise idle.
+- Acknowledge promptly: the server waits 35 seconds at most, then lowers the lease to no caching by itself. Pass
+  `keeping:` to keep less than the server allows.
+- Breaks that arrive while nobody iterates, and breaks of classic oplocks (``SMB/File/OpLock/levelII``,
+  ``SMB/File/OpLock/exclusive``, ``SMB/File/OpLock/batch``), are acknowledged by SwiftSMB with the level the server
+  asked for. They are still delivered, with ``SMB/File/OpLockBreak/requiresAcknowledgement`` set to `false`.
+- Iteration ends when the file is closed or the connection is disconnected. A file opened without an oplock has no
+  breaks.
 
 ## Closing handles
 

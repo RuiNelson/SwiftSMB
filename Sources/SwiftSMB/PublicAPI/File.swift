@@ -161,6 +161,9 @@ public extension SMB {
         /// Whether a write was attempted, so closing the file reports its final metadata to the cache.
         let protectedWroteToFile = Protected(false, label: "com.ruinelson.SwiftSMB.SMB.File.wroteToFile")
 
+        /// The breaks of the oplock or lease the file was opened with, or `nil` if it was opened without one.
+        let opLockBreakState: SMBOpLockBreakState?
+
         /// Creates a public file wrapper around an open bridge handle.
         ///
         /// - Parameters:
@@ -173,7 +176,8 @@ public extension SMB {
             accessMode: AccessMode = .readOnly,
             options: OpenOptions = [],
             cacheAttachment: SMBCacheAttachment? = nil,
-            registration: UInt64? = nil
+            registration: UInt64? = nil,
+            opLockBreakState: SMBOpLockBreakState? = nil
         ) {
             self.connection = connection
             self.path = path
@@ -181,10 +185,12 @@ public extension SMB {
             self.options = options
             self.cacheAttachment = cacheAttachment
             self.registration = cacheAttachment == nil ? nil : registration
+            self.opLockBreakState = opLockBreakState
             self.handle = handle
         }
 
         deinit {
+            opLockBreakState?.finish()
             let handle = takeHandle()
             if let handle, let context = try? connection.requireContext() {
                 Bridge.closeInBackground(context: context, file: handle)
@@ -207,6 +213,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the server reports a close error.
         public func close() async throws {
             guard let handle = takeHandle() else { return }
+            opLockBreakState?.finish()
             guard cacheAttachment != nil else {
                 let context = try connection.requireContext()
                 try await Bridge.close(context: context, file: handle)

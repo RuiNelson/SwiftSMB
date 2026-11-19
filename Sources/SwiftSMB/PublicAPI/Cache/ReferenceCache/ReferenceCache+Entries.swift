@@ -86,9 +86,9 @@ extension SMB.ReferenceCache {
     /// The size, last write time, and change time of a version of a file.
     struct FileVersion: Equatable {
         let size: UInt64
-        let modificationSeconds: UInt64
+        let modificationSeconds: Int64
         let modificationNanoseconds: UInt64
-        let changeSeconds: UInt64
+        let changeSeconds: Int64
         let changeNanoseconds: UInt64
 
         init(_ stat: SMB.Stat) {

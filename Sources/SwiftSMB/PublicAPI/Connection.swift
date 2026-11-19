@@ -53,6 +53,8 @@ public extension SMB {
             [:],
             label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers"
         )
+        /// Routes the oplock and lease breaks of the context to the files they name.
+        let opLockBreakRouter = SMBOpLockBreakRouter()
         /// The cache attached with ``attachCache(_:)``, or `nil`.
         let protectedCacheAttachment = Protected<SMBCacheAttachment?>(
             nil,
@@ -81,7 +83,7 @@ public extension SMB {
             get async throws {
                 try await self.withOperation {
                     let context = try requireContext()
-                    return try await Bridge.getDialect(on: context)
+                    return try await Bridge.dialect(context: context).rawValue
                 }
             }
         }
@@ -107,7 +109,7 @@ public extension SMB {
             get async throws {
                 try await self.withOperation {
                     let context = try requireContext()
-                    return try await Bridge.getServerGUID(on: context)
+                    return try await Bridge.serverGUID(context: context)
                 }
             }
         }
@@ -119,7 +121,7 @@ public extension SMB {
             get async throws {
                 try await self.withOperation {
                     let context = try requireContext()
-                    return try await Bridge.getSessionID(context: context)
+                    return try await Bridge.sessionID(context: context)
                 }
             }
         }
@@ -176,11 +178,12 @@ public extension SMB {
         deinit {
             // `deinit` cannot await. Watcher cleanup and teardown are enqueued on the context queue in this order.
             let resources = takeContextAndNotifyWatchers()
+            opLockBreakRouter.shutDown()
             for watcher in resources.watchers {
                 watcher.releaseResourcesInBackground()
             }
             if let context = resources.context {
-                Bridge.teardownInBackground(context)
+                Bridge.teardownInBackground(context: context)
             }
         }
 
@@ -194,13 +197,14 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the server reports a disconnection error.
         public func disconnect() async throws {
             let resources = takeContextAndNotifyWatchers()
+            opLockBreakRouter.shutDown()
             // After the context is gone, so that `attachCache(_:)` cannot attach a cache again.
             detachCache()
             guard let context = resources.context else { return }
             for watcher in resources.watchers {
                 await watcher.cancelAndWait()
             }
-            try await Bridge.shutdown(context)
+            try await Bridge.shutdown(context: context)
         }
 
         /// Disconnects from the share after waiting for in-flight operations to complete.
@@ -220,7 +224,7 @@ public extension SMB {
         public func disconnectGracefully() async throws {
             await drainOperations()
             if let context {
-                await Bridge.waitForPendingOperations(on: context)
+                await Bridge.waitForPendingOperations(context: context)
             }
             try await disconnect()
         }
@@ -252,7 +256,7 @@ public extension SMB {
                 var configuration = configuration
 
                 // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form.
-                let timeout = try await Int(Bridge.getTimeout(on: context))
+                let timeout = try await Bridge.timeout(context: context)
                 if timeout != configuration.timeout ?? 0 {
                     configuration.timeout = timeout
                 }
@@ -301,8 +305,7 @@ public extension SMB {
         public func setTimeout(_ timeout: Int) async throws {
             try await self.withOperation {
                 let context = try requireContext()
-                let int32val = timeout >= 0 ? Int32(clamping: timeout) : 0
-                try await Bridge.setTimeout(int32val, on: context)
+                try await Bridge.setTimeout(context: context, seconds: max(timeout, 0))
             }
         }
 
@@ -366,6 +369,10 @@ public extension SMB {
                     leaseKey = nil
                 }
 
+                if opLock != .none {
+                    try await opLockBreakRouter.install(on: context)
+                }
+
                 func open() async throws -> Bridge.FileHandle {
                     try await Bridge.open(
                         context: context,
@@ -403,19 +410,50 @@ public extension SMB {
                 if let registration {
                     attachment?.openFiles.finishOpen(registration)
                 }
-                let file = File(
+                let file = await File(
                     connection: self,
                     path: path,
                     handle: handle,
                     accessMode: accessMode,
                     options: options,
                     cacheAttachment: attachment,
-                    registration: registration
+                    registration: registration,
+                    opLockBreakState: opLockBreakState(
+                        for: opLock,
+                        leaseKey: leaseKey,
+                        handle: handle,
+                        context: context
+                    )
                 )
                 // One more round trip while a cache is attached: the cache compares the file with what it holds.
                 await file.reportMetadataAfterOpen()
                 return file
             }
+        }
+
+        /// Creates and registers the break state of a file opened with an oplock or a lease, or returns `nil`.
+        ///
+        /// A break that arrives before the state is registered names no open file yet, and is acknowledged right away.
+        private func opLockBreakState(
+            for opLock: File.OpLock,
+            leaseKey: Data?,
+            handle: Bridge.FileHandle,
+            context: Bridge.Context
+        ) async -> SMBOpLockBreakState? {
+            let target: SMBOpLockBreakTarget
+            switch opLock {
+            case .none:
+                return nil
+            case .lease:
+                guard let leaseKey, let key = Bridge.LeaseKey(leaseKey) else { return nil }
+                target = .lease(key)
+            case .levelII, .exclusive, .batch:
+                guard let fileID = try? await Bridge.fileID(context: context, file: handle) else { return nil }
+                target = .opLock(fileID)
+            }
+            let state = SMBOpLockBreakState(target: target, context: context, router: opLockBreakRouter)
+            opLockBreakRouter.register(state)
+            return state
         }
 
         /// Generates a random 16-byte lease key.
@@ -756,8 +794,7 @@ public extension SMB {
             try await self.withOperation {
                 let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
                 let context = try requireContext()
-                let raw = try await Bridge.getFileAttributes(context: context, path: path)
-                return FileAttributes(rawValue: raw)
+                return try await FileAttributes(rawValue: Bridge.fileAttributes(context: context, path: path).rawValue)
             }
         }
 
@@ -785,7 +822,8 @@ public extension SMB {
                     try await Bridge.setStats(
                         context: context,
                         path: path,
-                        fileAttributes: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue
+                        fileAttributes: Bridge
+                            .FileAttributes(rawValue: new.isEmpty ? FileAttributes.normal.rawValue : new.rawValue)
                     )
                 }
             }

@@ -19,7 +19,7 @@ extension Bridge {
     private static let defaultNotifyOutputBufferLength: UInt32 = 0xFFFF
     /// By default servicing does not wait for events, so it never holds the context queue; callers wait between polls
     /// off the queue.
-    private static let defaultNotifyServiceTimeoutMilliseconds: Int32 = 0
+    private static let defaultServiceTimeoutMilliseconds: Int32 = 0
     private static let notifyChangeEntryHeaderLength = 12
     private static let maximumNotifyChangeEntryCount = 4096
 
@@ -75,7 +75,7 @@ extension Bridge {
         filter: NotifyChangeFilter = .all,
         handler: @escaping NotifyChangeHandler
     ) async throws -> PendingRequest {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _notifyChange(context: context, directory: directory, flags: flags, filter: filter, handler: handler)
         }
     }
@@ -97,21 +97,21 @@ extension Bridge {
 
     /// Cancels a pending raw SMB2 request if it has not completed yet.
     static func cancel(context: Context, request: PendingRequest) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             _cancel(context: context, request: request)
         }
     }
 
     /// Cancels a pending raw SMB2 request without waiting. Used from `deinit`, which cannot await.
     static func cancelInBackground(context: Context, request: PendingRequest) {
-        performInBackground(on: context) {
+        performInBackground(context: context) {
             _cancel(context: context, request: request)
         }
     }
 
-    private static func _serviceNotifyEvents(
+    private static func _serviceEvents(
         context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
+        timeoutMilliseconds: Int32 = defaultServiceTimeoutMilliseconds
     ) throws {
         do {
             var pfd = pollfd()
@@ -142,18 +142,19 @@ extension Bridge {
         catch {
             // A failed service call may leave other commands pending on this shared context. Flush their callbacks
             // before their handles or buffers can be reused by another operation.
-            _destroyContext(context)
+            _destroyContext(context: context)
             throw error
         }
     }
 
-    /// Services pending SMB2 events for a notification watcher.
-    static func serviceNotifyEvents(
+    /// Services whatever the server has sent: replies, change notifications, and oplock and lease breaks. Used by the
+    /// loops that keep an otherwise idle connection serviced (notification watchers and oplock break listeners).
+    static func serviceEvents(
         context: Context,
-        timeoutMilliseconds: Int32 = defaultNotifyServiceTimeoutMilliseconds
+        timeoutMilliseconds: Int32 = defaultServiceTimeoutMilliseconds
     ) async throws {
-        try await perform(on: context) {
-            try _serviceNotifyEvents(context: context, timeoutMilliseconds: timeoutMilliseconds)
+        try await perform(context: context) {
+            try _serviceEvents(context: context, timeoutMilliseconds: timeoutMilliseconds)
         }
     }
 

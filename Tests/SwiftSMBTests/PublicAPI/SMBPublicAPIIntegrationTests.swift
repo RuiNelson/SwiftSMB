@@ -18,13 +18,13 @@ struct SMBPublicAPIIntegrationTests {
         defer { try? await connection.disconnect() }
 
         try await connection.setTimeout(45)
-        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == 45)
+        await #expect(try Bridge.timeout(context: connection.requireContext()) == 45)
 
         try await connection.setTimeout(-1)
-        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == 0)
+        await #expect(try Bridge.timeout(context: connection.requireContext()) == 0)
 
         try await connection.setTimeout(Int.max)
-        await #expect(try Bridge.getTimeout(on: connection.requireContext()) == Int32.max)
+        await #expect(try Bridge.timeout(context: connection.requireContext()) == Int32.max)
     }
 
     @Test("negotiated dialect kind matches raw negotiated dialect")
@@ -65,7 +65,7 @@ struct SMBPublicAPIIntegrationTests {
         defer { try? await connection.disconnect() }
 
         // The connect deadline applied while connecting must not leak into command timeouts.
-        #expect(try await Bridge.getTimeout(on: connection.requireContext()) == 0)
+        #expect(try await Bridge.timeout(context: connection.requireContext()) == 0)
     }
 
     @Test("fork opens an independent connection with the same credentials")
@@ -135,7 +135,7 @@ struct SMBPublicAPIIntegrationTests {
         defer { try? await fork.disconnect() }
 
         #expect(fork.configuration.timeout == 45)
-        #expect(try await Bridge.getTimeout(on: fork.requireContext()) == 45)
+        #expect(try await Bridge.timeout(context: fork.requireContext()) == 45)
     }
 
     @Test("fork keeps the rest of the configuration")

@@ -103,7 +103,7 @@ extension Bridge {
                 }
 
                 // libsmb2's timeout would only drop the request locally; the cancellation enforces it instead.
-                let timeoutSeconds = context.raw.pointee.timeout
+                let timeoutSeconds = context.commandTimeoutSeconds
                 pdu.pointee.timeout = 0
                 smb2_queue_pdu(context.raw, pdu)
                 isQueued = true
@@ -138,7 +138,7 @@ extension Bridge {
         offset: UInt64 = 0,
         length: UInt64 = UInt64.max
     ) async throws {
-        try await performCancellable(on: context) { signal in
+        try await performCancellable(context: context) { signal in
             try _lock(context: context, file: file, flags: flags, offset: offset, length: length, signal: signal)
         }
     }

@@ -30,7 +30,7 @@ extension Bridge {
     /// is used directly on the caller's thread instead of through its queue.
     static func parseURL(_ url: String) throws -> SMB2URL {
         let context = try createContext()
-        defer { _destroyContext(context) }
+        defer { _destroyContext(context: context) }
         return try _parseURL(url, context: context)
     }
 }

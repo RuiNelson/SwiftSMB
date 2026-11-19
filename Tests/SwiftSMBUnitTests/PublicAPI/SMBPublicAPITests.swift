@@ -63,7 +63,7 @@ struct SMBPublicAPITests {
             timeout: 30,
             dialect: .anySMB3,
             securityMode: [.signingEnabled],
-            requiresEncryption: false,
+            encryption: .disabled,
             requiresSigning: false,
             authentication: .ntlmssp,
             transferBlockSize: 65536
@@ -77,11 +77,14 @@ struct SMBPublicAPITests {
         #expect(configuration.transferBlockSize == 65536)
     }
 
-    @Test("legacy encryption representation maps to the typed policy")
-    func legacyEncryptionRepresentationMapsToTypedPolicy() {
-        #expect(SMB.Configuration(requiresEncryption: nil).encryption == .automatic)
-        #expect(SMB.Configuration(requiresEncryption: false).encryption == .disabled)
-        #expect(SMB.Configuration(requiresEncryption: true).encryption == .required)
+    @Test("configurations encoded with the legacy encryption key decode to the typed policy")
+    func legacyEncryptionKeyDecodesToTypedPolicy() throws {
+        func decode(_ json: String) throws -> SMB.Configuration.Encryption {
+            try JSONDecoder().decode(SMB.Configuration.self, from: Data(json.utf8)).encryption
+        }
+        #expect(try decode("{}") == .automatic)
+        #expect(try decode(#"{"requiresEncryption": false}"#) == .disabled)
+        #expect(try decode(#"{"requiresEncryption": true}"#) == .required)
     }
 
     @Test("configuration preserves the legacy encryption coding key")
@@ -149,5 +152,24 @@ struct SMBPublicAPITests {
         #expect(descriptor.discretionaryAccessControlList?.entries == [entry])
         #expect(entry.flags.contains(.objectInherit))
         #expect(entry.accessMask == .genericAll)
+    }
+}
+
+@Suite("SMB.LibraryVersion")
+struct LibraryVersionTests {
+    @Test("the linked libsmb2 reports the release SwiftSMB pins")
+    func linkedVersion() {
+        #expect(SMB.libsmb2Version == SMB.LibraryVersion(major: 7, minor: 0, patch: 0))
+        #expect(SMB.libsmb2Version.description == "7.0.0")
+    }
+
+    @Test("versions compare component by component")
+    func ordering() {
+        let v6_3_2 = SMB.LibraryVersion(major: 6, minor: 3, patch: 2)
+        let v7_0_0 = SMB.LibraryVersion(major: 7, minor: 0, patch: 0)
+        let v7_0_1 = SMB.LibraryVersion(major: 7, minor: 0, patch: 1)
+        #expect(v6_3_2 < v7_0_0)
+        #expect(v7_0_0 < v7_0_1)
+        #expect(!(v7_0_1 < v7_0_0))
     }
 }

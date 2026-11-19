@@ -244,6 +244,55 @@ struct CookbookHandlesTests {
         try await file.unlock()
     }
 
+    @Test("libsmb2 version compiles and runs")
+    func libsmb2Version() {
+        let description = "libsmb2 \(SMB.libsmb2Version)"
+        #expect(description == "libsmb2 7.0.0")
+    }
+
+    @Test("lease breaks compile and run", .timeLimit(.minutes(1)))
+    func leaseBreaks() async throws {
+        let connection = try await cookbookConnection()
+        defer { try? await connection.disconnect() }
+        let other = try await cookbookConnection()
+        defer { try? await other.disconnect() }
+        let remote = uniquePath("cookbook-lease") + ".docx"
+        defer { try? await connection.removeFile(at: remote) }
+        try await connection.dumpToFile(Data("lease test".utf8), to: remote)
+
+        let file = try await connection.openFile(
+            at: remote,
+            accessMode: .readWrite,
+            opLock: .lease([.readCaching, .writeCaching, .handleCaching])
+        )
+        defer { try? await file.close() }
+
+        let (listening, listeningContinuation) = AsyncStream<Void>.makeStream()
+        let breaks = Task {
+            var count = 0
+            var iterator = file.opLockBreaks.makeAsyncIterator()
+            listeningContinuation.yield()
+            while let opLockBreak = try await iterator.next() {
+                if case let .lease(_, to) = opLockBreak.change, !to.contains(.writeCaching) {
+                    _ = try await file.write(Data())
+                }
+                if opLockBreak.requiresAcknowledgement {
+                    try await file.acknowledgeOpLockBreak()
+                }
+                count += 1
+                break
+            }
+            return count
+        }
+        for await _ in listening {
+            break
+        }
+
+        let conflicting = try await other.openFile(at: remote, accessMode: .readWrite)
+        try await conflicting.close()
+        #expect(try await breaks.value == 1)
+    }
+
     @Test("lock shared compiles and runs")
     func lockShared() async throws {
         let connection = try await cookbookConnection()

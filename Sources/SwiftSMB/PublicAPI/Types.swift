@@ -450,26 +450,26 @@ public extension SMB {
         /// The node size, in bytes.
         public let size: UInt64
 
-        /// The access time, in seconds since the Unix epoch.
-        public let accessTimeSeconds: UInt64
+        /// The access time, in seconds since the Unix epoch (negative before 1970).
+        public let accessTimeSeconds: Int64
 
         /// Nanoseconds component for ``accessTime``.
         public let accessTimeNanoseconds: UInt64
 
-        /// The modification time, in seconds since the Unix epoch.
-        public let modificationTimeSeconds: UInt64
+        /// The modification time, in seconds since the Unix epoch (negative before 1970).
+        public let modificationTimeSeconds: Int64
 
         /// Nanoseconds component for ``modificationTime``.
         public let modificationTimeNanoseconds: UInt64
 
-        /// The metadata change time, in seconds since the Unix epoch.
-        public let changeTimeSeconds: UInt64
+        /// The metadata change time, in seconds since the Unix epoch (negative before 1970).
+        public let changeTimeSeconds: Int64
 
         /// Nanoseconds component for ``changeTime``.
         public let changeTimeNanoseconds: UInt64
 
-        /// The creation time, in seconds since the Unix epoch.
-        public let birthTimeSeconds: UInt64
+        /// The creation time, in seconds since the Unix epoch (negative before 1970).
+        public let birthTimeSeconds: Int64
 
         /// Nanoseconds component for ``birthTime``.
         public let birthTimeNanoseconds: UInt64
@@ -515,7 +515,7 @@ public extension SMB {
             changeTimeNanoseconds = bridgeValue.changeTimeNanoseconds
             birthTimeSeconds = bridgeValue.birthTime
             birthTimeNanoseconds = bridgeValue.birthTimeNanoseconds
-            attributes = FileAttributes(rawValue: bridgeValue.attributes)
+            attributes = FileAttributes(rawValue: bridgeValue.attributes.rawValue)
             let isReparsePoint = attributes.contains(.reparsePoint)
             reparseTag = isReparsePoint && bridgeValue.reparseTag != 0 ? bridgeValue.reparseTag : nil
         }

@@ -146,7 +146,7 @@ extension Bridge {
     @discardableResult
     static func queueCancel(context: Context, messageID: UInt64) -> Bool {
         guard let pdu = smb2_cmd_cancel_async(context.raw, messageID, cancelCallback, nil) else {
-            withUnsafeMutableBytes(of: &context.raw.pointee.error_string) { $0[0] = 0 }
+            context.clearErrorString()
             return false
         }
         smb2_queue_pdu(context.raw, pdu)
@@ -155,12 +155,12 @@ extension Bridge {
 
     /// Runs a bridge operation whose request can be withdrawn, tripping `signal` when the task is cancelled.
     static func performCancellable<T: Sendable>(
-        on context: Context,
+        context: Context,
         _ body: @escaping @Sendable (CancellationSignal) throws -> T
     ) async throws -> T {
         let signal = CancellationSignal()
         return try await withTaskCancellationHandler {
-            try await perform(on: context) {
+            try await perform(context: context) {
                 try body(signal)
             }
         } onCancel: {

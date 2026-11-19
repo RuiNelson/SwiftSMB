@@ -36,7 +36,7 @@ struct ConnectionInputRegressionTests {
         operation: SMB.Error.InvalidArgumentOperation
     ) async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
 
         await #expect(throws: SMB.Error.invalidArgument(cause: .stringContainsNUL, onOperation: operation)) {
             try await SMB.configureCredentials(credentials, server: SMB.Server(host: "server"), on: context)
@@ -46,7 +46,7 @@ struct ConnectionInputRegressionTests {
     @Test("the server domain rejects embedded NUL characters")
     func rejectsNULInServerDomain() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
 
         await #expect(throws: SMB.Error.invalidArgument(cause: .stringContainsNUL, onOperation: .smb2SetDomain)) {
             try await SMB.configureCredentials(
@@ -70,7 +70,7 @@ struct ConnectionInputRegressionTests {
             maxWriteSize: 1024
         )
         // Destroying before disconnect lets this unit test mark the public connection closed without a network call.
-        await Bridge.destroyContext(context)
+        await Bridge.destroyContext(context: context)
         try? await connection.disconnect()
 
         let (_, continuation) = AsyncThrowingStream<[SMB.NotifyChange], any Swift.Error>.makeStream()
@@ -101,10 +101,10 @@ struct ConnectionInputRegressionTests {
             maxReadSize: 1024,
             maxWriteSize: 1024
         )
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
 
         await #expect(throws: SMB.Error.self) {
-            try await Bridge.getFileAttributes(context: context, path: "missing")
+            try await Bridge.fileAttributes(context: context, path: "missing")
         }
         #expect(!connection.isConnected)
         #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
@@ -115,14 +115,14 @@ struct ConnectionInputRegressionTests {
     @Test("a fatal notification service error destroys its shared context")
     func fatalNotificationServiceFailureDestroysContext() async throws {
         let context = try Bridge.createContext()
-        defer { await Bridge.destroyContext(context) }
+        defer { await Bridge.destroyContext(context: context) }
 
         await #expect(throws: SMB.Error.self) {
-            try await Bridge.serviceNotifyEvents(context: context)
+            try await Bridge.serviceEvents(context: context)
         }
         #expect(!context.isAlive)
         await #expect(throws: SMB.Error.operationRequestedAfterConnectionClosed) {
-            try await Bridge.getUser(on: context)
+            try await Bridge.user(context: context)
         }
     }
 }

@@ -526,7 +526,7 @@ final class SMBNotifyWatcherState: Sendable {
                 else {
                     // Service without waiting on the context queue, then wait off the queue, so other operations on
                     // this connection are not held up behind the watcher. `cancel()` ends the wait early.
-                    try await Bridge.serviceNotifyEvents(context: context)
+                    try await Bridge.serviceEvents(context: context)
                     if !hasCompletedResult {
                         try? await Task.sleep(nanoseconds: Self.serviceIntervalNanoseconds)
                     }

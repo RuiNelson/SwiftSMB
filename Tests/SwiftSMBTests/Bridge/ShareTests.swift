@@ -79,7 +79,7 @@ struct ShareTests {
         "names only enumeration returns shares without kind or remark"
     ) func namesOnlyEnumerationReturnsSharesWithoutKindOrRemark() async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setSecurityMode(.signingEnabled, on: ctx)
+            try await Bridge.setSecurityMode(context: ctx, mode: .signingEnabled)
             try await Bridge.connectShare(context: ctx, server: testServerHost, share: "IPC$")
             let shares = try await Bridge.listSharesOnConnectedIPCShare(context: ctx, level: .namesOnly)
             try await Bridge.disconnectShare(context: ctx)
@@ -93,7 +93,7 @@ struct ShareTests {
 
     @Test("detailed enumeration returns shares with kind") func detailedEnumerationReturnsSharesWithKind() async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setSecurityMode(.signingEnabled, on: ctx)
+            try await Bridge.setSecurityMode(context: ctx, mode: .signingEnabled)
             try await Bridge.connectShare(context: ctx, server: testServerHost, share: "IPC$")
             let shares = try await Bridge.listSharesOnConnectedIPCShare(context: ctx, level: .detailed)
             try await Bridge.disconnectShare(context: ctx)
@@ -122,7 +122,7 @@ struct ShareTests {
     ) func fullEnumerationReturnsSharesWithPathAndUserCounts(
     ) async throws {
         try await withFreshContext { ctx in
-            try await Bridge.setSecurityMode(.signingEnabled, on: ctx)
+            try await Bridge.setSecurityMode(context: ctx, mode: .signingEnabled)
             try await Bridge.connectShare(context: ctx, server: testServerHost, share: "IPC$")
             let shares = try await Bridge.listSharesOnConnectedIPCShare(context: ctx, level: .full)
             try await Bridge.disconnectShare(context: ctx)

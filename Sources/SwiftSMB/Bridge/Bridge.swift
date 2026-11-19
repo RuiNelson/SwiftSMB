@@ -36,7 +36,7 @@ class Bridge {
     /// been destroyed. Task cancellation is not checked, so cleanup operations still run in cancelled tasks.
     @discardableResult
     static func perform<T: Sendable>(
-        on context: Context,
+        context: Context,
         _ body: @escaping @Sendable () throws -> T
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
@@ -45,7 +45,7 @@ class Bridge {
                     continuation.resume(throwing: SMB.Error.operationRequestedAfterConnectionClosed)
                     return
                 }
-                clearError(on: context)
+                clearError(context: context)
                 continuation.resume(with: Result { try body() })
             }
         }
@@ -56,15 +56,14 @@ class Bridge {
     /// libsmb2 keeps both until another failure overwrites them, and ``SMB/Error/fromBridge(_:operation:status:)``
     /// prefers the NT status over the status an operation reports. Clearing them before each operation keeps a failure
     /// from being reported with the status and message of an earlier, unrelated one.
-    private static func clearError(on context: Context) {
-        context.raw.pointee.nterror = 0
-        withUnsafeMutableBytes(of: &context.raw.pointee.error_string) { $0[0] = 0 }
+    private static func clearError(context: Context) {
+        context.clearError()
     }
 
     /// Enqueues `body` on the context's serial queue without waiting for it. Used from `deinit`, which cannot await.
     ///
     /// `body` is skipped if the context has been destroyed by the time it runs.
-    static func performInBackground(on context: Context, _ body: @escaping @Sendable () -> Void) {
+    static func performInBackground(context: Context, _ body: @escaping @Sendable () -> Void) {
         context.queue.async {
             guard context.isAlive else {
                 return
@@ -74,7 +73,7 @@ class Bridge {
     }
 
     /// Waits until every operation already enqueued on the context has finished.
-    static func waitForPendingOperations(on context: Context) async {
+    static func waitForPendingOperations(context: Context) async {
         await withCheckedContinuation { continuation in
             context.queue.async {
                 continuation.resume()
@@ -92,20 +91,22 @@ class Bridge {
             throw SMB.Error.contextCreationFailed
         }
 
-        return Context(raw: raw)
+        let context = Context(raw: raw)
+        installOpLockBreakCallback(context: context)
+        return context
     }
 
     /// Closes the active connection for a context without destroying the context.
-    static func closeContext(_ context: Context) async {
-        try? await perform(on: context) {
-            closeOwnedHandles(on: context)
+    static func closeContext(context: Context) async {
+        try? await perform(context: context) {
+            closeOwnedHandles(context: context)
             guard context.isAlive else { return }
             smb2_close_context(context.raw)
         }
     }
 
     /// Destroys a context and marks it dead. Must run on the context queue, or on a context that was never shared.
-    static func _destroyContext(_ context: Context) {
+    static func _destroyContext(context: Context) {
         guard context.isAlive else { return }
         context.isAlive = false
         for directory in Array(context.directoryHandles.values) {
@@ -127,10 +128,10 @@ class Bridge {
     ///
     /// Destroying an already destroyed context does nothing. Operations enqueued afterwards throw
     /// ``SMB/Error/operationRequestedAfterConnectionClosed``.
-    static func destroyContext(_ context: Context) async {
+    static func destroyContext(context: Context) async {
         context.markClosing()
-        try? await perform(on: context) {
-            _destroyContext(context)
+        try? await perform(context: context) {
+            _destroyContext(context: context)
         }
     }
 
@@ -142,29 +143,29 @@ class Bridge {
     ///
     /// A request still waiting on the server, such as a blocking lock, is withdrawn first instead of holding the
     /// shutdown back.
-    static func shutdown(_ context: Context) async throws {
+    static func shutdown(context: Context) async throws {
         context.markClosing()
-        try await perform(on: context) {
-            try _shutdown(context)
+        try await perform(context: context) {
+            try _shutdown(context: context)
         }
     }
 
     /// Disconnects, closes, and destroys a context without waiting. Used from `deinit`, which cannot await.
-    static func teardownInBackground(_ context: Context) {
+    static func teardownInBackground(context: Context) {
         context.markClosing()
-        performInBackground(on: context) {
-            _ = try? _shutdown(context)
+        performInBackground(context: context) {
+            _ = try? _shutdown(context: context)
         }
     }
 
-    private static func _shutdown(_ context: Context) throws {
+    private static func _shutdown(context: Context) throws {
         defer {
             if context.isAlive {
                 smb2_close_context(context.raw)
-                _destroyContext(context)
+                _destroyContext(context: context)
             }
         }
-        closeOwnedHandles(on: context)
+        closeOwnedHandles(context: context)
         guard context.isAlive else {
             throw SMB.Error.operationRequestedAfterConnectionClosed
         }
@@ -172,7 +173,7 @@ class Bridge {
     }
 
     /// Closes all registered handles while their context is still connected. Must run on the context queue.
-    private static func closeOwnedHandles(on context: Context) {
+    private static func closeOwnedHandles(context: Context) {
         for directory in Array(context.directoryHandles.values) {
             _closeDir(context: context, directory: directory)
         }
@@ -184,61 +185,68 @@ class Bridge {
 
     // MARK: - Configuration
 
-    /// Sets the command timeout in seconds for a context.
-    static func setTimeout(_ seconds: Int32, on context: Context) async throws {
-        try await perform(on: context) {
-            smb2_set_timeout(context.raw, seconds)
+    /// Sets the command timeout of a context, in seconds. `0` disables it.
+    static func setTimeout(context: Context, seconds: Int) async throws {
+        try await perform(context: context) {
+            smb2_set_timeout(context.raw, Int32(clamping: seconds))
         }
     }
 
-    /// Returns the command timeout in seconds for a context.
-    static func getTimeout(on context: Context) async throws -> Int32 {
-        try await perform(on: context) {
-            context.raw.pointee.timeout
+    /// Returns the command timeout of a context, in seconds.
+    static func timeout(context: Context) async throws -> Int {
+        try await perform(context: context) {
+            Int(context.commandTimeoutSeconds)
         }
     }
 
-    /// Sets the SMB dialect negotiation preference for a context.
-    static func setVersion(_ version: smb2_negotiate_version, on context: Context) async throws {
-        try await perform(on: context) {
-            smb2_set_version(context.raw, version)
+    /// Returns the version of the linked libsmb2. Touches no context or process-wide state, so it needs no queue.
+    static func libraryVersion() -> LibraryVersion {
+        var version = smb2_libversion()
+        smb2_get_libsmb2Version(&version)
+        return LibraryVersion(version)
+    }
+
+    /// Sets the dialects a context offers when it negotiates.
+    static func setDialect(context: Context, dialect: DialectPreference) async throws {
+        try await perform(context: context) {
+            smb2_set_version(context.raw, dialect.rawValue)
         }
     }
 
-    private static func _getDialect(on context: Context) -> UInt16 {
-        smb2_get_dialect(context.raw)
+    private static func _dialect(context: Context) -> DialectRevision {
+        DialectRevision(rawValue: smb2_get_dialect(context.raw))
     }
 
-    /// Returns the currently negotiated SMB dialect for a context.
-    static func getDialect(on context: Context) async throws -> UInt16 {
-        try await perform(on: context) {
-            _getDialect(on: context)
+    /// Returns the dialect a context negotiated.
+    static func dialect(context: Context) async throws -> DialectRevision {
+        try await perform(context: context) {
+            _dialect(context: context)
         }
     }
 
-    static func _setSecurityMode(_ securityMode: SecurityMode, on context: Context) {
-        smb2_set_security_mode(context.raw, securityMode.rawValue)
+    static func _setSecurityMode(context: Context, mode: SecurityMode) {
+        smb2_set_security_mode(context.raw, mode.rawValue)
     }
 
-    /// Sets SMB signing-related negotiation flags for a context.
-    static func setSecurityMode(_ securityMode: SecurityMode, on context: Context) async throws {
-        try await perform(on: context) {
-            _setSecurityMode(securityMode, on: context)
+    /// Sets the SMB signing negotiation flags of a context.
+    static func setSecurityMode(context: Context, mode: SecurityMode) async throws {
+        try await perform(context: context) {
+            _setSecurityMode(context: context, mode: mode)
         }
     }
 
     /// Explicitly requires or disables SMB3 encryption for a context.
     ///
     /// Not calling this function leaves libsmb2's automatic encryption negotiation in effect.
-    static func setSeal(_ enabled: Bool, on context: Context) async throws {
-        try await perform(on: context) {
+    static func setSeal(context: Context, enabled: Bool) async throws {
+        try await perform(context: context) {
             smb2_set_seal(context.raw, enabled ? 1 : 0)
         }
     }
 
     /// Returns the server GUID negotiated for a connected context as a native Swift UUID.
-    static func getServerGUID(on context: Context) async throws -> UUID {
-        try await perform(on: context) {
+    static func serverGUID(context: Context) async throws -> UUID {
+        try await perform(context: context) {
             guard let rawGUID = smb2_get_server_guid(context.raw) else {
                 return UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
             }
@@ -272,71 +280,71 @@ class Bridge {
     }
 
     /// Enables or disables required SMB signing for a context.
-    static func setSign(_ required: Bool, on context: Context) async throws {
-        try await perform(on: context) {
+    static func setSign(context: Context, required: Bool) async throws {
+        try await perform(context: context) {
             smb2_set_sign(context.raw, required ? 1 : 0)
         }
     }
 
-    /// Sets the authentication mechanism for a context.
-    static func setAuthentication(_ authentication: AuthenticationMethod, on context: Context) async throws {
-        try await perform(on: context) {
-            smb2_set_authentication(context.raw, authentication.rawValue)
+    /// Sets the authentication mechanism of a context.
+    static func setAuthentication(context: Context, method: AuthenticationMethod) async throws {
+        try await perform(context: context) {
+            smb2_set_authentication(context.raw, method.rawValue)
         }
     }
 
     /// Sets the username used for authentication.
-    static func setUser(_ user: String, on context: Context) async throws {
-        try await perform(on: context) {
+    static func setUser(context: Context, user: String) async throws {
+        try await perform(context: context) {
             user.withCString { smb2_set_user(context.raw, $0) }
         }
     }
 
     /// Returns the username currently configured on a context.
-    static func getUser(on context: Context) async throws -> String? {
-        try await perform(on: context) {
+    static func user(context: Context) async throws -> String? {
+        try await perform(context: context) {
             smb2_get_user(context.raw).map(String.init(cString:))
         }
     }
 
     /// Sets the password used for authentication.
-    static func setPassword(_ password: String, on context: Context) async throws {
-        try await perform(on: context) {
+    static func setPassword(context: Context, password: String) async throws {
+        try await perform(context: context) {
             password.withCString { smb2_set_password(context.raw, $0) }
         }
     }
 
     /// Loads the password from the NTLM_USER_FILE credential file if available.
-    static func setPasswordFromFile(on context: Context) async throws {
-        try await perform(on: context) {
+    static func setPasswordFromFile(context: Context) async throws {
+        try await perform(context: context) {
             smb2_set_password_from_file(context.raw)
         }
     }
 
-    /// Sets the authentication domain for a context.
-    static func setDomain(_ domain: String, on context: Context) async throws {
-        try await perform(on: context) {
+    /// Sets the authentication domain of a context.
+    static func setDomain(context: Context, domain: String) async throws {
+        try await perform(context: context) {
             domain.withCString { smb2_set_domain(context.raw, $0) }
         }
     }
 
     /// Returns the authentication domain currently configured on a context.
-    static func getDomain(on context: Context) async throws -> String? {
-        try await perform(on: context) {
+    static func domain(context: Context) async throws -> String? {
+        try await perform(context: context) {
             smb2_get_domain(context.raw).map(String.init(cString:))
         }
     }
 
     /// Sets the workstation name used for authentication.
-    static func setWorkstation(_ workstation: String, on context: Context) async throws {
-        try await perform(on: context) {
+    static func setWorkstation(context: Context, workstation: String) async throws {
+        try await perform(context: context) {
             workstation.withCString { smb2_set_workstation(context.raw, $0) }
         }
     }
 
     /// Returns the workstation name currently configured on a context.
-    static func getWorkstation(on context: Context) async throws -> String? {
-        try await perform(on: context) {
+    static func workstation(context: Context) async throws -> String? {
+        try await perform(context: context) {
             smb2_get_workstation(context.raw).map(String.init(cString:))
         }
     }
@@ -359,7 +367,7 @@ class Bridge {
     ) throws {
         // A command timeout of 0 means "no command timeout", but libsmb2 would also treat it as a connection window
         // that ends at the next wall-clock second. Connect with a real deadline, then restore the configured value.
-        let commandTimeout = context.raw.pointee.timeout
+        let commandTimeout = context.commandTimeoutSeconds
         if commandTimeout == 0 {
             smb2_set_timeout(context.raw, defaultConnectTimeoutSeconds)
         }
@@ -387,7 +395,7 @@ class Bridge {
         share: String,
         user: String? = nil
     ) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _connectShare(context: context, server: server, share: share, user: user)
         }
     }
@@ -398,28 +406,28 @@ class Bridge {
 
     /// Disconnects a context from its current share.
     static func disconnectShare(context: Context) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _disconnectShare(context: context)
         }
     }
 
     /// Selects a previously connected tree ID for subsequent requests.
-    static func selectTreeID(_ treeID: UInt32, context: Context) async throws {
-        try await perform(on: context) {
+    static func selectTreeID(context: Context, treeID: UInt32) async throws {
+        try await perform(context: context) {
             try check(smb2_select_tree_id(context.raw, treeID), context: context, operation: "smb2_select_tree_id")
         }
     }
 
-    private static func _getSessionID(context: Context) throws -> UInt64 {
+    private static func _sessionID(context: Context) throws -> UInt64 {
         var sessionID: UInt64 = 0
         try check(smb2_get_session_id(context.raw, &sessionID), context: context, operation: "smb2_get_session_id")
         return sessionID
     }
 
     /// Returns the SMB session ID for a context.
-    static func getSessionID(context: Context) async throws -> UInt64 {
-        try await perform(on: context) {
-            try _getSessionID(context: context)
+    static func sessionID(context: Context) async throws -> UInt64 {
+        try await perform(context: context) {
+            try _sessionID(context: context)
         }
     }
 
@@ -439,7 +447,7 @@ class Bridge {
         path: String,
         flags: OpenFlags = OpenFlags()
     ) async throws -> FileHandle {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _open(context: context, path: path, flags: flags)
         }
     }
@@ -556,7 +564,7 @@ class Bridge {
         leaseState: LeaseState = [],
         leaseKey: Data? = nil
     ) async throws -> FileHandle {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _open(
                 context: context,
                 path: path,
@@ -597,14 +605,14 @@ class Bridge {
 
     /// Closes an open file handle.
     static func close(context: Context, file: FileHandle) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _close(context: context, file: file)
         }
     }
 
     /// Closes an open file handle without waiting. Used from `deinit`, which cannot await.
     static func closeInBackground(context: Context, file: FileHandle) {
-        performInBackground(on: context) {
+        performInBackground(context: context) {
             _ = try? _close(context: context, file: file)
         }
     }
@@ -618,30 +626,30 @@ class Bridge {
 
     /// Flushes pending writes for an open file handle.
     static func sync(context: Context, file: FileHandle) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _sync(context: context, file: file)
         }
     }
 
-    private static func _getMaxReadSize(context: Context) -> UInt32 {
+    private static func _maxReadSize(context: Context) -> UInt32 {
         smb2_get_max_read_size(context.raw)
     }
 
     /// Returns the maximum read size supported by the connected server.
-    static func getMaxReadSize(context: Context) async throws -> UInt32 {
-        try await perform(on: context) {
-            _getMaxReadSize(context: context)
+    static func maxReadSize(context: Context) async throws -> UInt32 {
+        try await perform(context: context) {
+            _maxReadSize(context: context)
         }
     }
 
-    private static func _getMaxWriteSize(context: Context) -> UInt32 {
+    private static func _maxWriteSize(context: Context) -> UInt32 {
         smb2_get_max_write_size(context.raw)
     }
 
     /// Returns the maximum write size supported by the connected server.
-    static func getMaxWriteSize(context: Context) async throws -> UInt32 {
-        try await perform(on: context) {
-            _getMaxWriteSize(context: context)
+    static func maxWriteSize(context: Context) async throws -> UInt32 {
+        try await perform(context: context) {
+            _maxWriteSize(context: context)
         }
     }
 
@@ -716,7 +724,7 @@ class Bridge {
     /// - Returns: The bytes read. An empty value indicates end of file.
     static func read(context: Context, file: FileHandle, count: Int, offset: UInt64) async throws -> Data {
         let byteCount = try count.asUInt32(operation: .smb2Pread)
-        return try await perform(on: context) {
+        return try await perform(context: context) {
             let raw = try file.requireRaw(operation: .smb2Pread)
             guard byteCount > 0 else { return Data() }
             let previousOffset = try _seek(context: context, file: file, offset: 0, whence: SEEK_CUR)
@@ -736,7 +744,7 @@ class Bridge {
     /// - Returns: The number of bytes the server accepted, which may be fewer than `data.count`.
     static func write(context: Context, file: FileHandle, data: Data, offset: UInt64) async throws -> Int {
         let byteCount = try data.count.asUInt32(operation: .smb2Pwrite)
-        return try await perform(on: context) {
+        return try await perform(context: context) {
             let raw = try file.requireRaw(operation: .smb2Pwrite)
             guard byteCount > 0 else { return 0 }
             let previousOffset = try _seek(context: context, file: file, offset: 0, whence: SEEK_CUR)
@@ -756,7 +764,7 @@ class Bridge {
     /// - Returns: The bytes read. An empty value indicates end of file.
     static func read(context: Context, file: FileHandle, count: Int) async throws -> Data {
         let byteCount = try count.asUInt32(operation: .smb2Read)
-        return try await perform(on: context) {
+        return try await perform(context: context) {
             let raw = try file.requireRaw(operation: .smb2Read)
             guard byteCount > 0 else { return Data() }
             return try readData(count: count, context: context, operation: "smb2_read") {
@@ -770,13 +778,13 @@ class Bridge {
     /// - Returns: The number of bytes the server accepted, which may be fewer than `data.count`.
     static func write(context: Context, file: FileHandle, data: Data) async throws -> Int {
         let byteCount = try data.count.asUInt32(operation: .smb2Write)
-        return try await perform(on: context) {
+        return try await perform(context: context) {
             let raw = try file.requireRaw(operation: .smb2Write)
             guard byteCount > 0 else { return 0 }
             if file.appendsWrites {
                 // libsmb2 ignores O_APPEND. Refresh the end on every write so reopening or seeking an append handle
                 // never overwrites the existing contents.
-                let size = try _getFileSize(context: context, file: file)
+                let size = try _fileSize(context: context, file: file)
                 let destination = try seekDestination(from: size, offset: 0)
                 _ = smb2_lseek(context.raw, raw, Int64(destination), SEEK_SET, nil)
             }
@@ -805,7 +813,7 @@ class Bridge {
             }
             base = previousOffset
         case SEEK_END:
-            base = try _getFileSize(context: context, file: file)
+            base = try _fileSize(context: context, file: file)
         default:
             throw SMB.Error.posix(
                 code: POSIXErrorCode.EINVAL.rawValue,
@@ -865,7 +873,7 @@ class Bridge {
         offset: Int64,
         whence: Int32
     ) async throws -> UInt64 {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _seek(context: context, file: file, offset: offset, whence: whence)
         }
     }
@@ -876,7 +884,7 @@ class Bridge {
 
     /// Removes a file or link at a path.
     static func unlink(context: Context, path: String) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _unlink(context: context, path: path)
         }
     }
@@ -889,7 +897,7 @@ class Bridge {
 
     /// Removes an empty directory at a path.
     static func removeDir(context: Context, path: String) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _removeDir(context: context, path: path)
         }
     }
@@ -900,7 +908,7 @@ class Bridge {
 
     /// Creates a directory at a path.
     static func makeDir(context: Context, path: String) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _makeDir(context: context, path: path)
         }
     }
@@ -946,7 +954,7 @@ class Bridge {
 
     /// Opens a directory and returns a directory handle.
     static func openDir(context: Context, path: String) async throws -> DirectoryHandle {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _openDir(context: context, path: path)
         }
     }
@@ -959,14 +967,14 @@ class Bridge {
 
     /// Closes an open directory handle.
     static func closeDir(context: Context, directory: DirectoryHandle) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             _closeDir(context: context, directory: directory)
         }
     }
 
     /// Closes an open directory handle without waiting. Used from `deinit`, which cannot await.
     static func closeDirInBackground(context: Context, directory: DirectoryHandle) {
-        performInBackground(on: context) {
+        performInBackground(context: context) {
             _closeDir(context: context, directory: directory)
         }
     }
@@ -977,7 +985,7 @@ class Bridge {
 
     /// Reads the next directory entry from a directory handle.
     static func readDir(context: Context, directory: DirectoryHandle) async throws -> DirectoryEntry? {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _readDir(context: context, directory: directory)
         }
     }
@@ -988,7 +996,7 @@ class Bridge {
 
     /// Rewinds a directory handle to the first entry.
     static func rewindDir(context: Context, directory: DirectoryHandle) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _rewindDir(context: context, directory: directory)
         }
     }
@@ -999,7 +1007,7 @@ class Bridge {
 
     /// Returns the current directory stream location.
     static func tellDir(context: Context, directory: DirectoryHandle) async throws -> Int {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _tellDir(context: context, directory: directory)
         }
     }
@@ -1018,7 +1026,7 @@ class Bridge {
 
     /// Moves a directory handle to a previously returned stream location.
     static func seekDir(context: Context, directory: DirectoryHandle, location: Int) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _seekDir(context: context, directory: directory, location: location)
         }
     }
@@ -1049,13 +1057,13 @@ class Bridge {
     }
 
     /// Queries the original handle's current size without requiring read-data or read-attributes access.
-    private static func _getFileSize(context: Context, file: FileHandle) throws -> UInt64 {
+    private static func _fileSize(context: Context, file: FileHandle) throws -> UInt64 {
         let operation = "smb2_query_info(FILE_STANDARD_INFORMATION)"
         let raw = try file.requireRaw(operation: .smb2Fstat)
         guard let fileID = smb2_get_file_id(raw) else {
             throw SMB.Error.fromBridge(context, operation: "smb2_get_file_id")
         }
-        clearError(on: context)
+        clearError(context: context)
         let state = QueryFileSizeState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
         defer { releaseWhenFinished(state, callbackData) }
@@ -1157,7 +1165,7 @@ class Bridge {
 
     /// Returns filesystem statistics for a path.
     static func statVFS(context: Context, path: String) async throws -> VFSStat {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _statVFS(context: context, path: path)
         }
     }
@@ -1172,7 +1180,7 @@ class Bridge {
 
     /// Returns file statistics for an open file handle.
     static func fileStatistics(context: Context, file: FileHandle) async throws -> Stat {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _fileStatistics(context: context, file: file)
         }
     }
@@ -1190,7 +1198,7 @@ class Bridge {
 
     /// Returns file statistics for a path.
     static func fileStatistics(context: Context, path: String) async throws -> Stat {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _fileStatistics(context: context, path: path)
         }
     }
@@ -1207,7 +1215,7 @@ class Bridge {
 
     /// Renames or moves an entry from one path to another.
     static func rename(context: Context, oldPath: String, newPath: String) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _rename(context: context, oldPath: oldPath, newPath: newPath)
         }
     }
@@ -1222,7 +1230,7 @@ class Bridge {
 
     /// Truncates a file at a path to a length in bytes.
     static func truncate(context: Context, path: String, length: UInt64) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _truncate(context: context, path: path, length: length)
         }
     }
@@ -1236,7 +1244,7 @@ class Bridge {
 
     /// Truncates an open file handle to a length in bytes.
     static func truncate(context: Context, file: FileHandle, length: UInt64) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _truncate(context: context, file: file, length: length)
         }
     }
@@ -1247,7 +1255,7 @@ class Bridge {
 
     /// Sends an SMB echo request to verify the connection is responsive.
     static func echo(context: Context) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _echo(context: context)
         }
     }
@@ -1336,38 +1344,6 @@ class Bridge {
         state.finish(status)
     }
 
-    /// Converts a date to libsmb2's basic-information timestamp representation without trapping.
-    static func basicInfoTimeval(from date: Date?) throws -> smb2_timeval {
-        guard let date else {
-            // libsmb2 treats `tv_sec == 0xffffffff && tv_usec == 0xffffffff` as "leave unchanged". C converts both
-            // sides to the wider type, so the fields must hold 4294967295 when they are 64-bit and -1 (the same bits)
-            // when they are 32-bit, as on arm64_32.
-            return smb2_timeval(
-                tv_sec: time_t(truncatingIfNeeded: UInt32.max),
-                tv_usec: CLong(truncatingIfNeeded: UInt32.max)
-            )
-        }
-        let interval = date.timeIntervalSince1970
-        let maximumInterval = Double(UInt64.max) / 10_000_000 - 11_644_473_600
-        guard interval.isFinite,
-              interval > -11_644_473_600,
-              interval < maximumInterval,
-              let seconds = time_t(exactly: interval.rounded(.down)) else {
-            throw SMB.Error.posix(
-                code: POSIXErrorCode.EINVAL.rawValue,
-                operation: "smb2_set_basic_info",
-                message: "Timestamp cannot be represented as an SMB file time"
-            )
-        }
-        let microseconds = CLong((interval - Double(seconds)) * 1_000_000)
-        if seconds == 0, microseconds == 0 {
-            // libsmb2 interprets an all-zero timeval as "leave unchanged". An equivalent nonzero representation allows
-            // an explicit Unix epoch timestamp to be written instead of silently skipping it.
-            return smb2_timeval(tv_sec: -1, tv_usec: 1_000_000)
-        }
-        return smb2_timeval(tv_sec: seconds, tv_usec: microseconds)
-    }
-
     /// Services the context until `state` finishes.
     ///
     /// With a `cancellation`, the loop polls more often and withdraws the request with an SMB2 CANCEL when asked to; it
@@ -1409,7 +1385,7 @@ class Bridge {
         catch {
             // An unfinished C command can still hold its handle and buffers. Abort all callbacks before another
             // operation can close that handle or overwrite callback data that libsmb2 stores directly on it.
-            _destroyContext(context)
+            _destroyContext(context: context)
             throw error
         }
     }
@@ -1442,14 +1418,15 @@ class Bridge {
         lastAccessTime: Date? = nil,
         lastWriteTime: Date? = nil,
         changeTime: Date? = nil,
-        fileAttributes: UInt32? = nil
+        fileAttributes: FileAttributes? = nil
     ) throws {
         var info = try smb2_file_basic_info(
-            creation_time: basicInfoTimeval(from: creationTime),
-            last_access_time: basicInfoTimeval(from: lastAccessTime),
-            last_write_time: basicInfoTimeval(from: lastWriteTime),
-            change_time: basicInfoTimeval(from: changeTime),
-            file_attributes: fileAttributes ?? 0,
+            creation_time: BasicInfoTime(date: creationTime).timeval,
+            last_access_time: BasicInfoTime(date: lastAccessTime).timeval,
+            last_write_time: BasicInfoTime(date: lastWriteTime).timeval,
+            change_time: BasicInfoTime(date: changeTime).timeval,
+            // 0 leaves the attributes unchanged (MS-FSCC 2.4.7).
+            file_attributes: fileAttributes?.rawValue ?? 0,
             // libsmb2 only fills the raw FILETIME fields when decoding; the encoder reads the timevals above.
             creation_time_raw: 0,
             last_access_time_raw: 0,
@@ -1538,9 +1515,9 @@ class Bridge {
         lastAccessTime: Date? = nil,
         lastWriteTime: Date? = nil,
         changeTime: Date? = nil,
-        fileAttributes: UInt32? = nil
+        fileAttributes: FileAttributes? = nil
     ) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _setStats(
                 context: context,
                 path: path,
@@ -1553,7 +1530,7 @@ class Bridge {
         }
     }
 
-    private static func _getFileAttributes(context: Context, path: String) throws -> UInt32 {
+    private static func _fileAttributes(context: Context, path: String) throws -> UInt32 {
         let state = QueryAttributesState()
         let callbackData = Unmanaged.passRetained(state).toOpaque()
         var isQueued = false
@@ -1649,9 +1626,9 @@ class Bridge {
     }
 
     /// Returns the file attributes for a path.
-    static func getFileAttributes(context: Context, path: String) async throws -> UInt32 {
-        try await perform(on: context) {
-            try _getFileAttributes(context: context, path: path)
+    static func fileAttributes(context: Context, path: String) async throws -> FileAttributes {
+        try await perform(context: context) {
+            try FileAttributes(rawValue: _fileAttributes(context: context, path: path))
         }
     }
 
@@ -1736,7 +1713,7 @@ class Bridge {
         resumeKey: smb2_srv_copychunk_resume_key,
         chunks: [CopyChunk]
     ) throws -> CopyChunkLimits? {
-        clearError(on: context)
+        clearError(context: context)
         var resumeKey = resumeKey
         var rawChunks = chunks.map {
             smb2_srv_copychunk(
@@ -1908,7 +1885,7 @@ class Bridge {
         destinationPath: String,
         exclusiveDestination: Bool = false
     ) async throws {
-        try await perform(on: context) {
+        try await perform(context: context) {
             let chunkSize = max(smb2_get_max_write_size(context.raw), 1)
             try _serverSideCopy(
                 context: context,

@@ -750,13 +750,13 @@ struct SetBasicInfoTests {
             )
             try await Bridge.close(context: ctx, file: wh)
 
-            let initial = try await Bridge.getFileAttributes(context: ctx, path: path)
-            #expect(initial == 0x0000_0020) // SMB2_FILE_ATTRIBUTE_ARCHIVE
+            let initial = try await Bridge.fileAttributes(context: ctx, path: path)
+            #expect(initial == .archive)
 
-            try await Bridge.setStats(context: ctx, path: path, fileAttributes: 0x0000_0002)
+            try await Bridge.setStats(context: ctx, path: path, fileAttributes: .hidden)
 
-            let updated = try await Bridge.getFileAttributes(context: ctx, path: path)
-            #expect(updated == 0x0000_0002) // SMB2_FILE_ATTRIBUTE_HIDDEN
+            let updated = try await Bridge.fileAttributes(context: ctx, path: path)
+            #expect(updated == .hidden)
         }
     }
 

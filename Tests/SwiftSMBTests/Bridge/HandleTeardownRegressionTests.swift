@@ -17,7 +17,7 @@ struct HandleTeardownRegressionTests {
         try await withPublicShare { context in
             let (files, directories) = try await openTeardownRegressionHandles(on: context)
 
-            try await Bridge.shutdown(context)
+            try await Bridge.shutdown(context: context)
             try await assertTeardownRegressionHandlesClosed(files, directories: directories, on: context)
 
             // Late explicit closes must remain safe even though shutdown already freed the C allocations.
@@ -39,18 +39,18 @@ struct HandleTeardownRegressionTests {
         try await withPublicShare { context in
             let (files, directories) = try await openTeardownRegressionHandles(on: context)
 
-            await Bridge.destroyContext(context)
+            await Bridge.destroyContext(context: context)
             try await assertTeardownRegressionHandlesClosed(files, directories: directories, on: context)
 
             // Destroying twice and enqueuing deinit-style cleanup after destruction must not double-free storage.
-            await Bridge.destroyContext(context)
+            await Bridge.destroyContext(context: context)
             for file in files {
                 Bridge.closeInBackground(context: context, file: file)
             }
             for directory in directories {
                 Bridge.closeDirInBackground(context: context, directory: directory)
             }
-            await Bridge.waitForPendingOperations(on: context)
+            await Bridge.waitForPendingOperations(context: context)
         }
     }
 
@@ -59,8 +59,8 @@ struct HandleTeardownRegressionTests {
         try await withPublicShare { context in
             let (files, directories) = try await openTeardownRegressionHandles(on: context)
 
-            Bridge.teardownInBackground(context)
-            await Bridge.waitForPendingOperations(on: context)
+            Bridge.teardownInBackground(context: context)
+            await Bridge.waitForPendingOperations(context: context)
             try await assertTeardownRegressionHandlesClosed(files, directories: directories, on: context)
         }
     }
@@ -70,13 +70,13 @@ struct HandleTeardownRegressionTests {
         try await withPublicShare { context in
             let (files, directories) = try await openTeardownRegressionHandles(on: context)
 
-            await Bridge.closeContext(context)
+            await Bridge.closeContext(context: context)
             try await assertTeardownRegressionHandlesClosed(files, directories: directories, on: context)
 
             // closeContext preserves configuration and allocation; it does not promise reuse for a new connection.
-            #expect(try await Bridge.perform(on: context) { context.isAlive })
-            try await Bridge.setUser("", on: context)
-            #expect(try await Bridge.getUser(on: context) == "")
+            #expect(try await Bridge.perform(context: context) { context.isAlive })
+            try await Bridge.setUser(context: context, user: "")
+            #expect(try await Bridge.user(context: context) == "")
             try await assertTeardownRegressionHandlesClosed(files, directories: directories, on: context)
         }
     }

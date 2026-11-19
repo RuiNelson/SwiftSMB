@@ -63,6 +63,7 @@ public extension SMB.Error {
         case smbConnectionCopyFile
         case smbConnectionSetSecurityDescriptor
         case smb2Flock
+        case smbFileAcknowledgeOpLockBreak
 
         var description: String {
             switch self {
@@ -114,6 +115,7 @@ public extension SMB.Error {
             case .smbConnectionCopyFile: "SMB.Connection.copyFile"
             case .smbConnectionSetSecurityDescriptor: "SMB.Connection.setSecurityDescriptor"
             case .smb2Flock: "smb2_flock"
+            case .smbFileAcknowledgeOpLockBreak: "SMB.File.acknowledgeOpLockBreak"
             }
         }
     }
@@ -150,6 +152,7 @@ public extension SMB.Error {
         case securityIdentifierAuthorityOutOfRange
         case securityIdentifierHasTooManySubauthorities(Int)
         case accessControlListHasTooManyEntries(Int)
+        case leaseAcknowledgementAddsCaching(String)
 
         var description: String {
             switch self {
@@ -184,6 +187,8 @@ public extension SMB.Error {
                 "Security identifier has \(count) subauthorities; SMB supports at most 15"
             case let .accessControlListHasTooManyEntries(count):
                 "Access-control list has \(count) entries; SMB supports at most \(UInt16.max)"
+            case let .leaseAcknowledgementAddsCaching(state):
+                "Lease acknowledgement keeps caching the break took away: \(state)"
             }
         }
     }

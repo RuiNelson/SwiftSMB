@@ -9,7 +9,7 @@
 import Foundation
 
 extension Date {
-    init(seconds: UInt64, nanoseconds: UInt64) {
+    init(seconds: Int64, nanoseconds: UInt64) {
         let s = Double(seconds)
         let ns = Double(nanoseconds) / 1_000_000_000.0
         self.init(timeIntervalSince1970: s + ns)

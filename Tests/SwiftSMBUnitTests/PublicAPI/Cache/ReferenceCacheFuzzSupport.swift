@@ -186,12 +186,12 @@ enum CacheFuzz {
         raw.st.smb2_type = stat.type == .file ? UInt32(SMB2_TYPE_FILE)
             : stat.type == .directory ? UInt32(SMB2_TYPE_DIRECTORY) : UInt32(SMB2_TYPE_LINK)
         raw.st.smb2_size = stat.size
-        raw.st.smb2_mtime = stat.modificationTimeSeconds
+        raw.st.smb2_mtime = UInt64(bitPattern: stat.modificationTimeSeconds)
         raw.st.smb2_mtime_nsec = stat.modificationTimeNanoseconds
-        raw.st.smb2_ctime = stat.changeTimeSeconds
+        raw.st.smb2_ctime = UInt64(bitPattern: stat.changeTimeSeconds)
         raw.st.smb2_ctime_nsec = stat.changeTimeNanoseconds
-        raw.st.smb2_atime = stat.accessTimeSeconds
-        raw.st.smb2_btime = stat.birthTimeSeconds
+        raw.st.smb2_atime = UInt64(bitPattern: stat.accessTimeSeconds)
+        raw.st.smb2_btime = UInt64(bitPattern: stat.birthTimeSeconds)
         raw.st.smb2_nlink = stat.linkCount
         raw.st.smb2_attributes = stat.attributes.rawValue
         return name.withCString { pointer in

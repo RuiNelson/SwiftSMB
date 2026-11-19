@@ -46,8 +46,34 @@ extension Bridge {
         var fileHandles: [ObjectIdentifier: FileHandle] = [:]
         var directoryHandles: [ObjectIdentifier: DirectoryHandle] = [:]
 
+        /// Receives the oplock and lease breaks the server sends. Confined to `queue`.
+        var opLockBreakHandler: OpLockBreakHandler?
+
         init(raw: UnsafeMutablePointer<smb2_context>) {
             self.raw = raw
+        }
+
+        // The `smb2_context` fields libsmb2 has no accessor for. Like `raw`, they are confined to `queue`.
+
+        /// The command timeout, in seconds; `0` means none.
+        var commandTimeoutSeconds: Int32 {
+            raw.pointee.timeout
+        }
+
+        /// The signing negotiation flags configured with `smb2_set_security_mode`.
+        var configuredSecurityMode: SecurityMode {
+            SecurityMode(rawValue: raw.pointee.security_mode)
+        }
+
+        /// Clears the last error string, so a later failure is not reported with it.
+        func clearErrorString() {
+            withUnsafeMutableBytes(of: &raw.pointee.error_string) { $0[0] = 0 }
+        }
+
+        /// Clears the last error string and NT status, which libsmb2 keeps until another failure overwrites them.
+        func clearError() {
+            raw.pointee.nterror = 0
+            clearErrorString()
         }
     }
 
@@ -75,7 +101,7 @@ extension Bridge {
         }
     }
 
-    struct FileID: Equatable, Sendable {
+    struct FileID: Hashable, Sendable {
         var raw: smb2_file_id
 
         static let allOnes = FileID((
@@ -107,6 +133,10 @@ extension Bridge {
                     lhsBytes.elementsEqual(rhsBytes)
                 }
             }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            withUnsafeBytes(of: raw) { hasher.combine(bytes: $0) }
         }
     }
 
@@ -176,6 +206,111 @@ extension Bridge {
 
         var rawValue: Int32 {
             accessMode.rawValue | options.rawValue
+        }
+    }
+
+    /// The dialects a context offers when it negotiates (`smb2_negotiate_version`).
+    enum DialectPreference: Equatable, Sendable {
+        case any
+        case anySMB2
+        case anySMB3
+        case smb2_02
+        case smb2_10
+        case smb3_00
+        case smb3_02
+        case smb3_11
+
+        var rawValue: smb2_negotiate_version {
+            switch self {
+            case .any: SMB2_VERSION_ANY
+            case .anySMB2: SMB2_VERSION_ANY2
+            case .anySMB3: SMB2_VERSION_ANY3
+            case .smb2_02: SMB2_VERSION_0202
+            case .smb2_10: SMB2_VERSION_0210
+            case .smb3_00: SMB2_VERSION_0300
+            case .smb3_02: SMB2_VERSION_0302
+            case .smb3_11: SMB2_VERSION_0311
+            }
+        }
+    }
+
+    /// The dialect revision a context negotiated (MS-SMB2 2.2.4 `DialectRevision`), `0` before it connects.
+    struct DialectRevision: RawRepresentable, Hashable, Sendable {
+        let rawValue: UInt16
+
+        static let smb2_02 = DialectRevision(rawValue: UInt16(SMB2_VERSION_0202.rawValue))
+        static let smb2_10 = DialectRevision(rawValue: UInt16(SMB2_VERSION_0210.rawValue))
+        static let smb3_00 = DialectRevision(rawValue: UInt16(SMB2_VERSION_0300.rawValue))
+        static let smb3_02 = DialectRevision(rawValue: UInt16(SMB2_VERSION_0302.rawValue))
+        static let smb3_11 = DialectRevision(rawValue: UInt16(SMB2_VERSION_0311.rawValue))
+
+        /// Whether this is an SMB 3 dialect.
+        var isSMB3: Bool {
+            rawValue >= Self.smb3_00.rawValue
+        }
+    }
+
+    /// Windows file attributes (MS-FSCC 2.6), as the server reports them.
+    struct FileAttributes: OptionSet, Hashable, Sendable {
+        let rawValue: UInt32
+
+        static let readOnly = FileAttributes(rawValue: 0x0000_0001)
+        static let hidden = FileAttributes(rawValue: 0x0000_0002)
+        static let system = FileAttributes(rawValue: 0x0000_0004)
+        static let directory = FileAttributes(rawValue: 0x0000_0010)
+        static let archive = FileAttributes(rawValue: 0x0000_0020)
+        static let normal = FileAttributes(rawValue: 0x0000_0080)
+        static let reparsePoint = FileAttributes(rawValue: 0x0000_0400)
+    }
+
+    /// A timestamp for `smb2_set_basic_info`, in the `smb2_timeval` form libsmb2 takes.
+    struct BasicInfoTime: Sendable {
+        /// The timestamp as libsmb2 takes it.
+        let timeval: smb2_timeval
+
+        /// Leaves the timestamp unchanged.
+        ///
+        /// libsmb2 treats `tv_sec == 0xffffffff && tv_usec == 0xffffffff` as "leave unchanged". C converts both sides
+        /// to the wider type, so the fields must hold 4294967295 when they are 64-bit and -1 (the same bits) when they
+        /// are 32-bit, as on arm64_32.
+        static let unchanged = BasicInfoTime(timeval: smb2_timeval(
+            tv_sec: time_t(truncatingIfNeeded: UInt32.max),
+            tv_usec: CLong(truncatingIfNeeded: UInt32.max)
+        ))
+
+        private init(timeval: smb2_timeval) {
+            self.timeval = timeval
+        }
+
+        /// Converts a date without trapping; `nil` leaves the timestamp unchanged.
+        ///
+        /// - Throws: ``SMB/Error/posix(code:operation:message:)`` with `EINVAL` if the date is not finite or is outside
+        /// what an SMB file time can hold.
+        init(date: Date?) throws {
+            guard let date else {
+                self = .unchanged
+                return
+            }
+            let interval = date.timeIntervalSince1970
+            let maximumInterval = Double(UInt64.max) / 10_000_000 - 11_644_473_600
+            guard interval.isFinite,
+                  interval > -11_644_473_600,
+                  interval < maximumInterval,
+                  let seconds = time_t(exactly: interval.rounded(.down)) else {
+                throw SMB.Error.posix(
+                    code: POSIXErrorCode.EINVAL.rawValue,
+                    operation: "smb2_set_basic_info",
+                    message: "Timestamp cannot be represented as an SMB file time"
+                )
+            }
+            let microseconds = CLong((interval - Double(seconds)) * 1_000_000)
+            if seconds == 0, microseconds == 0 {
+                // libsmb2 interprets an all-zero timeval as "leave unchanged". An equivalent nonzero representation
+                // allows an explicit Unix epoch timestamp to be written instead of silently skipping it.
+                timeval = smb2_timeval(tv_sec: -1, tv_usec: 1_000_000)
+                return
+            }
+            timeval = smb2_timeval(tv_sec: seconds, tv_usec: microseconds)
         }
     }
 
@@ -375,20 +510,35 @@ extension Bridge {
         }
     }
 
+    /// The version of the libsmb2 library linked into the process, from `smb2_get_libsmb2Version`.
+    struct LibraryVersion: Equatable, Sendable {
+        let major: UInt8
+        let minor: UInt8
+        let patch: UInt8
+
+        init(_ version: smb2_libversion) {
+            major = version.major_version
+            minor = version.minor_version
+            patch = version.patch_version
+        }
+    }
+
+    /// A `smb2_stat_64`. Since libsmb2 7.0.0 the seconds fields hold a signed `time_t` (negative before 1970) in their
+    /// `uint64_t` storage, so they are read back as `Int64` bit patterns.
     struct Stat: Equatable, Sendable {
         let type: NodeType
         let linkCount: UInt32
         let inode: UInt64
         let size: UInt64
-        let accessTime: UInt64
+        let accessTime: Int64
         let accessTimeNanoseconds: UInt64
-        let modificationTime: UInt64
+        let modificationTime: Int64
         let modificationTimeNanoseconds: UInt64
-        let changeTime: UInt64
+        let changeTime: Int64
         let changeTimeNanoseconds: UInt64
-        let birthTime: UInt64
+        let birthTime: Int64
         let birthTimeNanoseconds: UInt64
-        let attributes: UInt32
+        let attributes: FileAttributes
         let reparseTag: UInt32
 
         init(_ stat: smb2_stat_64) {
@@ -396,15 +546,15 @@ extension Bridge {
             linkCount = stat.smb2_nlink
             inode = stat.smb2_ino
             size = stat.smb2_size
-            accessTime = stat.smb2_atime
+            accessTime = Int64(bitPattern: stat.smb2_atime)
             accessTimeNanoseconds = stat.smb2_atime_nsec
-            modificationTime = stat.smb2_mtime
+            modificationTime = Int64(bitPattern: stat.smb2_mtime)
             modificationTimeNanoseconds = stat.smb2_mtime_nsec
-            changeTime = stat.smb2_ctime
+            changeTime = Int64(bitPattern: stat.smb2_ctime)
             changeTimeNanoseconds = stat.smb2_ctime_nsec
-            birthTime = stat.smb2_btime
+            birthTime = Int64(bitPattern: stat.smb2_btime)
             birthTimeNanoseconds = stat.smb2_btime_nsec
-            attributes = stat.smb2_attributes
+            attributes = FileAttributes(rawValue: stat.smb2_attributes)
             reparseTag = stat.smb2_reparse_tag
         }
     }

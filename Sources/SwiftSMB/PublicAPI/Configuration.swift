@@ -116,17 +116,11 @@ public extension SMB {
         /// The SMB signing negotiation flags.
         public var securityMode: SecurityMode?
 
+        /// The encoded form of ``encryption``: `nil`, `false`, and `true` stand for ``Encryption/automatic``,
+        /// ``Encryption/disabled``, and ``Encryption/required``. It is kept, under the `requiresEncryption` key, so
+        /// that
+        /// configurations encoded by earlier versions still decode.
         private var encryptionRequirement: Bool?
-
-        /// The legacy optional Boolean representation of ``encryption``.
-        ///
-        /// `nil`, `false`, and `true` correspond to ``Encryption/automatic``, ``Encryption/disabled``, and
-        /// ``Encryption/required``, respectively.
-        @available(*, deprecated, message: "Use encryption instead.")
-        public var requiresEncryption: Bool? {
-            get { encryptionRequirement }
-            set { encryptionRequirement = newValue }
-        }
 
         /// The SMB encryption negotiation policy.
         public var encryption: Encryption {
@@ -167,8 +161,7 @@ public extension SMB {
         ///   - timeout: The command timeout, in seconds.
         ///   - dialect: The SMB dialect negotiation preference.
         ///   - securityMode: The SMB signing negotiation flags.
-        ///   - requiresEncryption: The legacy optional Boolean encryption policy. `nil` selects automatic negotiation.
-        ///   - encryption: A typed encryption policy. When provided, this takes precedence over `requiresEncryption`.
+        ///   - encryption: The SMB encryption negotiation policy.
         ///   - requiresSigning: Whether SMB signing is required.
         ///   - authentication: The authentication mechanism to request.
         ///   - transferBlockSize: The preferred read/write block size.
@@ -176,8 +169,7 @@ public extension SMB {
             timeout: Int? = nil,
             dialect: Dialect? = nil,
             securityMode: SecurityMode? = nil,
-            requiresEncryption: Bool? = nil,
-            encryption: Encryption? = nil,
+            encryption: Encryption = .automatic,
             requiresSigning: Bool? = nil,
             authentication: AuthenticationMethod? = nil,
             transferBlockSize: Int? = nil
@@ -185,10 +177,7 @@ public extension SMB {
             self.timeout = timeout
             self.dialect = dialect
             self.securityMode = securityMode
-            encryptionRequirement = requiresEncryption
-            if let encryption {
-                self.encryption = encryption
-            }
+            self.encryption = encryption
             self.requiresSigning = requiresSigning
             self.authentication = authentication
             self.transferBlockSize = transferBlockSize
@@ -236,24 +225,16 @@ public extension SMB {
         case smb3_11 = 311
 
         /// The bridge representation for this dialect.
-        var bridgeValue: smb2_negotiate_version {
+        var bridgeValue: Bridge.DialectPreference {
             switch self {
-            case .any:
-                SMB2_VERSION_ANY
-            case .anySMB2:
-                SMB2_VERSION_ANY2
-            case .anySMB3:
-                SMB2_VERSION_ANY3
-            case .smb2_02:
-                SMB2_VERSION_0202
-            case .smb2_10:
-                SMB2_VERSION_0210
-            case .smb3_00:
-                SMB2_VERSION_0300
-            case .smb3_02:
-                SMB2_VERSION_0302
-            case .smb3_11:
-                SMB2_VERSION_0311
+            case .any: .any
+            case .anySMB2: .anySMB2
+            case .anySMB3: .anySMB3
+            case .smb2_02: .smb2_02
+            case .smb2_10: .smb2_10
+            case .smb3_00: .smb3_00
+            case .smb3_02: .smb3_02
+            case .smb3_11: .smb3_11
             }
         }
     }

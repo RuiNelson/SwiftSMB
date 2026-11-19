@@ -22,8 +22,8 @@ extension Bridge {
     ) throws -> [Share] {
         // SRVSVC enumeration needs signing enabled, but keep any stricter mode (e.g. signingRequired) the caller
         // configured instead of overwriting it.
-        let configuredMode = SecurityMode(rawValue: context.raw.pointee.security_mode)
-        _setSecurityMode(configuredMode.union(.signingEnabled), on: context)
+        let configuredMode = context.configuredSecurityMode
+        _setSecurityMode(context: context, mode: configuredMode.union(.signingEnabled))
         try _connectShare(context: context, server: server, share: "IPC$", user: user)
 
         do {
@@ -50,7 +50,7 @@ extension Bridge {
         includeHidden: Bool = false,
         level: ShareEnumerationLevel = .detailed
     ) async throws -> [Share] {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _listShares(
                 context: context,
                 server: server,
@@ -66,7 +66,7 @@ extension Bridge {
         context: Context,
         level: ShareEnumerationLevel = .detailed
     ) async throws -> [Share] {
-        try await perform(on: context) {
+        try await perform(context: context) {
             try _listSharesOnConnectedIPCShare(context: context, level: level)
         }
     }

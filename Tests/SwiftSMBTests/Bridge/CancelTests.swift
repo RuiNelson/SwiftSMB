@@ -74,14 +74,14 @@ private func waitForReplies(_ context: Bridge.Context) async throws {
 
 /// Whether libsmb2 is waiting for replies to requests it has sent.
 private func hasPendingRequests(_ context: Bridge.Context) async throws -> Bool {
-    try await Bridge.perform(on: context) {
+    try await Bridge.perform(context: context) {
         context.raw.pointee.waitqueue != nil
     }
 }
 
 /// Whether libsmb2 has requests it has not sent yet.
 private func hasQueuedRequests(_ context: Bridge.Context) async throws -> Bool {
-    try await Bridge.perform(on: context) {
+    try await Bridge.perform(context: context) {
         context.raw.pointee.outqueue != nil
     }
 }

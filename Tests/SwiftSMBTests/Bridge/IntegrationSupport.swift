@@ -56,7 +56,7 @@ extension Tag {
 @discardableResult
 func withFreshContext<T>(_ body: (Bridge.Context) async throws -> T) async throws -> T {
     let ctx = try Bridge.createContext()
-    defer { await Bridge.destroyContext(ctx) }
+    defer { await Bridge.destroyContext(context: ctx) }
     return try await body(ctx)
 }
 
@@ -67,13 +67,13 @@ private func withShare<T>(
 ) async throws -> T {
     let ctx = try Bridge.createContext()
     if let credentials {
-        try await Bridge.setUser(credentials.user, on: ctx)
-        try await Bridge.setPassword(credentials.password, on: ctx)
+        try await Bridge.setUser(context: ctx, user: credentials.user)
+        try await Bridge.setPassword(context: ctx, password: credentials.password)
     }
     try await Bridge.connectShare(context: ctx, server: testServerHost, share: shareName)
     defer {
         try? await Bridge.disconnectShare(context: ctx)
-        await Bridge.destroyContext(ctx)
+        await Bridge.destroyContext(context: ctx)
     }
     return try await body(ctx)
 }
@@ -148,7 +148,7 @@ func writeAllBytesAt(
 }
 
 func writeAllBytesChunked(context: Bridge.Context, file: Bridge.FileHandle, data: [UInt8]) async throws -> Int {
-    let chunkSize = try await min(65536, Int(Bridge.getMaxWriteSize(context: context)))
+    let chunkSize = try await min(65536, Int(Bridge.maxWriteSize(context: context)))
     var offset = 0
     while offset < data.count {
         let chunk = Array(data[offset ..< min(offset + chunkSize, data.count)])
