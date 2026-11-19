@@ -1,3 +1,6 @@
 [submodule "libsmb2"]
 	path = Sources/libsmb2/upstream
 	url = https://github.com/sahlberg/libsmb2.git
+[submodule "Vendored/libsmb2-SwiftSMB"]
+	path = Vendored/libsmb2-SwiftSMB
+	url = https://github.com/RuiNelson/libsmb2-SwiftSMB
