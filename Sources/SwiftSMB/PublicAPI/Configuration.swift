@@ -118,8 +118,7 @@ public extension SMB {
 
         /// The encoded form of ``encryption``: `nil`, `false`, and `true` stand for ``Encryption/automatic``,
         /// ``Encryption/disabled``, and ``Encryption/required``. It is kept, under the `requiresEncryption` key, so
-        /// that
-        /// configurations encoded by earlier versions still decode.
+        /// that configurations encoded by earlier versions still decode.
         private var encryptionRequirement: Bool?
 
         /// The SMB encryption negotiation policy.

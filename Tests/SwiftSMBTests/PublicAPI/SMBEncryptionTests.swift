@@ -10,10 +10,10 @@ import Foundation
 import SwiftSMB
 import Testing
 
-/// Round trips over sealed and signed (AES-128-CMAC) sessions. The test server seals SMB 3.0 and 3.0.2 with
-/// AES-128-CCM and SMB 3.1.1 with AES-128-GCM, its first choice. The server checks every tag and
-/// signature the client sends, and the client checks the server's, so a wrong byte in either direction fails the
-/// transfer. The payload spans several PDUs and ends in a partial AES block.
+/// Round trips over sealed and signed (AES-128-CMAC) sessions. The test server seals SMB 3.0 and 3.0.2 with AES-128-CCM
+/// and SMB 3.1.1 with AES-128-GCM, its first choice. The server checks every tag and signature the client sends, and
+/// the client checks the server's, so a wrong byte in either direction fails the transfer. The payload spans several
+/// PDUs and ends in a partial AES block.
 @Suite(.tags(.integration))
 struct SMBEncryptionTests {
     private static let payloadSize = 3 * 1024 * 1024 + 37
