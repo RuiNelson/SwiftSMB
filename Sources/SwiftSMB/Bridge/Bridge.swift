@@ -111,15 +111,15 @@ class Bridge {
         for directory in Array(context.directoryHandles.values) {
             _closeDir(context: context, directory: directory)
         }
-        let rawFiles = context.fileHandles.values.compactMap { $0.takeRaw() }
+        // libsmb2 tracks every open `smb2fh` on its context and frees the ones still open in `smb2_destroy_context`,
+        // after the pending callbacks have run. Detach them from the Swift handles so nothing uses them afterwards, and
+        // never free them here: that would be a double free.
+        for file in context.fileHandles.values {
+            _ = file.takeRaw()
+        }
         context.fileHandles.removeAll()
         lifecycleLock.withLock { _ in
             smb2_destroy_context(context.raw)
-        }
-        // Contrary to its header documentation, libsmb2 does not track open file allocations. Pending callbacks must
-        // run during destroy before these allocations are reclaimed; otherwise they may still reference a handle.
-        for raw in rawFiles {
-            free(UnsafeMutableRawPointer(raw))
         }
     }
 
@@ -586,8 +586,9 @@ class Bridge {
         defer { releaseWhenFinished(state, callbackData) }
         let status = smb2_close_async(context.raw, raw, closeCallback, callbackData)
         guard status == 0 else {
+            // The close callback never runs, so libsmb2 keeps the handle on the context's list and frees it in
+            // `smb2_destroy_context`. Freeing it here would leave a dangling entry on that list.
             state.finish(status)
-            free(UnsafeMutableRawPointer(raw))
             throw SMB.Error.fromBridge(context, operation: "smb2_close", status: status)
         }
         try serviceUntilFinished(context: context, state: state)

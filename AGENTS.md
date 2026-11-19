@@ -14,7 +14,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 ├── Sources
 │   ├── libsmb2                               # C target: upstream libsmb2 plus the SwiftPM glue that lives in this repo.
 │   │   ├── include                           # Public headers: module map (module `SMB2`), config.h, forwarders into `upstream`.
-│   │   ├── upstream                          # Git submodule of sahlberg/libsmb2 (pristine; never edit).
+│   │   ├── upstream                          # Git submodule of sahlberg/libsmb2 at a release tag (pristine; never edit).
 │   │   └── xcode_compat.c                    # Weak `__llvm_profile_runtime` so the dynamic product links with coverage.
 │   ├── SwiftSMB
 │   │   ├── Bridge                            # Internal libsmb2 bridge; no public API here.
@@ -142,12 +142,13 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - `Bridge.Context` is a `final class` that owns the C pointer, the context's serial queue, and a queue-confined liveness flag. Pass it as a normal parameter; avoid `inout`, `borrowing`, or `consuming`.
 - Path separator: `libsmb2` accepts `/` (POSIX-style) in its public API but converts to `\` (Windows-style) internally before sending SMB2 requests to the server (see `libsmb2.c:smb2_rename` and `smb2-cmd-create.c`). Use `/` in the Swift public API and bridge layer.
 - `libsmb2` contexts are not safe to service concurrently. Every bridge function that touches a shared context is `async` and runs its body on that context's serial queue through `Bridge.perform(on:_:)`. The private `_name` functions hold the synchronous C calls and must only run on the context queue, or on a context that is never shared (such as `Bridge.parseURL`'s private context). Notification watcher bridge calls (`notifyChange`, `serviceNotifyEvents`, `cancel`, and close) follow the same rule.
-- Operations on different contexts run in parallel. `smb2_init_context` and `smb2_destroy_context` mutate process-wide libsmb2 state (the `active_contexts` list and the `srandom` seed), so they run under `Bridge.lifecycleLock`. When wrapping new libsmb2 APIs, check them for other process-wide state and serialize it the same way.
-- Known, accepted risk: upstream's `apple/config.h` and `Sources/libsmb2/include/linux/config.h` do not enable `HAVE_ARC4RANDOM_BUF`/`HAVE_GETRANDOM`, so `smb2_random_bytes` falls back to `random()`. `smb3_encrypt_pdu` calls it for every sealed PDU, and Darwin's `random()` is not thread-safe, so sealed connections running in parallel race on its state (the fallback also makes nonces predictable). Fixing it means defining a strong random source in `Sources/libsmb2/include/config.h` (after it includes the platform config), since `upstream` must stay untouched.
+- Operations on different contexts run in parallel. `smb2_init_context` seeds the process-wide `srandom` state, so creating and destroying contexts runs under `Bridge.lifecycleLock`. (Since libsmb2 7.0.0 client contexts no longer go on the `active_contexts` list; only contexts a server accepts do.) When wrapping new libsmb2 APIs, check them for other process-wide state and serialize it the same way.
+- Known, accepted risk (Linux only): since libsmb2 7.0.0 upstream's `apple/config.h` enables `HAVE_ARC4RANDOM_BUF` on Apple platforms, so `smb2_random_bytes` uses a strong source there. `Sources/libsmb2/include/linux/config.h` is ours and does not enable `HAVE_GETRANDOM`/`HAVE_DEV_URANDOM`, so on Linux `smb2_random_bytes` still falls back to `random()`. `smb3_encrypt_pdu` calls it for every sealed PDU, and `random()` is not thread-safe, so sealed connections running in parallel race on its state (the fallback also makes nonces predictable). Fixing it means defining those macros in `linux/config.h`, as upstream's `apple/config.h` does for its own Linux builds.
 - Never run blocking libsmb2 calls on the Swift concurrency cooperative thread pool; always hop to the context queue.
 - `smb2_connect_share` treats the command timeout as a connection window checked against `time(NULL)` before the event that completes the TCP connect is handled, so a timeout of `0` fails any connect that crosses a wall-clock second boundary ("Timeout expired and no connection exists"; seen when many connections open concurrently). `Bridge._connectShare` therefore connects with `Bridge.defaultConnectTimeoutSeconds` when the timeout is `0` and restores `0` afterwards; keep that when touching the connect path.
 - Loops that service a context themselves (`Bridge.serviceUntilFinished`, `Bridge.serviceNotifyEvents`) must fail when `smb2_get_fd` is negative: `smb2_service` returns success without a connection and `poll` ignores negative descriptors, so they would spin forever and block the context queue.
 - Commands that pass `Unmanaged.passRetained(state)` as callback data must balance it with `Bridge.releaseWhenFinished`: libsmb2 can invoke a queued PDU's callbacks after the caller stopped waiting (e.g. `SMB2_STATUS_SHUTDOWN` on destroy after a network error), so unfinished state is leaked rather than freed.
+- Since libsmb2 7.0.0 every `smb2fh` and `smb2dir` is linked into a list on its context, and `smb2_destroy_context` frees the ones still open. Never `free()` a raw handle from Swift: only `smb2_close_async`'s callback, `smb2_closedir`, or the destroy sweep may release it. A plain `free()` leaves a dangling list entry that destroy later frees again. When `smb2_close_async` fails, leave the handle to the destroy sweep.
 - `Bridge.shutdown(_:)` disconnects, closes, and destroys a context in one queue operation. Never split those steps across separate `perform` calls, or another operation can run on a half-torn-down context.
 - The notify watcher services its context with a zero-timeout poll and waits between polls off the queue (`Task.sleep`), so an idle watcher never holds its connection's queue.
 - `Bridge.perform(on:_:)` throws ``SMB/Error/operationRequestedAfterConnectionClosed`` once the context has been destroyed instead of touching freed memory. It does not check task cancellation, so cleanup (closing handles, removing temporary files) still runs in cancelled tasks.
@@ -267,11 +268,13 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 ## Dependency Updates
 
-- `libsmb2` is consumed straight from `https://github.com/sahlberg/libsmb2` as the Git submodule `Sources/libsmb2/upstream`, pinned to a commit. There is no fork. To update it:
+- `libsmb2` is consumed straight from `https://github.com/sahlberg/libsmb2` as the Git submodule `Sources/libsmb2/upstream`, pinned to an upstream **release tag** (`libsmb2-X.Y.Z`; currently `libsmb2-7.0.0`). There is no fork. Only move the pin to another release tag, never to an untagged commit on `master` or a branch. Upstream also tags `libdcerpc-*` releases in the same repository, sometimes on the same commit, so `git describe` and `git submodule status` may show a `libdcerpc-*` name; check the pin with `git -C Sources/libsmb2/upstream tag --points-at HEAD`. To update it:
   ```bash
-  git -C Sources/libsmb2/upstream fetch origin
-  git -C Sources/libsmb2/upstream checkout <commit>
+  git -C Sources/libsmb2/upstream fetch origin --tags
+  git -C Sources/libsmb2/upstream tag --list 'libsmb2-*' --sort=-v:refname | head
+  git -C Sources/libsmb2/upstream checkout libsmb2-X.Y.Z
   ```
+- Name the libsmb2 release in the commit message (for example `build(deps): update libsmb2 to 7.0.0`) and in the SwiftSMB release notes.
 - Never edit files under `Sources/libsmb2/upstream`. Everything SwiftPM needs on top of upstream lives next to it in `Sources/libsmb2`:
   - `include/module.modulemap` defines module `SMB2` (and `SMB2.Raw`, `SMB2.Internal`). Its `header` paths point into `../upstream`.
   - `include/config.h` picks `linux/config.h` or upstream's `apple/config.h`.
