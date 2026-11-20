@@ -26,7 +26,7 @@ struct SMBEncryptionTests {
     @Test("a signed session reads back what it wrote", arguments: [SMB.Dialect.smb3_00, .smb3_11])
     func signedRoundTrip(dialect: SMB.Dialect) async throws {
         try await roundTrip(
-            configuration: SMB.Configuration(dialect: dialect, encryption: .disabled, requiresSigning: true)
+            configuration: SMB.Configuration(dialect: dialect, encryption: .disabled, signing: .required)
         )
     }
 

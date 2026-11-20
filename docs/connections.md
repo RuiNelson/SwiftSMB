@@ -44,6 +44,26 @@ try await connection.setTimeout(10)
 try await connection.setTimeout(0)
 ```
 
+## Choosing a signing policy
+
+``SMB/Configuration/Signing`` has the same three states for message signing as `Encryption` has for encryption:
+
+- `.automatic` leaves the decision to `libsmb2` and the server. This is the default.
+- `.disabled` does not require signing; a server that requires it still gets signed messages.
+- `.required` fails unless SMB signing is negotiated.
+
+```swift
+let configuration = SMB.Configuration(signing: .required)
+```
+
+`requiresSigning` (a `Bool?`) is deprecated in favour of `signing`; configurations stored with the old
+`requiresSigning` key still decode.
+
+## Choosing an authentication method
+
+``SMB/Configuration/authentication`` selects `.automatic` (the default) or `.ntlmssp`. `.kerberos` exists in the API, but
+**Kerberos authentication does not work yet**: SwiftSMB's `libsmb2` build has no Kerberos support, so don't use it.
+
 ## Choosing an encryption policy
 
 ``SMB/Configuration/Encryption`` represents all three `libsmb2` encryption states:
@@ -94,14 +114,9 @@ attached to the fork too; see [Block-Level Cache](block-level-cache.md#forks-sev
 
 ## Checking the negotiated dialect
 
-``SMB.Connection.negotiatedDialect`` returns the raw SMB dialect revision the server agreed to after connecting:
-
-```swift
-let rawDialect = try await connection.negotiatedDialect
-```
-
-``SMB.Connection.negotiatedDialectKind`` maps that raw value to ``SMB.NegotiatedDialect``, a typed enum covering the
-known SMB2/SMB3 dialects with a `.unknown(UInt16)` fallback for revisions this library doesn't recognize yet:
+``SMB.Connection.negotiatedDialectKind`` returns the dialect the server agreed to after connecting as
+``SMB.NegotiatedDialect``, a typed enum covering the known SMB2/SMB3 dialects with a `.unknown(UInt16)` fallback for
+revisions this library doesn't recognize yet. Its `rawValue` is the raw dialect revision:
 
 ```swift
 switch try await connection.negotiatedDialectKind {

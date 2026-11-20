@@ -98,6 +98,44 @@ struct SMBFileLockTests {
         try await file.unlock(range: 10 ..< 110)
     }
 
+    @Test("public lock with an offset range succeeds") func publicLockWithOffsetRangeSucceeds() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let path = uniquePath("public-lock-offset-range") + ".txt"
+        defer { try? await connection.removeFile(at: path) }
+
+        try await connection.dumpToFile(Data("lock test".utf8), to: path)
+        let file = try await connection.openFile(at: path, accessMode: .readWrite)
+        defer { try? await file.close() }
+
+        let range: Range<SMB.Offset> = 10 ..< 110
+        try await file.lock(.exclusive, nonBlocking: false, range: range)
+        try await file.unlock(range: range)
+
+        // Offsets above Int64.max are valid on the wire.
+        let high: Range<SMB.Offset> = (SMB.Offset(Int64.max) + 10) ..< (SMB.Offset(Int64.max) + 20)
+        try await file.lock(.exclusive, nonBlocking: false, range: high)
+        try await file.unlock(range: high)
+    }
+
+    @Test("public lock with an empty offset range throws") func publicLockWithEmptyOffsetRangeThrows() async throws {
+        let connection = try await publicFileConnection()
+        defer { try? await connection.disconnect() }
+
+        let path = uniquePath("public-lock-offset-empty") + ".txt"
+        defer { try? await connection.removeFile(at: path) }
+
+        try await connection.dumpToFile(Data("lock test".utf8), to: path)
+        let file = try await connection.openFile(at: path, accessMode: .readWrite)
+        defer { try? await file.close() }
+
+        let range: Range<SMB.Offset> = 5 ..< 5
+        await #expect(throws: SMB.Error.self) {
+            try await file.lock(.exclusive, nonBlocking: false, range: range)
+        }
+    }
+
     @Test("public lock with negative range throws") func publicLockWithNegativeRangeThrows() async throws {
         let connection = try await publicFileConnection()
         defer { try? await connection.disconnect() }

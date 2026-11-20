@@ -32,12 +32,10 @@ struct SMBPublicAPIIntegrationTests {
         let connection = try await SMB.connect(server: SMB.Server(host: testServerHost), share: TestShare.public)
         defer { try? await connection.disconnect() }
 
-        let rawDialect = try await connection.negotiatedDialect
         let dialectKind = try await connection.negotiatedDialectKind
 
-        #expect(dialectKind == SMB.NegotiatedDialect(rawValue: rawDialect))
         if case .unknown = dialectKind {
-            Issue.record("Expected a known negotiated dialect, got raw value \(rawDialect)")
+            Issue.record("Expected a known negotiated dialect, got raw value \(dialectKind.rawValue)")
         }
     }
 

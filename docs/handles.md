@@ -291,6 +291,10 @@ try await file.lock(.exclusive, nonBlocking: false, range: 1024..<2048)
 try await file.unlock(range: 1024..<2048)
 ```
 
+`lock` and `unlock` also take a `Range<SMB.Offset>` (``SMB.Offset`` is a `UInt64`, the type of every file offset), which
+can address offsets above `Int64.max`. Integer literals such as `1024..<2048` keep selecting the `Range<Int64>`
+overload; a range of `SMB.Offset` values selects the other one.
+
 Only one mode can be active at a time—shared and exclusive are mutually exclusive. The lock is associated with the open handle and is automatically released when the file is closed.
 
 ## Oplocks, leases, and their breaks

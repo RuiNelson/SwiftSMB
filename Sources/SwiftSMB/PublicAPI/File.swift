@@ -290,7 +290,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the read fails, or `CancellationError` if the task is cancelled between chunks.
         public func read(
             upTo: Int64,
-            atOffset offset: UInt64,
+            atOffset offset: Offset,
             transferChunkSize: Int64? = nil
         ) async throws -> Data {
             try await connection.withOperation {
@@ -320,7 +320,7 @@ public extension SMB {
         /// - Returns: The bytes read, shorter than `upTo` at the end of the file.
         func readFromServer(
             upTo: Int,
-            atOffset offset: UInt64,
+            atOffset offset: Offset,
             chunkSize: Int,
             context: Bridge.Context,
             handle: Bridge.FileHandle
@@ -457,7 +457,7 @@ public extension SMB {
         @discardableResult
         public func write(
             _ data: Data,
-            atOffset offset: UInt64,
+            atOffset offset: Offset,
             transferChunkSize: Int64? = nil
         ) async throws -> Int64 {
             try await connection.withOperation {
@@ -543,7 +543,7 @@ public extension SMB {
         /// - Returns: The resulting absolute file offset.
         /// - Throws: ``SMB/Error`` if seeking fails.
         @discardableResult
-        public func seek(offset: Int64, from origin: SeekOrigin) async throws -> UInt64 {
+        public func seek(offset: Int64, from origin: SeekOrigin) async throws -> Offset {
             try await connection.withOperation {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Lseek)
@@ -602,6 +602,22 @@ public extension SMB {
         /// without a range).
         /// - Throws: ``SMB/Error`` if the file is closed or the server reports an error.
         public func unlock(range: Range<Int64>? = nil) async throws {
+            try await unlock(offsetRange: Self.offsetRange(range))
+        }
+
+        /// Releases a byte-range lock previously acquired on the file, with the range as file offsets.
+        ///
+        /// The unlock range must match the lock range exactly. Sub-ranges cannot be unlocked independently.
+        ///
+        /// - Parameter range: The byte range to unlock, as offsets. Unlike the `Range<Int64>` overload, this one has no
+        /// default: use ``unlock(range:)-(Range<Int64>?)`` with no argument to unlock the entire file.
+        /// - Throws: ``SMB/Error`` if the file is closed, the range is empty, or the server reports an error.
+        @_disfavoredOverload
+        public func unlock(range: Range<Offset>) async throws {
+            try await unlock(offsetRange: range)
+        }
+
+        private func unlock(offsetRange range: Range<Offset>?) async throws {
             try await connection.withOperation {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Flock)
@@ -720,6 +736,28 @@ public extension SMB {
         /// while waiting (``SMB/Error/operationRequestedAfterConnectionClosed``), or the server reports an error.
         /// `CancellationError` if the task is cancelled while waiting.
         public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Int64>? = nil) async throws {
+            try await lock(mode, nonBlocking: nonBlocking, offsetRange: Self.offsetRange(range))
+        }
+
+        /// Acquires a byte-range lock on the file, with the range as file offsets.
+        ///
+        /// This behaves like ``lock(_:nonBlocking:range:)-(_,_,Range<Int64>?)``, but the range uses ``SMB/Offset``, so
+        /// it can address the whole 64-bit range of the protocol. Integer-literal ranges keep choosing the `Int64`
+        /// overload.
+        ///
+        /// - Parameters:
+        ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.
+        ///   - nonBlocking: When `true`, the operation fails immediately if the lock conflicts with an existing lock
+        /// instead of waiting.
+        ///   - range: The byte range to lock, as offsets.
+        /// - Throws: The errors of ``lock(_:nonBlocking:range:)-(_,_,Range<Int64>?)``; an empty range throws
+        /// ``SMB/Error`` with ``SMB/Error/InvalidArgumentCause/invalidLockRange(_:)``.
+        @_disfavoredOverload
+        public func lock(_ mode: LockMode, nonBlocking: Bool, range: Range<Offset>) async throws {
+            try await lock(mode, nonBlocking: nonBlocking, offsetRange: range)
+        }
+
+        private func lock(_ mode: LockMode, nonBlocking: Bool, offsetRange range: Range<Offset>?) async throws {
             try await connection.withOperation {
                 let context = try connection.requireContext()
                 let handle = try requireHandle(operation: .smb2Flock)
@@ -737,9 +775,10 @@ public extension SMB {
             }
         }
 
-        private static func validateLockRange(_ range: Range<Int64>?) throws -> (offset: UInt64, length: UInt64) {
+        /// Converts a signed lock range to offsets, rejecting a negative lower bound.
+        private static func offsetRange(_ range: Range<Int64>?) throws -> Range<Offset>? {
             guard let range else {
-                return (0, UInt64.max)
+                return nil
             }
             guard range.lowerBound >= 0 else {
                 throw SMB.Error.invalidArgument(
@@ -747,15 +786,20 @@ public extension SMB {
                     onOperation: .smb2Flock
                 )
             }
+            return Offset(range.lowerBound) ..< Offset(range.upperBound)
+        }
+
+        private static func validateLockRange(_ range: Range<Offset>?) throws -> (offset: UInt64, length: UInt64) {
+            guard let range else {
+                return (0, UInt64.max)
+            }
             guard !range.isEmpty else {
                 throw SMB.Error.invalidArgument(
                     cause: .invalidLockRange("range must not be empty"),
                     onOperation: .smb2Flock
                 )
             }
-            let offset = UInt64(range.lowerBound)
-            let length = UInt64(range.upperBound - range.lowerBound)
-            return (offset, length)
+            return (range.lowerBound, range.upperBound - range.lowerBound)
         }
 
         /// Returns the live bridge handle or throws if the file is closed.

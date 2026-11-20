@@ -17,9 +17,6 @@ struct CookbookHandlesTests {
         let connection = try await cookbookConnection()
         defer { try? await connection.disconnect() }
 
-        let rawDialect = try await connection.negotiatedDialect
-        _ = rawDialect
-
         switch try await connection.negotiatedDialectKind {
         case .smb3_11:
             break
