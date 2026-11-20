@@ -193,6 +193,25 @@ class Bridge {
         }
     }
 
+    /// Sets the command timeout of a context to what `seconds` returns once the call reaches the context queue, in
+    /// seconds. `0` disables it.
+    ///
+    /// Reading the value on the queue lets changes made from several places without awaiting (the keep-alive starts and
+    /// stops synchronously) leave the context with the latest one, whatever order their calls are enqueued in.
+    static func setTimeout(context: Context, seconds: @escaping @Sendable () -> Int) async throws {
+        try await perform(context: context) {
+            smb2_set_timeout(context.raw, Int32(clamping: seconds()))
+        }
+    }
+
+    /// Like the `setTimeout(context:seconds:)` that takes a closure, without waiting for it. Skipped once the context
+    /// is destroyed.
+    static func setTimeoutInBackground(context: Context, seconds: @escaping @Sendable () -> Int) {
+        performInBackground(context: context) {
+            smb2_set_timeout(context.raw, Int32(clamping: seconds()))
+        }
+    }
+
     /// Returns the command timeout of a context, in seconds.
     static func timeout(context: Context) async throws -> Int {
         try await perform(context: context) {
@@ -1257,6 +1276,15 @@ class Bridge {
     /// Sends an SMB echo request to verify the connection is responsive.
     static func echo(context: Context) async throws {
         try await perform(context: context) {
+            try _echo(context: context)
+        }
+    }
+
+    /// Sends an SMB echo request, calling `onStart` on the context queue right before it is sent, so the caller can
+    /// time the echo itself rather than its wait behind earlier operations. `onStart` must return quickly.
+    static func echo(context: Context, onStart: @escaping @Sendable () -> Void) async throws {
+        try await perform(context: context) {
+            onStart()
             try _echo(context: context)
         }
     }

@@ -31,16 +31,30 @@ public extension SMB {
 
         /// How long to wait for the echo's answer, in seconds. Always finite and greater than zero.
         ///
-        /// The keep-alive enforces this deadline itself, independently of the command timeout `libsmb2` applies. The
+        /// The deadline starts when the echo starts running on the connection, not while it waits behind other
+        /// operations. The keep-alive enforces it itself, independently of the command timeout `libsmb2` applies. The
         /// deadline in force is never longer than the connection's command timeout (``SMB/Configuration/timeout``, or
         /// the value set with ``SMB/Connection/setTimeout(_:)``) when that is not zero, so a larger value is reduced to
-        /// it. With no command timeout, this value is used as it is.
+        /// it.
+        ///
+        /// A connection with no command timeout gets one while the keep-alive runs: this value rounded up to whole
+        /// seconds (`libsmb2` counts whole seconds), so that an echo to a server that no longer answers cannot hold the
+        /// connection forever. That command timeout applies to every operation on the connection, not only to the echo:
+        /// a single request that takes longer fails with ``SMB/SMBStatus/ioTimeout``, and ``SMB/Connection/fork()``
+        /// starts the new connection with it. On a slow link, or with large transfer blocks, set a command timeout of
+        /// your own, with ``SMB/Configuration/timeout`` or ``SMB/Connection/setTimeout(_:)``; the keep-alive leaves it
+        /// alone. The keep-alive puts back "no command timeout" when it stops, unless ``SMB/Connection/setTimeout(_:)``
+        /// was called meanwhile.
         public var timeout: TimeInterval {
             didSet { Self.validate(timeout, named: "timeout") }
         }
 
         /// The round-trip time above which an answered echo is reported as ``KeepAliveProblem/slow(roundTrip:)``, in
         /// seconds. Always finite and greater than zero.
+        ///
+        /// The round trip is measured from when the echo starts running on the connection. An echo that takes longer
+        /// than the deadline in force (see ``timeout``) is reported as ``KeepAliveProblem/noResponse(timeout:)``, so a
+        /// value at or above that deadline never reports a slow answer.
         public var slowRoundTrip: TimeInterval {
             didSet { Self.validate(slowRoundTrip, named: "slowRoundTrip") }
         }
@@ -52,7 +66,10 @@ public extension SMB {
         /// closure returns, so the closure is the place to disconnect, reconnect or call
         /// ``SMB/Connection/startKeepAlive(_:)`` again. It may call
         /// ``SMB/Connection/stopKeepAlive()``. The keep-alive holds the closure, so a closure that captures the
-        /// connection keeps it alive until the keep-alive stops.
+        /// connection strongly keeps it alive until the keep-alive stops; capture it `weak` instead.
+        ///
+        /// A call that was already starting when ``SMB/Connection/stopKeepAlive()`` or
+        /// ``SMB/Connection/startKeepAlive(_:)`` was called can still run once; none starts later.
         public var onProblem: @Sendable (KeepAliveProblem) async -> Void
 
         /// Creates a keep-alive configuration.
@@ -93,8 +110,12 @@ public extension SMB {
         /// The server answered, but later than ``KeepAliveConfiguration/slowRoundTrip``. The keep-alive goes on.
         case slow(roundTrip: TimeInterval)
 
-        /// The server did not answer within the deadline, in seconds. The connection is most likely broken. The
-        /// keep-alive stops.
+        /// The server did not answer within the deadline, in seconds, or the connection's command timeout expired
+        /// first. The connection is most likely broken. The keep-alive stops.
+        ///
+        /// It is not reported when another operation started on the connection while the echo was waiting for its
+        /// answer: that operation meets the same problem itself, and the keep-alive tries again once the connection has
+        /// been idle for a whole ``KeepAliveConfiguration/interval``.
         case noResponse(timeout: TimeInterval)
 
         /// The echo failed. The connection is most likely broken. The keep-alive stops.
@@ -162,11 +183,27 @@ enum SMBKeepAliveEngine {
         return min(configured, TimeInterval(connectionTimeoutSeconds))
     }
 
+    /// The command timeout the keep-alive gives a connection that has none: its deadline rounded up to whole seconds,
+    /// because `libsmb2` counts whole seconds (`time(NULL)`). Never longer than `Int32.max`, which `libsmb2` stores.
+    static func imposedTimeoutSeconds(for timeout: TimeInterval) -> Int {
+        Int(min(timeout.rounded(.up), TimeInterval(Int32.max)))
+    }
+
+    /// Whether a `.noResponse` says nothing about the connection, because another operation was admitted while the echo
+    /// ran: an operation running now, or activity stamped since the echo was decided on. That operation meets the same
+    /// problem itself, so the keep-alive waits for the connection to be idle again rather than report it.
+    static func isInconclusive(
+        before lastActivityBefore: UInt64,
+        after state: (activeCount: Int, lastActivity: UInt64)
+    ) -> Bool {
+        state.activeCount > 0 || state.lastActivity != lastActivityBefore
+    }
+
     /// Runs until a failure, until it is no longer current, or until its task is cancelled.
     ///
     /// - Parameters:
     ///   - isCurrent: Whether this run is still the connection's keep-alive. Checked before every callback, so none
-    /// starts once the keep-alive was stopped or replaced.
+    /// starts once the keep-alive was stopped or replaced, except one that was already starting at that moment.
     ///   - snapshot: The connection's operation count and last activity, or `nil` when the connection is gone.
     ///   - sendEcho: Sends one echo, with the deadline in force.
     ///   - markActivity: Records that the connection was just used.
@@ -204,6 +241,10 @@ enum SMBKeepAliveEngine {
                         await configuration.onProblem(.slow(roundTrip: roundTrip))
                     }
                 case let .noResponse(timeout):
+                    guard let after = snapshot() else { return }
+                    if isInconclusive(before: state.lastActivity, after: after) {
+                        continue
+                    }
                     if isCurrent() {
                         await configuration.onProblem(.noResponse(timeout: timeout))
                     }
@@ -225,93 +266,171 @@ enum SMBKeepAliveEngine {
 ///
 /// An echo waiting on its connection's queue cannot be cancelled, so a task group would wait for it past the deadline.
 /// This resolves on whichever of the echo, the deadline and cancellation comes first, and leaves the echo running.
+///
+/// The deadline, and the round trip, start when the echo calls the `started` closure it is given, which the connection
+/// does once the echo runs on its queue: time spent waiting behind other operations is not the server's. An echo that
+/// never starts has no deadline: the keep-alive only sends an echo when no operation is running, an operation that
+/// starts later queues behind it, and while the keep-alive runs the connection has a command timeout unless the user
+/// set it to zero, so nothing holds the queue for long. Stopping or replacing the keep-alive, or disconnecting, cancels
+/// the wait.
 final class SMBKeepAliveEchoRace: Sendable {
-    private enum State {
+    private enum Phase {
         case waiting
         case suspended(CheckedContinuation<SMBKeepAliveEchoOutcome, Never>)
         case resolved(SMBKeepAliveEchoOutcome)
         case delivered
     }
 
-    private let state = Protected(State.waiting, label: "com.ruinelson.SwiftSMB.keepAlive.echoRace")
-    private let timer = Protected<Task<Void, Never>?>(nil, label: "com.ruinelson.SwiftSMB.keepAlive.echoRace.timer")
+    private struct State {
+        var phase = Phase.waiting
+        /// When the echo started, in `DispatchTime` uptime nanoseconds.
+        var startedAt: UInt64?
+        var timer: Task<Void, Never>?
+
+        var isResolved: Bool {
+            switch phase {
+            case .waiting, .suspended: false
+            case .resolved, .delivered: true
+            }
+        }
+    }
+
+    private let timeout: TimeInterval
+    private let createdAt = DispatchTime.now().uptimeNanoseconds
+    private let state = Protected(State(), label: "com.ruinelson.SwiftSMB.keepAlive.echoRace")
+
+    /// Whether a deadline timer is still held. It is cancelled and released as soon as the race resolves.
+    var hasPendingTimer: Bool {
+        state.withLock { $0.timer != nil }
+    }
+
+    /// - Parameter timeout: The deadline, in seconds, counted from when the echo starts.
+    init(timeout: TimeInterval) {
+        self.timeout = timeout
+    }
 
     /// Runs `echo` against `timeout`.
     ///
     /// - Parameters:
-    ///   - timeout: The deadline, in seconds.
-    ///   - echo: Sends the echo and throws when it fails.
+    ///   - timeout: The deadline, in seconds, counted from when the echo starts.
+    ///   - echo: Sends the echo and throws when it fails. It calls the closure it is given when the echo starts.
     static func run(
         timeout: TimeInterval,
-        echo: @escaping @Sendable () async throws -> Void
+        echo: @escaping @Sendable (_ started: @escaping @Sendable () -> Void) async throws -> Void
     ) async -> SMBKeepAliveEchoOutcome {
-        let race = SMBKeepAliveEchoRace()
-        let start = DispatchTime.now().uptimeNanoseconds
+        await SMBKeepAliveEchoRace(timeout: timeout).run(echo: echo)
+    }
+
+    /// Runs `echo` against the deadline. A race runs once.
+    func run(
+        echo: @escaping @Sendable (_ started: @escaping @Sendable () -> Void) async throws -> Void
+    ) async -> SMBKeepAliveEchoOutcome {
+        let timeout = timeout
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                race.install(continuation)
-                race.timer.current = Task {
-                    do {
-                        try await SMBKeepAliveEngine.sleep(seconds: timeout)
-                        race.resolve(.noResponse(timeout: timeout))
-                    }
-                    catch {
-                    }
-                }
+                // Already cancelled: no echo is sent and no timer is started.
+                guard !install(continuation) else { return }
                 Task {
                     do {
-                        try await echo()
-                        let end = DispatchTime.now().uptimeNanoseconds
-                        race.resolve(.answered(roundTrip: SMBKeepAliveEngine.seconds(from: start, to: end)))
+                        try await echo { self.start() }
+                        resolve(.answered(roundTrip: roundTrip()))
                     }
                     catch {
-                        race.resolve(Self.outcome(for: error))
+                        resolve(Self.outcome(for: error, timeout: timeout))
                     }
                 }
             }
         } onCancel: {
-            race.resolve(.stopped)
+            resolve(.stopped)
         }
     }
 
-    private static func outcome(for error: any Error) -> SMBKeepAliveEchoOutcome {
-        if let error = error as? SMB.Error, case .operationRequestedAfterConnectionClosed = error {
+    private static func outcome(for error: any Error, timeout: TimeInterval) -> SMBKeepAliveEchoOutcome {
+        guard let error = error as? SMB.Error else { return .failed(error) }
+        switch error {
+        case .operationRequestedAfterConnectionClosed:
             return .stopped
+        // libsmb2's own command timeout expired, which can happen first when the Swift deadline equals it.
+        case .ntStatus(.ioTimeout, _, _, _):
+            return .noResponse(timeout: timeout)
+        case let .posix(code, _, _) where code == POSIXErrorCode.ETIMEDOUT.rawValue:
+            return .noResponse(timeout: timeout)
+        default:
+            return .failed(error)
         }
-        return .failed(error)
     }
 
-    private func install(_ continuation: CheckedContinuation<SMBKeepAliveEchoOutcome, Never>) {
+    /// Stores the continuation, or resumes it at once when the race is already resolved.
+    ///
+    /// - Returns: Whether the race was already resolved, in which case nothing must be started.
+    private func install(_ continuation: CheckedContinuation<SMBKeepAliveEchoOutcome, Never>) -> Bool {
         let ready = state.withLock { state -> SMBKeepAliveEchoOutcome? in
-            switch state {
+            switch state.phase {
             case let .resolved(outcome):
-                state = .delivered
+                state.phase = .delivered
                 return outcome
             default:
-                state = .suspended(continuation)
+                state.phase = .suspended(continuation)
                 return nil
             }
         }
-        if let ready {
-            continuation.resume(returning: ready)
+        guard let ready else { return false }
+        continuation.resume(returning: ready)
+        return true
+    }
+
+    /// Records that the echo started and starts the deadline. Only the first call has an effect.
+    func start() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let startsTimer = state.withLock { state -> Bool in
+            guard state.startedAt == nil else { return false }
+            state.startedAt = now
+            return !state.isResolved
+        }
+        guard startsTimer else { return }
+        let timeout = timeout
+        let timer = Task {
+            do {
+                try await SMBKeepAliveEngine.sleep(seconds: timeout)
+                self.resolve(.noResponse(timeout: timeout))
+            }
+            catch {
+            }
+        }
+        // The race may have resolved while the timer was being created: then nobody else will cancel it.
+        let keptTimer = state.withLock { state -> Bool in
+            guard !state.isResolved else { return false }
+            state.timer = timer
+            return true
+        }
+        if !keptTimer {
+            timer.cancel()
         }
     }
 
-    /// Only the first call has an effect.
+    private func roundTrip() -> TimeInterval {
+        let end = DispatchTime.now().uptimeNanoseconds
+        let start = state.withLock { $0.startedAt } ?? createdAt
+        return SMBKeepAliveEngine.seconds(from: start, to: end)
+    }
+
+    /// Only the first call has an effect. Cancels the deadline timer.
     private func resolve(_ outcome: SMBKeepAliveEchoOutcome) {
-        let continuation = state.withLock { state -> CheckedContinuation<SMBKeepAliveEchoOutcome, Never>? in
-            switch state {
+        let (continuation, timer) = state.withLock { state in
+            let timer = state.timer
+            state.timer = nil
+            switch state.phase {
             case .waiting:
-                state = .resolved(outcome)
-                return nil
+                state.phase = .resolved(outcome)
+                return (CheckedContinuation<SMBKeepAliveEchoOutcome, Never>?.none, timer)
             case let .suspended(continuation):
-                state = .delivered
-                return continuation
+                state.phase = .delivered
+                return (continuation, timer)
             case .resolved, .delivered:
-                return nil
+                return (nil, timer)
             }
         }
-        timer.take(replacingWith: nil)?.cancel()
+        timer?.cancel()
         continuation?.resume(returning: outcome)
     }
 }
