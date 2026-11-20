@@ -25,8 +25,8 @@ Use it when your app or service needs to browse Windows, Samba, NAS, or other SM
 
 ## Cookbook
 
-The examples below list shares and transfer local files through an SMB share. Every operation that talks to the server
-is `async`, so call them from an asynchronous context with `try await`:
+A quick tour of what SwiftSMB can do. Every operation that talks to the server is `async`, so call them from an
+asynchronous context with `try await`:
 
 ```swift
 import Foundation
@@ -64,56 +64,9 @@ let connection = try await SMB.connect(
     share: "Documents"
 )
 defer { try? await connection.disconnect() }
-
-let serverID: UUID = try await connection.serverGUID
 ```
 
-Operations on a connection run one at a time, in the order they were requested. Open separate connections to run
-operations in parallel. `fork()` opens another connection to the same share, with the same credentials and
-configuration:
-
-```swift
-let secondConnection = try await connection.fork()
-defer { try? await secondConnection.disconnect() }
-```
-
-A fork reads and writes in the block sizes the server accepted for the original connection, rather than the configured
-`transferBlockSize`, and starts with its current command timeout.
-
-Set a command timeout when connecting if you want `libsmb2` to abort operations that take too long:
-
-```swift
-let connection = try await SMB.connect(
-    server: server,
-    credentials: credentials,
-    share: "Documents",
-    configuration: SMB.Configuration(timeout: 30)
-)
-```
-
-Establishing the connection always has a deadline: the configured timeout when it is positive, otherwise 30 seconds.
-
-You can also change the timeout for subsequent operations on an existing connection:
-
-```swift
-try await connection.setTimeout(10)
-try await connection.setTimeout(0) // Disable command timeouts
-```
-
-Encryption has three explicit policies: `.automatic` advertises support and uses encryption when required by the
-server or share, `.disabled` suppresses encryption, and `.required` fails unless encryption is negotiated:
-
-```swift
-let configuration = SMB.Configuration(encryption: .required)
-```
-
-Paths are checked before they are sent to the server. By default only the SMB protocol rules apply, so names such as
-`CON` that a Mac or Samba share accepts are allowed and the server decides. Choose `.ntfsOverSMB` or `.unixOverSMB` to
-reject names the share's file system would refuse before any request is sent:
-
-```swift
-let configuration = SMB.Configuration(pathValidation: .ntfsOverSMB)
-```
+To set timeouts or encryption, or to run operations in parallel, see [Connections](docs/connections.md).
 
 ### Listing a directory
 
@@ -123,9 +76,9 @@ let configuration = SMB.Configuration(pathValidation: .ntfsOverSMB)
 let entries = try await connection.listDirectory(at: "Anna/Inbox")
 ```
 
-In this library, just like `libsmb2` uses forward slash for separating directories. You don't need to add "/" to indicate the root of the file share.
+Paths use forward slashes and are relative to the root of the share, without a leading `/`.
 
-### uploadFile
+### Uploading a file
 
 `uploadFile(local:remote:...)` copies a local file to the connected share. It can create missing parent directories and, by default, stages the upload through a temporary remote file before renaming it into place:
 
@@ -135,34 +88,31 @@ let localURL = URL(fileURLWithPath: "/Users/Anna/Desktop/report.pdf")
 try await connection.uploadFile(
     local: localURL,
     remote: "Anna/Inbox/report.pdf"
-) { completed, total, lastBlockSpeed, averageSpeedSinceTheStartOfTheTransfer in
-    let speed = 0.5 * lastBlockSpeed + 0.5 * averageSpeedSinceTheStartOfTheTransfer
-    print("Uploaded \(completed) of \(total) bytes at \(round(speed/1000.0)) kB/s")
+) { completed, total, _, _ in
+    print("Uploaded \(completed) of \(total) bytes")
     return true
 }
 ```
 
-Return `false` from the progress closure to cancel the upload. Cancelling the task that runs the upload also stops it,
-and the call then throws `CancellationError`.
-
-### downloadFile
+### Downloading a file
 
 `downloadFile(remote:local:...)` copies a file from the connected share to local storage. The download is written to a temporary local file first and then moved into place after the transfer succeeds:
 
 ```swift
-let localURL = URL(fileURLWithPath: "/Users/alice/Downloads/report.pdf")
+let localURL = URL(fileURLWithPath: "/Users/Anna/Downloads/report.pdf")
 
 try await connection.downloadFile(
     remote: "Anna/Inbox/report.pdf",
     local: localURL
-) { completed, total, latestSpeed, averageSpeed in
+) { completed, total, _, _ in
     print("Downloaded \(completed) of \(total) bytes")
     return true
 }
 ```
 
-Return `false` from the progress closure to cancel the download. Cancelling the task that runs the download also stops
-it, and the call then throws `CancellationError`.
+The last two progress arguments are the speed of the latest block and the average speed, in bytes per second. Return
+`false` from the progress closure to cancel the transfer. Cancelling the task that runs it also stops it, and the call
+then throws `CancellationError`.
 
 Both methods also accept a progress closure that uses `await` (`SMB.Connection.AsyncFileProgress`), for example to
 report progress to an actor. The transfer waits for it before moving on to the next block.
@@ -220,22 +170,17 @@ connection.attachCache(cache)
 You can choose the memory budget, check cached files against the server, match paths without regard to case, replace
 the storage backend, or plug in a cache of your own. See [Block-Level Cache](docs/block-level-cache.md).
 
-### More advanced cookbooks
+### More guides
 
-Longer examples belong in `docs/`:
-
+- [Connections](docs/connections.md): timeouts, encryption, path validation, and running operations in parallel
 - [File Management](docs/file-management.md)
-- [Using convenience methods for uploads/downloads](docs/uploads-downloads.md)
+- [Uploads and Downloads](docs/uploads-downloads.md)
 - [Working with file handles and directory handles](docs/handles.md)
-- [Changing properties of files](docs/file-properties.md)
+- [Changing File Properties](docs/file-properties.md)
 - [Watching file system changes](docs/watching-changes.md)
 - [Playing media with AVFoundation](docs/video-playback.md)
 - [Reading and editing image metadata](docs/image-metadata.md)
-- [Block-Level Cache](docs/block-level-cache.md) — caching what a connection reads:
-  - [Getting started](docs/block-level-cache.md#getting-started)
-  - [How the cache APIs are organized](docs/block-level-cache.md#how-the-cache-apis-are-organized)
-  - [A custom storage backend for `ReferenceCache`](docs/block-level-cache.md#a-custom-storage-backend-for-referencecache)
-  - [A custom cache](docs/block-level-cache.md#a-custom-cache)
+- [Block-Level Cache](docs/block-level-cache.md)
 
 ## Adding this package to your Project
 
@@ -307,7 +252,7 @@ The `EXIFKit` trait builds the EXIFKit integration; without it, `SwiftSMBEXIFKit
 Some tests are integration tests and expect the Docker-based Samba test server to be running:
 
 ```bash
-docker ps --filter ancestor=swiftsmb-test-server
+docker ps --filter ancestor=swiftsmb-test-server # Is it already running?
 source TestServer/up.sh
 swift test --traits EXIFKit
 ```
