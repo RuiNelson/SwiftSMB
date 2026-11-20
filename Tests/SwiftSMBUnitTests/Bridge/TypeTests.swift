@@ -608,6 +608,7 @@ struct SMBPathValidationTests {
     @Test("validates share names using PathWorks") func validatesShareNamesUsingPathworks() throws {
         try SMB.validateShareName("public", operation: .smb2Open)
         try SMB.validateShareName("IPC$", operation: .smb2Open)
+        try SMB.validateShareName("Olena's Music", operation: .smb2Open)
 
         #expect(throws: SMB.Error.self) {
             try SMB.validateShareName("", operation: .smb2Open)

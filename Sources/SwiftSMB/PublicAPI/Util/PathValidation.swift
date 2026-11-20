@@ -6,6 +6,7 @@
 // Copyright its respective authors
 //
 
+import Foundation
 import PathWorks
 
 extension SMB {
@@ -78,7 +79,6 @@ public protocol CanBeSMBShareName {
     var isValidSMBShareName: Bool { get }
 }
 
-private let allowedSpecialChars = #"!@#$%^&()_-{}.~"#
 private let forbiddenNames = [
     "CON",
     "PRN",
@@ -104,18 +104,18 @@ private let forbiddenNames = [
     "LPT9",
 ]
 
+private let forbiddenCharactersForShareNames: CharacterSet = {
+    var set = CharacterSet()
+    set.insert(charactersIn: #""\/[]:|<>+=;,*?"#)
+    set.formUnion(.controlCharacters)
+    return set
+}()
+
 extension String: CanBeSMBShareName {
     public var isValidSMBShareName: Bool {
-        guard self.count > 0, self.count <= 80, self.first != ".", self.first != " ", self.last != ".",
-              self.last != " " else {
-            return false
-        }
-
-        let charsOK = allSatisfy {
-            $0.isLetter || $0.isNumber || $0 == " " || allowedSpecialChars.contains($0)
-        }
-
-        guard charsOK, !forbiddenNames.contains(uppercased()) else {
+        guard self.count > 0, self.count <= 80,
+              !forbiddenNames.contains(uppercased()),
+              rangeOfCharacter(from: forbiddenCharactersForShareNames) == nil else {
             return false
         }
         
