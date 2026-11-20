@@ -35,6 +35,8 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │       ├── Operations.swift              # Static top-level operations: connect/listShares/parseURL.
 │   │       ├── Configuration.swift           # Server, credentials, and connection configuration.
 │   │       ├── Connection.swift              # Connection handle, state, and primitive bridge operations.
+│   │       ├── Connection-KeepAlive.swift    # startKeepAlive/stopKeepAlive on SMB.Connection, and the keep-alive's connection glue.
+│   │       ├── KeepAlive.swift               # SMB.KeepAliveConfiguration/KeepAliveProblem, and the connection-independent engine.
 │   │       ├── Connection-Conv.swift         # Connection convenience methods built from primitives.
 │   │       ├── Connection-Conv-Transfer.swift # Upload/download and stream transfer convenience methods.
 │   │       ├── Connection-Conv-Compare.swift # Block-by-block file comparison (remote/remote, local/remote).
@@ -200,6 +202,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Public values generally conform to `CustomDebugStringConvertible`; use `describeFlags` and `hex` helpers from `PublicAPI/Util/OptionSet+.swift` for consistent debug output.
 - `Connection-Conv-Transfer.swift`'s private helpers are file-scope free functions taking `on connection: SMB.Connection` as their first argument, while `Connection-Conv.swift`'s private helpers are `private extension SMB.Connection` methods. Both styles are intentional — don't "fix" one file to match the other.
 - `SMB.Configuration.Dialect` (negotiation preference, includes `.any`/`.anySMB2`/`.anySMB3`) and `SMB.NegotiatedDialect` (the actual dialect a server negotiated, with an `.unknown(UInt16)` fallback) are intentionally separate types with different case sets — don't merge them.
+- The keep-alive (`KeepAlive.swift`, `Connection-KeepAlive.swift`) is deliberately not in `SMB.Configuration`, so it can be started and stopped on an open connection. Its task holds the connection only through a weak reference and is cancelled by `stopKeepAlive()`, `disconnect()` (through `takeContextAndNotifyWatchers`) and `deinit`. `SMBConnectionOperations.lastActivity` is stamped when a tracked `withOperation` is admitted and when it finishes (`DispatchTime` uptime, because `ContinuousClock` needs macOS 13); the keep-alive's own echo uses `withOperation(trackingActivity: false)` so it does not postpone itself. The echo's deadline is enforced in Swift by `SMBKeepAliveEchoRace` (echo task, timer task and cancellation, one continuation resolved once), never with a task group and never with libsmb2's timeout: an echo waiting on the context queue cannot be cancelled, so the deadline's callback fires while the echo may still be queued. The deadline is `min(configured, command timeout)` when the command timeout is not zero. `SMBKeepAliveEngine.run` takes closures instead of a connection, which is how `KeepAliveEngineTests` drives it. `stopKeepAlive()` bumps a generation counter, and callbacks are only started while their generation is current.
 
 ## Block-Level Cache
 

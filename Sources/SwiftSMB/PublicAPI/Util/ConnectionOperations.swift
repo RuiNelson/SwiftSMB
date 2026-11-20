@@ -6,6 +6,8 @@
 // Copyright its respective authors
 //
 
+import Foundation
+
 /// Admission and completion state for complete public operations on a connection.
 struct SMBConnectionOperations: Sendable {
     enum Phase: Equatable, Sendable {
@@ -16,18 +18,23 @@ struct SMBConnectionOperations: Sendable {
 
     var phase: Phase = .accepting
     var activeCount = 0
+    /// When a tracked operation was last admitted or finished, in `DispatchTime` uptime nanoseconds. The keep-alive
+    /// waits while this is recent.
+    var lastActivity = DispatchTime.now().uptimeNanoseconds
     var waiters: [CheckedContinuation<Void, Never>] = []
 }
 
 /// Keeps an operation admitted until its entire async body and cleanup have completed.
 private final class SMBConnectionOperation: Sendable {
     private let protectedConnection: Protected<SMB.Connection?>
+    private let tracksActivity: Bool
 
     var isActive: Bool {
         protectedConnection.current != nil
     }
 
-    init(connection: SMB.Connection) {
+    init(connection: SMB.Connection, tracksActivity: Bool) {
+        self.tracksActivity = tracksActivity
         protectedConnection = Protected(connection, label: "com.ruinelson.SwiftSMB.operation.connection")
     }
 
@@ -39,7 +46,7 @@ private final class SMBConnectionOperation: Sendable {
         // Child tasks can retain a completed task-local scope. Release the connection at completion so those scopes
         // cannot keep a connection and its watcher tasks alive through a retain cycle.
         guard let connection = protectedConnection.take(replacingWith: nil) else { return }
-        connection.finishOperation()
+        connection.finishOperation(tracksActivity: tracksActivity)
     }
 }
 
@@ -47,7 +54,13 @@ extension SMB.Connection {
     @TaskLocal private static var operationScopes: [ObjectIdentifier: SMBConnectionOperation] = [:]
 
     /// Admits a complete operation, including calls it makes while graceful disconnection is draining.
-    nonisolated(nonsending) func withOperation<T: Sendable>(_ body: () async throws -> T) async throws -> T {
+    ///
+    /// Admission and completion count as connection activity, which postpones the keep-alive. The keep-alive's own echo
+    /// passes `trackingActivity: false`, so that it does not postpone itself.
+    nonisolated(nonsending) func withOperation<T: Sendable>(
+        trackingActivity: Bool = true,
+        _ body: () async throws -> T
+    ) async throws -> T {
         let identity = ObjectIdentifier(self)
         let inheritedOperation = Self.operationScopes[identity]
         let admission = protectedOperations.withLock { state -> Result<SMBConnectionOperation, SMB.Error> in
@@ -58,7 +71,10 @@ extension SMB.Connection {
                 return .failure(SMB.Error.operationRequestedAfterConnectionClosed)
             }
             state.activeCount += 1
-            return .success(SMBConnectionOperation(connection: self))
+            if trackingActivity {
+                state.lastActivity = DispatchTime.now().uptimeNanoseconds
+            }
+            return .success(SMBConnectionOperation(connection: self, tracksActivity: trackingActivity))
         }
         let operation = try admission.get()
         defer { operation.finish() }
@@ -70,9 +86,12 @@ extension SMB.Connection {
         }
     }
 
-    fileprivate func finishOperation() {
+    fileprivate func finishOperation(tracksActivity: Bool) {
         let waiters = protectedOperations.withLock { state in
             state.activeCount -= 1
+            if tracksActivity {
+                state.lastActivity = DispatchTime.now().uptimeNanoseconds
+            }
             guard state.activeCount == 0 else { return [CheckedContinuation<Void, Never>]() }
             let waiters = state.waiters
             state.waiters.removeAll()

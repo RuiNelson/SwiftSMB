@@ -53,6 +53,11 @@ public extension SMB {
             [:],
             label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers"
         )
+        /// The keep-alive started with ``startKeepAlive(_:)``, which must stop before context teardown.
+        let protectedKeepAlive = Protected(
+            SMBKeepAliveRegistry(),
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.keepAlive"
+        )
         /// Routes the oplock and lease breaks of the context to the files they name.
         let opLockBreakRouter = SMBOpLockBreakRouter()
         /// The cache attached with ``attachCache(_:)``, or `nil`.
@@ -855,6 +860,7 @@ public extension SMB {
 
         /// Atomically closes watcher registration and takes ownership of the context and registered watchers.
         private func takeContextAndNotifyWatchers() -> (context: Bridge.Context?, watchers: [SMBNotifyWatcherState]) {
+            stopKeepAlive()
             closeOperationAdmission()
             return protectedNotifyWatchers.withLock { watchers in
                 let context = protectedContext.take()
