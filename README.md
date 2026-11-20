@@ -13,9 +13,7 @@
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
 [![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
-[![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/apple.yml)
-[![Linux](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/linux.yml)
-[![Android](https://github.com/RuiNelson/SwiftSMB/actions/workflows/android.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/android.yml)
+[![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml)
 
 ![SwiftSMB Banner](docs/banner.jpg)
 

@@ -172,6 +172,7 @@ struct ReferenceCacheBlockFuzzTests {
 
     @Test(
         "random writes, truncations, and version changes leave the runs a per-byte model predicts",
+        .fuzzing,
         arguments: CacheFuzz.seeds(300)
     )
     func blocksMatchModel(seed: UInt64) {
@@ -302,7 +303,7 @@ struct ReferenceCacheBlockFuzzTests {
         }
     }
 
-    @Test("ranges add and subtract like sets of positions", arguments: CacheFuzz.seeds(200))
+    @Test("ranges add and subtract like sets of positions", .fuzzing, arguments: CacheFuzz.seeds(200))
     func rangeArithmetic(seed: UInt64) {
         var generator = SeededGenerator(seed: seed)
         var ranges: [Range<UInt64>] = []
@@ -475,6 +476,7 @@ struct ReferenceCacheSampleFuzzTests {
 
     @Test(
         "a check takes the next cached whole blocks in scan order from where the last one stopped, wrapping around",
+        .fuzzing,
         arguments: CacheFuzz.seeds(200)
     )
     func samplePlanMatchesModel(seed: UInt64) {

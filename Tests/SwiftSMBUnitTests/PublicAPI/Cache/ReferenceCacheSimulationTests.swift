@@ -27,7 +27,7 @@ import Testing
 /// seed alone, `SWIFTSMB_CACHE_FUZZ_LOG_LINES=<n>` lists that many of its last steps, and
 /// `SWIFTSMB_CACHE_FUZZ_SCALE=<n>` runs `n` times as many seeds: the rarer orderings take thousands of runs to turn
 /// up, so a test that passes with the few seeds it runs by default says little until it passes a larger run.
-@Suite("ReferenceCache: simulated client and server")
+@Suite("ReferenceCache: simulated client and server", .fuzzing)
 struct ReferenceCacheSimulationTests {
     /// A configuration and a server drawn from `seed`, with budgets and limits small enough for eviction and refusals
     /// to happen within a few hundred steps.

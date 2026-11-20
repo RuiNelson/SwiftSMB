@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Unit tests only: the integration tests need the Samba test server and run from integration.yml, by hand. The fuzz
+  # tests keep every core busy for minutes and starve the timing-sensitive tests on the small runners.
+  SWIFTSMB_SKIP_INTEGRATION_TESTS: "1"
+  SWIFTSMB_SKIP_FUZZ_TESTS: "1"
+
+jobs:
+  macos:
+    # Pushes already run CI for this repository's branches; only pull requests from forks need their own run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4"
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --scratch-path /tmp/swift-build --traits EXIFKit -v
+
+      - name: Test (unit)
+        run: swift test --scratch-path /tmp/swift-test --traits EXIFKit
+
+  linux:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: swift:6.4-resolute
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --scratch-path /tmp/swift-build --traits EXIFKit -v
+
+      - name: Test (unit)
+        run: swift test --scratch-path /tmp/swift-test --traits EXIFKit
+
+  android:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: Android (aarch64)
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@0.0.11
+    with:
+      enable_linux_checks: false
+      enable_macos_checks: false
+      enable_windows_checks: false
+      enable_android_sdk_build: true
+      enable_android_sdk_checks: false
+      android_sdk_versions: '["6.4"]'
+      android_ndk_versions: '["r27d"]'
+      android_sdk_triples: '["aarch64-unknown-linux-android28"]'
+      android_sdk_pre_build_command: |
+        git submodule update --init --recursive
+      android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build --traits EXIFKit -v
