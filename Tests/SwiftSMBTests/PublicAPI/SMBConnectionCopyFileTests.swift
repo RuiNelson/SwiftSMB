@@ -87,6 +87,90 @@ struct SMBConnectionCopyFileTests {
         #expect(try await connection.loadFile(at: path) == Data("PRECIOUS".utf8))
     }
 
+    @Test("stopping an overwriting copy removes a destination that did not exist")
+    func stopRemovesNewDestinationDespiteOverwrite() async throws {
+        let connection = try await copyConnection()
+        defer { try? await connection.disconnect() }
+
+        let sourcePath = uniquePath("copy-stop-new-src") + ".bin"
+        let destPath = uniquePath("copy-stop-new-dst") + ".bin"
+        defer {
+            try? await connection.removeFile(at: sourcePath)
+            try? await connection.removeFile(at: destPath)
+        }
+        try await connection.dumpToFile(Self.largeContent(for: connection), to: sourcePath)
+
+        try await connection.copyFile(from: sourcePath, to: destPath, overwrite: true) { _, _, _, _ in false }
+
+        #expect(try await connection.itemExists(at: destPath) == .false)
+    }
+
+    @Test("cancelling during the report of the last request keeps the complete copy")
+    func cancellationAfterLastRequestKeepsCopy() async throws {
+        let connection = try await copyConnection()
+        defer { try? await connection.disconnect() }
+
+        let destPath = uniquePath("copy-cancel-last") + ".txt"
+        defer { try? await connection.removeFile(at: destPath) }
+
+        // The file is smaller than one request, so the first report is the last request's.
+        try await Task {
+            try await connection.copyFile(from: TestContent.helloPath, to: destPath) { _, _, _, _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return true
+            }
+        }.value
+
+        #expect(try await Array(connection.loadFile(at: destPath)) == TestContent.helloBytes)
+    }
+
+    @Test("copyFile with overwrite refuses a destination that differs only in case")
+    func overwriteRefusesCaseAlias() async throws {
+        let connection = try await copyConnection()
+        defer { try? await connection.disconnect() }
+
+        let path = uniquePath("copy-case") + ".txt"
+        defer { try? await connection.removeFile(at: path) }
+        try await connection.dumpToFile(Data("PRECIOUS".utf8), to: path)
+
+        // The test share is case-insensitive, so the upper-case spelling is the same file.
+        let alias = path.uppercased()
+        guard try await connection.itemExists(at: alias) != .false else { return }
+
+        await #expect(throws: SMB.Error.invalidArgument(
+            cause: .sourceAndDestinationAreTheSameFile,
+            onOperation: .smbConnectionCopyFile
+        )) {
+            try await connection.copyFile(from: path, to: alias, overwrite: true)
+        }
+        #expect(try await connection.loadFile(at: path) == Data("PRECIOUS".utf8))
+    }
+
+    @Test("copyFile with overwrite copies between canonically equivalent but distinct names")
+    func overwriteAllowsCanonicallyEquivalentNames() async throws {
+        let connection = try await copyConnection()
+        defer { try? await connection.disconnect() }
+
+        let stem = uniquePath("copy-nfc")
+        let composed = "\(stem)-\u{E9}.txt"
+        let decomposed = "\(stem)-e\u{301}.txt"
+        defer {
+            try? await connection.removeFile(at: composed)
+            try? await connection.removeFile(at: decomposed)
+        }
+        try await connection.dumpToFile(Data("SOURCE".utf8), to: composed)
+        try await connection.dumpToFile(Data("OLD".utf8), to: decomposed)
+
+        // The server may treat the two spellings as one name; only then is a refusal right.
+        let first = try await connection.stat(at: composed)
+        let second = try await connection.stat(at: decomposed)
+        guard first.inode != second.inode else { return }
+
+        try await connection.copyFile(from: composed, to: decomposed, overwrite: true)
+
+        #expect(try await connection.loadFile(at: decomposed) == Data("SOURCE".utf8))
+    }
+
     @Test("copyFile rejects a directory destination even with overwrite")
     func overwriteRejectsDirectoryDestination() async throws {
         let connection = try await copyConnection()

@@ -158,7 +158,10 @@ public extension SMB.Connection {
     ///
     /// By default the destination must not exist: if it does, the method throws an ``SMB/Error`` whose cause is
     /// ``SMB/Error/InvalidArgumentException/remoteDestinationAlreadyExists`` (its ``SMB/Error/posixCode`` is `EEXIST`).
-    /// If the copy fails or is cancelled after it created the destination, the partial destination file is removed.
+    /// If the copy fails or is cancelled after it created the destination, the partial destination file is removed;
+    /// that includes `overwrite: true` when there was no destination to replace. A lost connection, or a call to
+    /// ``SMB/Connection/disconnect()`` while the copy runs, can leave the partial file behind, as nothing can reach the
+    /// server to remove it.
     ///
     /// With `overwrite` set to `true` an existing destination file is replaced. The server truncates it when the copy
     /// starts, so a copy that fails or is cancelled leaves the destination partially written and the previous contents

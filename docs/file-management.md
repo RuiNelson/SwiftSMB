@@ -97,6 +97,9 @@ The closure has the same shape as the one `uploadFile` and `downloadFile` take, 
 stops the copy and the call returns normally; the destination is removed if the copy created it. Cancelling the task
 stops the copy between requests and throws `CancellationError`, with the same cleanup.
 
+A lost connection, or a `disconnect()` while the copy runs, can leave a partially written destination behind, since
+nothing can reach the server to remove it.
+
 ## Comparing files
 
 SMB has no command to hash a file on the server, so

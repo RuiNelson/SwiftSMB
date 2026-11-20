@@ -1380,24 +1380,26 @@ func copyRemoteFile(
     let operation = SMB.Error.InvalidArgumentOperation.smbConnectionCopyFile
     let context = try connection.requireContext()
 
+    var destinationExisted = false
     switch try await connection.itemExists(at: destinationPath) {
     case .false:
         break
     case .file, .link:
+        destinationExisted = true
         guard overwrite else {
             throw SMB.Error.invalidArgument(cause: .remoteDestinationAlreadyExists, onOperation: operation)
         }
         // Replacing truncates the destination first, which would empty the source if they are the same file.
-        if try await isSameFile(sourcePath, destinationPath, on: connection) {
+        if try await isSameFile(sourcePath, destinationPath, context: context) {
             throw SMB.Error.invalidArgument(cause: .sourceAndDestinationAreTheSameFile, onOperation: operation)
         }
     case .directory, .other:
         throw SMB.Error.invalidArgument(cause: .remoteDestinationIsNotAFile, onOperation: operation)
     }
 
-    // A copy that creates its destination removes it again if it fails or is stopped. One that replaces an existing
-    // destination has already truncated it, so what it wrote so far stays.
-    let exclusive = !overwrite
+    // A copy that creates its destination removes it again if it fails or is stopped, whether or not it was asked to
+    // overwrite. One that replaces an existing destination has already truncated it, so what it wrote so far stays.
+    let exclusive = !destinationExisted
     do {
         let finished = try await connection.reportingChange(
             at: [destinationPath],
@@ -1413,11 +1415,12 @@ func copyRemoteFile(
             )
             var tracker = ProgressTracker(totalBytes: copy.fileSize)
             do {
-                while true {
+                // Stop at the size, not at an empty step: a cancellation after the last request must not discard a
+                // complete copy.
+                while tracker.transferred < copy.fileSize {
                     try Task.checkCancellation()
                     let blockStart = DispatchTime.now()
                     let written = try await Bridge.copyNextChunks(context: context, copy: copy)
-                    guard written > 0 else { break }
                     guard await tracker.record(
                         bytes: written,
                         blockStart: blockStart,
@@ -1441,17 +1444,22 @@ func copyRemoteFile(
     }
 }
 
-/// Whether two existing remote paths name the same file: the same path, or (for case-insensitive or linked names) the
-/// same non-zero inode.
-private func isSameFile(_ first: String, _ second: String, on connection: SMB.Connection) async throws -> Bool {
-    if first == second {
+/// Whether two existing remote paths name the same file, so that truncating one would empty the other.
+///
+/// The paths are compared byte by byte (`String` equality would equate canonically equivalent spellings that are
+/// different names). Otherwise the server's inodes decide, read straight from the server because a cache could answer
+/// with a stale entry. A server that reports no inode (`0`) can't tell, so then any spelling that differs only in case
+/// or Unicode normalization counts as the same file. A `stat` that fails throws: the copy must not go on unchecked.
+private func isSameFile(_ first: String, _ second: String, context: Bridge.Context) async throws -> Bool {
+    if first.utf8.elementsEqual(second.utf8) {
         return true
     }
-    guard let firstStat = try? await connection.stat(at: first),
-          let secondStat = try? await connection.stat(at: second) else {
-        return false
+    let firstStat = try await Bridge.fileStatistics(context: context, path: first)
+    let secondStat = try await Bridge.fileStatistics(context: context, path: second)
+    if firstStat.inode != 0, secondStat.inode != 0 {
+        return firstStat.inode == secondStat.inode
     }
-    return firstStat.inode != 0 && firstStat.inode == secondStat.inode
+    return CachePath.equivalenceKey(first) == CachePath.equivalenceKey(second)
 }
 
 // MARK: - Block Size & Speed
