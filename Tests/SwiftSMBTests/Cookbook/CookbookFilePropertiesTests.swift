@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookFilePropertiesTests {
     @Test("attributes compiles and runs")
     func attributes() async throws {

@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookUploadsDownloadsTests {
     @Test("uploadFile with maxBlockSize compiles and runs")
     func uploadFileWithChunkSize() async throws {

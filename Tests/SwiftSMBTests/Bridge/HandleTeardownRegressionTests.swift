@@ -10,7 +10,7 @@
 import Dispatch
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct HandleTeardownRegressionTests {
     @Test("shutdown releases retained file and directory storage before late close")
     func shutdownInvalidatesRetainedHandles() async throws {

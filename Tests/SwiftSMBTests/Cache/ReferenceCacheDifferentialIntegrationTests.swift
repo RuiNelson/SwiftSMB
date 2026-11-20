@@ -80,7 +80,12 @@ private typealias KeptPair = (cached: SMB.File, held: SMB.File, index: Int)
 /// compares the bytes of names otherwise, so two names that differ only in Unicode normalization are two files.
 ///
 /// `SWIFTSMB_CACHE_FUZZ_SEED` picks the seed, and `SWIFTSMB_CACHE_FUZZ_SCALE` multiplies the operations.
-@Suite("ReferenceCache: the cached connection against an uncached one", .tags(.integration), .serialized)
+@Suite(
+    "ReferenceCache: the cached connection against an uncached one",
+    .tags(.integration),
+    .serverConcurrencyLimit,
+    .serialized
+)
 struct ReferenceCacheDifferentialIntegrationTests {
     struct Setup: Sendable, CustomTestStringConvertible {
         let name: String

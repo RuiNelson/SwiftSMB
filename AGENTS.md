@@ -275,6 +275,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 
 - Unit tests (no server needed): `Tests/SwiftSMBUnitTests` covers value types, error cases, enum raw values, and context configuration. These always run, including in CI.
 - Integration tests (need server): `Tests/SwiftSMBTests`, including the Bridge-level Samba tests, the Cookbook examples, and the public API integration suites. Tagged with `.integration`. Skip them by setting `SWIFTSMB_SKIP_INTEGRATION_TESTS=1`.
+- Every integration suite also carries `.serverConcurrencyLimit` (`Tests/SwiftSMBTests/Utils/ServerConcurrencyLimit.swift`): at most 4 integration test cases run against the Samba container at once, because with unlimited parallelism the server falls behind (notifications miss their `withTimeout`, connections are closed mid-test) while the same tests pass alone. Give new integration suites the trait next to `.tags(.integration)`. `SWIFTSMB_INTEGRATION_PARALLELISM=N` changes the limit (`1` runs them one at a time).
 - Run all tests: `swift test --traits EXIFKit`
 - Run a subset: `swift test --filter 'ConnectionTests'`
 - Notification-focused tests: `swift test --filter 'SMBNotify'`

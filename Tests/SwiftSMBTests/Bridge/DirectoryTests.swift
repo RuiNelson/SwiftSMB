@@ -9,7 +9,7 @@
 @testable import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct DirectoryTests {
     @Test("open and close root directory") func openAndCloseRootDirectory() async throws {
         try await withPublicShare { ctx in

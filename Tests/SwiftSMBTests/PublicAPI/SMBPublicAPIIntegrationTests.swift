@@ -10,7 +10,7 @@
 import Foundation
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBPublicAPIIntegrationTests {
     @Test("connection timeout can be changed after connect")
     func connectionTimeoutCanBeChangedAfterConnect() async throws {

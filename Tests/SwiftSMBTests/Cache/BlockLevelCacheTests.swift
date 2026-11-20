@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite("Cache: reads, writes, and metadata", .tags(.integration), .serialized)
+@Suite("Cache: reads, writes, and metadata", .tags(.integration), .serverConcurrencyLimit, .serialized)
 struct BlockLevelCacheTests {
     static let payload = cachePayload(byteCount: 64 * 1024)
 

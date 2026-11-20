@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBFileLockTests {
     @Test("public lock exclusive succeeds") func publicLockExclusiveSucceeds() async throws {
         let connection = try await publicFileConnection()

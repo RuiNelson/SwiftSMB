@@ -12,7 +12,7 @@ import Testing
 
 // MARK: - Stat tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct StatTests {
     @Test("stat known file returns file type") func statKnownFileReturnsFileType() async throws {
         try await withPublicShare { ctx in
@@ -87,7 +87,7 @@ struct StatTests {
 
 // MARK: - File read tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct FileReadTests {
     @Test("open and close file") func openAndCloseFile() async throws {
         try await withPublicShare { ctx in
@@ -192,7 +192,7 @@ struct FileReadTests {
 
 // MARK: - File write tests
 
-@Suite(.tags(.integration), .serialized)
+@Suite(.tags(.integration), .serverConcurrencyLimit, .serialized)
 struct FileWriteTests {
     @Test("create write read and delete file") func createWriteReadAndDeleteFile() async throws {
         try await withPublicShare { ctx in
@@ -369,7 +369,7 @@ struct FileWriteTests {
 
 // MARK: - Symlink tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SymlinkTests {
     @Test("read link for file symlink") func readLinkForFileSymlink() async throws {
         try await withPublicShare { ctx in
@@ -471,7 +471,7 @@ struct SymlinkTests {
 
 // MARK: - Read-only share tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ReadonlyShareTests {
     @Test("read file from readonly share") func readFileFromReadonlyShare() async throws {
         try await withReadonlyShare { ctx in
@@ -493,7 +493,7 @@ struct ReadonlyShareTests {
 
 // MARK: - Read-write mode and stat detail tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct StatDetailTests {
     @Test("stat has positive access time") func statHasPositiveAccessTime() async throws {
         try await withPublicShare { ctx in
@@ -554,7 +554,7 @@ struct StatDetailTests {
 
 // MARK: - Read-write file mode tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ReadWriteModeTests {
     @Test("open file readWrite and write read back") func openFileReadwriteAndWriteReadBack() async throws {
         try await withPublicShare { ctx in
@@ -589,7 +589,7 @@ struct ReadWriteModeTests {
 
 // MARK: - Large file tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct LargeFileTests {
     @Test("largefile 5 MB is on private share") func largefile5MbIsOnPrivateShare() async throws {
         try await withPrivateShare { ctx in
@@ -642,7 +642,7 @@ struct LargeFileTests {
 
 // MARK: - Set basic info tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SetBasicInfoTests {
     @Test("set modification time") func setModificationTime() async throws {
         try await withPublicShare { ctx in
@@ -775,7 +775,7 @@ struct SetBasicInfoTests {
 
 // MARK: - Server-side copy tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ServerSideCopyTests {
     @Test("serverSideCopy copies known file") func serverSideCopyCopiesKnownFile() async throws {
         try await withPublicShare { ctx in
@@ -855,7 +855,7 @@ struct ServerSideCopyTests {
 
 // MARK: - File lock tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct FileLockTests {
     @Test("lock shared succeeds") func lockSharedSucceeds() async throws {
         try await withPublicShare { ctx in

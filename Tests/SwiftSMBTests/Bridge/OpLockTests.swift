@@ -12,7 +12,7 @@ import Testing
 
 // MARK: - Bridge open with oplock/lease
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct OpLockBridgeTests {
     @Test("open with none oplock level succeeds") func openWithNoneOpLockLevelSucceeds() async throws {
         try await withPublicShare { ctx in

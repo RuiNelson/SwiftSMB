@@ -13,7 +13,7 @@
     import SwiftSMBAVFoundation
     import Testing
 
-    @Suite(.tags(.integration))
+    @Suite(.tags(.integration), .serverConcurrencyLimit)
     struct CookbookVideoPlaybackTests {
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
         @Test("play a file compiles and runs")

@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionDirectoryTests {
     @Test("makeDirectory makePath creates ancestors")
     func makeDirectoryMakePathCreatesAncestors() async throws {

@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBPublicAPIFileOpLockTests {
     @Test("openFile default opLock opens file") func openFileDefaultOpLockOpensFile() async throws {
         let connection = try await publicConnection()

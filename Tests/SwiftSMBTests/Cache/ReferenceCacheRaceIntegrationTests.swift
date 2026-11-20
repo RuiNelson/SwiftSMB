@@ -20,7 +20,7 @@ import Testing
 /// file fails, as it does on Samba, and silences the file.
 ///
 /// After each scenario, what the cached connection reads is compared with what a connection without a cache reads.
-@Suite("ReferenceCache: orderings with a live connection", .tags(.integration), .serialized)
+@Suite("ReferenceCache: orderings with a live connection", .tags(.integration), .serverConcurrencyLimit, .serialized)
 struct ReferenceCacheRaceIntegrationTests {
     static let payload = cachePayload(byteCount: 64 * 1024)
     static let other = Data(cachePayload(byteCount: 64 * 1024).reversed())

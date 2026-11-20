@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookWatchingChangesTests {
     @Test("watchDirectory compiles and runs")
     func watchDirectory() async throws {

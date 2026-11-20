@@ -14,7 +14,7 @@ import Testing
 /// and SMB 3.1.1 with AES-128-GCM, its first choice. The server checks every tag and signature the client sends, and
 /// the client checks the server's, so a wrong byte in either direction fails the transfer. The payload spans several
 /// PDUs and ends in a partial AES block.
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBEncryptionTests {
     private static let payloadSize = 3 * 1024 * 1024 + 37
 

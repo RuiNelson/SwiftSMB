@@ -9,7 +9,7 @@
 @testable import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CancelTests {
     @Test("cancelling a notify request withdraws it before its directory is closed")
     func cancellingNotifyRequestWithdrawsItBeforeItsDirectoryIsClosed() async throws {

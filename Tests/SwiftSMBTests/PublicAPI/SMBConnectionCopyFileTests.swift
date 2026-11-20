@@ -11,7 +11,7 @@ import SwiftSMB
 import Testing
 
 /// `copyFile` with its `overwrite` option and progress reporting.
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionCopyFileTests {
     /// A copy takes several requests only when the file is larger than what one request may carry (Samba: 16 MiB, after
     /// the first request, as large as the maximum write size, is rejected). This one is two and a half times the

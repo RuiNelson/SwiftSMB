@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionLifecycleRegressionTests {
     @Test("itemExists returns false when an ancestor directory is missing")
     func missingAncestorReturnsFalse() async throws {

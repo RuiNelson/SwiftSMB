@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookHandlesTests {
     @Test("negotiated dialect compiles and runs")
     func negotiatedDialect() async throws {

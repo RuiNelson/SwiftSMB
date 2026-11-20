@@ -12,7 +12,7 @@
     import SwiftSMBEXIFKit
     import Testing
 
-    @Suite("Cache: EXIFKit edits", .tags(.integration), .serialized)
+    @Suite("Cache: EXIFKit edits", .tags(.integration), .serverConcurrencyLimit, .serialized)
     struct EXIFKitCacheTests {
         @Test("an in-place edit reads through the cache and reports its temporary file and renames")
         func inPlaceEdit() async throws {

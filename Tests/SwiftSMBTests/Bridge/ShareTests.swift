@@ -9,7 +9,7 @@
 @testable import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ShareTests {
     @Test("public share is listed") func publicShareIsListed() async throws {
         try await withFreshContext { ctx in

@@ -10,7 +10,7 @@
 import Foundation
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBListSharesTests {
     private let server = SMB.Server(host: testServerHost)
     private let credentials = SMB.Credentials(user: TestCredentials.user, password: TestCredentials.password)

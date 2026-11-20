@@ -10,7 +10,7 @@
 import Foundation
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct BridgeHandleRegressionTests {
     @Test("negative directory positions are rejected without moving the stream")
     func negativeDirectoryPositionsRejected() async throws {

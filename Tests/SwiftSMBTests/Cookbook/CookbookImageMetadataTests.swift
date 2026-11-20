@@ -12,7 +12,7 @@
     import SwiftSMBEXIFKit
     import Testing
 
-    @Suite(.tags(.integration))
+    @Suite(.tags(.integration), .serverConcurrencyLimit)
     struct CookbookImageMetadataTests {
         @Test("read, edit and remove metadata by path compiles and runs")
         func byPath() async throws {

@@ -30,7 +30,7 @@ struct SMBNotifyPublicAPITests {
     }
 }
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBNotifyIntegrationTests {
     @Test("watchDirectory reports file changes")
     func watchDirectoryReportsFileChanges() async throws {

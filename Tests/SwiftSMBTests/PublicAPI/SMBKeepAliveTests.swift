@@ -10,7 +10,7 @@
 import Foundation
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBKeepAliveTests {
     /// Below any real round trip, so every answered echo is reported as slow: the observable sign that one was sent.
     private static let reportEveryEcho: TimeInterval = 1e-9
