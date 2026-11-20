@@ -92,15 +92,16 @@ public extension SMB {
         ///
         /// POSIX errors report their own code, and SMB status errors report the code libsmb2 maps their status to, such
         /// as `ENOENT` for ``SMBStatus/objectNameNotFound``. A closed connection reports `ENOTCONN`, an invalid
-        /// argument `EINVAL`, and a failed context creation `ENOMEM`.
+        /// argument `EINVAL` (`EEXIST` when a copy's destination already exists), and a failed context creation
+        /// `ENOMEM`.
         public var posixCode: Int32? {
             switch self {
             case .contextCreationFailed:
                 ENOMEM
             case .operationRequestedAfterConnectionClosed:
                 ENOTCONN
-            case .invalidArgument:
-                EINVAL
+            case let .invalidArgument(cause, _):
+                cause == .remoteDestinationAlreadyExists ? EEXIST : EINVAL
             case let .posix(code, _, _),
                  let .unknownPOSIX(code, _, _):
                 code

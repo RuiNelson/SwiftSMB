@@ -143,6 +143,10 @@ public extension SMB.Error {
         case remoteParentDirectoryDoesNotExist
         case remoteParentPathIsNotADirectory
         case remoteDestinationIsNotAFile
+        /// The destination of a copy already exists and the caller did not ask to overwrite it.
+        case remoteDestinationAlreadyExists
+        /// A copy that overwrites its destination was asked to copy a file onto itself, which would empty it.
+        case sourceAndDestinationAreTheSameFile
         case localFileShorterThanResumeOffset
         case offsetBeyondEndOfLocalFile
         case unableToDetermineLocalFileSize
@@ -177,6 +181,8 @@ public extension SMB.Error {
             case .remoteParentDirectoryDoesNotExist: "Remote parent directory does not exist"
             case .remoteParentPathIsNotADirectory: "Remote parent path exists and is not a directory"
             case .remoteDestinationIsNotAFile: "Remote destination is not a file"
+            case .remoteDestinationAlreadyExists: "Remote destination already exists"
+            case .sourceAndDestinationAreTheSameFile: "Source and destination are the same file"
             case .localFileShorterThanResumeOffset: "Local file is shorter than the requested resume offset"
             case .offsetBeyondEndOfLocalFile: "Offset is beyond the end of the local file"
             case .unableToDetermineLocalFileSize: "Unable to determine local file size"

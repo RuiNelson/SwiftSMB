@@ -61,7 +61,7 @@ try await connection.move(from: "draft.txt", to: "Archive/draft.txt")
 
 ## Copying files on the server
 
-``SMB.Connection.copyFile(from:to:)`` copies a file directly on the server without sending its data through the client.
+``SMB.Connection.copyFile(from:to:overwrite:)`` copies a file directly on the server without sending its data through the client.
 This is especially efficient for large files. The server must support server-side copies.
 
 ```swift
@@ -72,8 +72,30 @@ try await connection.copyFile(from: "Photos/vacation.jpg", to: "Photos/vacation_
 try await connection.copyFile(from: "draft.txt", to: "Archive/draft.txt")
 ```
 
-The source file must exist and must not be a directory. If the destination file already exists, an error is thrown. If
-the copy fails partway, the partially written destination is removed, so the call can simply be retried.
+The source file must exist and must not be a directory. If the destination file already exists, the call throws an
+``SMB.Error`` whose cause is `remoteDestinationAlreadyExists` (its `posixCode` is `EEXIST`). If the copy fails partway,
+the partially written destination is removed, so the call can simply be retried.
+
+Pass `overwrite: true` to replace an existing destination. The server truncates it when the copy starts, so a copy that
+fails or is stopped leaves the destination partially written and its previous contents lost. When that matters, copy to
+a new path and then ``SMB.Connection.move(from:to:)`` it into place. Copying a file onto itself with `overwrite: true`
+throws instead of emptying it.
+
+### Progress and cancellation
+
+A server-side copy runs in requests of up to the server's chunk limits (Samba allows 16 MiB per request). Pass a
+progress closure to be called after each request, and once more when the copy has completed:
+
+```swift
+try await connection.copyFile(from: "Videos/trip.mov", to: "Backups/trip.mov") { copied, total, _, averageSpeed in
+    print("\(copied) of \(total) bytes, \(Int(averageSpeed / 1_000_000)) MB/s")
+    return true // return false to stop the copy
+}
+```
+
+The closure has the same shape as the one `uploadFile` and `downloadFile` take, and it may be `async`. Returning `false`
+stops the copy and the call returns normally; the destination is removed if the copy created it. Cancelling the task
+stops the copy between requests and throws `CancellationError`, with the same cleanup.
 
 ## Comparing files
 

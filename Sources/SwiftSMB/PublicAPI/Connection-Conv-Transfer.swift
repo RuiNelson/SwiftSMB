@@ -1359,6 +1359,101 @@ private func commitAtomicUpload(
     }
 }
 
+// MARK: - Server-Side Copy
+
+/// Thrown out of a copy when the progress closure asked to stop, so that the failure path cleans up and reports.
+private struct CopyStoppedByProgress: Error {
+}
+
+/// Copies a remote file on the server in COPYCHUNK requests, reporting progress after each one.
+///
+/// Returns normally when `continuation` returned `false`. The destination was validated by the caller's path rules;
+/// this function checks that it can be created (or replaced) and tells the cache attached to `connection` about the
+/// change.
+func copyRemoteFile(
+    on connection: SMB.Connection,
+    from sourcePath: String,
+    to destinationPath: String,
+    overwrite: Bool,
+    continuation: SMB.Connection.AsyncFileProgress
+) async throws {
+    let operation = SMB.Error.InvalidArgumentOperation.smbConnectionCopyFile
+    let context = try connection.requireContext()
+
+    switch try await connection.itemExists(at: destinationPath) {
+    case .false:
+        break
+    case .file, .link:
+        guard overwrite else {
+            throw SMB.Error.invalidArgument(cause: .remoteDestinationAlreadyExists, onOperation: operation)
+        }
+        // Replacing truncates the destination first, which would empty the source if they are the same file.
+        if try await isSameFile(sourcePath, destinationPath, on: connection) {
+            throw SMB.Error.invalidArgument(cause: .sourceAndDestinationAreTheSameFile, onOperation: operation)
+        }
+    case .directory, .other:
+        throw SMB.Error.invalidArgument(cause: .remoteDestinationIsNotAFile, onOperation: operation)
+    }
+
+    // A copy that creates its destination removes it again if it fails or is stopped. One that replaces an existing
+    // destination has already truncated it, so what it wrote so far stays.
+    let exclusive = !overwrite
+    do {
+        let finished = try await connection.reportingChange(
+            at: [destinationPath],
+            to: connection.cacheAttachment,
+            removing: false,
+            removingIfFailed: exclusive
+        ) {
+            let copy = try await Bridge.beginServerSideCopy(
+                context: context,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                exclusiveDestination: exclusive
+            )
+            var tracker = ProgressTracker(totalBytes: copy.fileSize)
+            do {
+                while true {
+                    try Task.checkCancellation()
+                    let blockStart = DispatchTime.now()
+                    let written = try await Bridge.copyNextChunks(context: context, copy: copy)
+                    guard written > 0 else { break }
+                    guard await tracker.record(
+                        bytes: written,
+                        blockStart: blockStart,
+                        continuation: continuation
+                    ) else {
+                        throw CopyStoppedByProgress()
+                    }
+                }
+                try await Bridge.finishServerSideCopy(context: context, copy: copy)
+            }
+            catch {
+                await Bridge.abandonServerSideCopy(context: context, copy: copy)
+                throw error
+            }
+            return (total: copy.fileSize, averageSpeed: tracker.averageSpeed)
+        }
+        _ = await continuation(finished.total, finished.total, 0, finished.averageSpeed)
+    }
+    catch is CopyStoppedByProgress {
+        return
+    }
+}
+
+/// Whether two existing remote paths name the same file: the same path, or (for case-insensitive or linked names) the
+/// same non-zero inode.
+private func isSameFile(_ first: String, _ second: String, on connection: SMB.Connection) async throws -> Bool {
+    if first == second {
+        return true
+    }
+    guard let firstStat = try? await connection.stat(at: first),
+          let secondStat = try? await connection.stat(at: second) else {
+        return false
+    }
+    return firstStat.inode != 0 && firstStat.inode == secondStat.inode
+}
+
 // MARK: - Block Size & Speed
 
 /// Validates a caller-preferred block size before the connection clamps it to its server limit.
