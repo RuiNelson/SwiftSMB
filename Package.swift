@@ -30,12 +30,12 @@ let exifKitTrait = "EXIFKit"
 let package = Package(
     name: "SwiftSMB",
     platforms: [
-        .macOS(.v11),
-        .iOS(.v14),
+        .macOS(.v12),
+        .iOS(.v16),
         .visionOS(.v1),
-        .watchOS(.v7),
-        .tvOS(.v14),
-        .macCatalyst(.v14),
+        .watchOS(.v9),
+        .tvOS(.v15),
+        .macCatalyst(.v15),
         .custom("android", versionString: "28"),
     ],
     products: [

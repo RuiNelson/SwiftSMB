@@ -260,7 +260,7 @@ dependencies: [
 The trait is disabled by default, so packages that don't enable it never resolve or fetch EXIFKit; without it, the
 `SwiftSMBEXIFKit` module is empty.
 
-SwiftSMB currently declares support for macOS 11+, iOS 14+, macCatalyst 14+, tvOS 14+, visionOS 1+, and watchOS 7+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
+SwiftSMB currently declares support for macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, visionOS 1+, and watchOS 9+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
 
 ### Xcode Project
 

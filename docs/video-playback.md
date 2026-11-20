@@ -4,7 +4,7 @@ The `SwiftSMBAVFoundation` product streams audio and video files from an SMB sha
 them with `AVPlayer` without downloading them first. Playback starts as soon as AVFoundation has the bytes it needs, and
 seeking only fetches the ranges around the new position.
 
-It is available on macOS 11+, iOS 14+, macCatalyst 14+, tvOS 14+, and visionOS 1+. On watchOS, Linux, and Android the
+It is available on macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, and visionOS 1+. On watchOS, Linux, and Android the
 module builds empty, because AVFoundation's resource loader isn't available there.
 
 ## Adding the product
