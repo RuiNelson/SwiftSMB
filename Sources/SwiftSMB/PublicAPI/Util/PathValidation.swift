@@ -79,31 +79,6 @@ public protocol CanBeSMBShareName {
     var isValidSMBShareName: Bool { get }
 }
 
-private let forbiddenNames = [
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    "COM1",
-    "COM2",
-    "COM3",
-    "COM4",
-    "COM5",
-    "COM6",
-    "COM7",
-    "COM8",
-    "COM9",
-    "LPT1",
-    "LPT2",
-    "LPT3",
-    "LPT4",
-    "LPT5",
-    "LPT6",
-    "LPT7",
-    "LPT8",
-    "LPT9",
-]
-
 private let forbiddenCharactersForShareNames: CharacterSet = {
     var set = CharacterSet()
     set.insert(charactersIn: #""\/[]:|<>+=;,*?"#)
@@ -114,7 +89,6 @@ private let forbiddenCharactersForShareNames: CharacterSet = {
 extension String: CanBeSMBShareName {
     public var isValidSMBShareName: Bool {
         guard self.count > 0, self.count <= 80,
-              !forbiddenNames.contains(uppercased()),
               rangeOfCharacter(from: forbiddenCharactersForShareNames) == nil else {
             return false
         }
