@@ -177,7 +177,8 @@ public extension SMB.Connection {
     ///   - destinationPath: The destination file path, relative to the share root.
     ///   - overwrite: A Boolean value indicating whether to replace an existing destination file.
     /// - Throws: ``SMB/Error`` if the source cannot be opened or is a directory, the destination exists and `overwrite`
-    /// is `false` or is not a file, or the server does not support server-side copy.
+    /// is `false` or is not a file, or the server does not support server-side copy, or `CancellationError` if the task
+    /// is cancelled.
     func copyFile(from sourcePath: String, to destinationPath: String, overwrite: Bool = false) async throws {
         let progress: AsyncFileProgress = { _, _, _, _ in true }
         try await copyFile(from: sourcePath, to: destinationPath, overwrite: overwrite, continuation: progress)
@@ -207,6 +208,8 @@ public extension SMB.Connection {
         try await self.withOperation {
             let sourcePath = try self.validatePath(sourcePath, operation: .smbConnectionCopyFile)
             let destinationPath = try self.validatePath(destinationPath, operation: .smbConnectionCopyFile)
+            // Before anything reaches the server: a cancelled task must not create (and remove) a destination.
+            try Task.checkCancellation()
             try await copyRemoteFile(
                 on: self,
                 from: sourcePath,

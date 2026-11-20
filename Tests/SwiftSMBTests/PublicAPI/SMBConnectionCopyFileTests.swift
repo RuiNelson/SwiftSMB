@@ -171,6 +171,92 @@ struct SMBConnectionCopyFileTests {
         #expect(try await connection.loadFile(at: decomposed) == Data("SOURCE".utf8))
     }
 
+    @Test("a task that is already cancelled copies nothing and creates no destination")
+    func cancelledTaskCreatesNothing() async throws {
+        let connection = try await copyConnection()
+        defer { try? await connection.disconnect() }
+
+        let destPath = uniquePath("copy-precancelled") + ".txt"
+        defer { try? await connection.removeFile(at: destPath) }
+
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await connection.copyFile(from: TestContent.helloPath, to: destPath)
+        }
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(try await connection.itemExists(at: destPath) == .false)
+    }
+
+    @Test("overwrite creates a destination that a stale cache still reports as present")
+    func overwriteIgnoresStalePresentEntry() async throws {
+        let cached = try await copyConnection()
+        let other = try await copyConnection()
+        defer {
+            Task { try? await cached.disconnect() }
+            Task { try? await other.disconnect() }
+        }
+        cached.attachCache(SMB.ReferenceCache(configuration: .init(metadata: .answer(
+            for: 60,
+            includingMissing: false
+        ))))
+
+        let destPath = uniquePath("copy-stale-present") + ".txt"
+        defer { try? await other.removeFile(at: destPath) }
+        try await other.dumpToFile(Data("OLD".utf8), to: destPath)
+        _ = try await cached.stat(at: destPath) // now cached as a file
+        try await other.removeFile(at: destPath)
+
+        try await cached.copyFile(from: TestContent.helloPath, to: destPath, overwrite: true)
+
+        #expect(try await Array(other.loadFile(at: destPath)) == TestContent.helloBytes)
+    }
+
+    @Test("overwrite replaces a destination that a stale cache still reports as missing")
+    func overwriteIgnoresStaleMissingEntry() async throws {
+        let cached = try await copyConnection()
+        let other = try await copyConnection()
+        defer {
+            Task { try? await cached.disconnect() }
+            Task { try? await other.disconnect() }
+        }
+        cached.attachCache(SMB.ReferenceCache(configuration: .init(metadata: .answer(for: 60, includingMissing: true))))
+
+        let destPath = uniquePath("copy-stale-missing") + ".txt"
+        defer { try? await other.removeFile(at: destPath) }
+        #expect(try await cached.itemExists(at: destPath) == .false) // now cached as missing
+        try await other.dumpToFile(Data("OLD".utf8), to: destPath)
+
+        try await cached.copyFile(from: TestContent.helloPath, to: destPath, overwrite: true)
+
+        #expect(try await Array(other.loadFile(at: destPath)) == TestContent.helloBytes)
+    }
+
+    @Test("without overwrite a destination that a stale cache reports as missing still throws the typed error")
+    func staleMissingEntryThrowsTypedError() async throws {
+        let cached = try await copyConnection()
+        let other = try await copyConnection()
+        defer {
+            Task { try? await cached.disconnect() }
+            Task { try? await other.disconnect() }
+        }
+        cached.attachCache(SMB.ReferenceCache(configuration: .init(metadata: .answer(for: 60, includingMissing: true))))
+
+        let destPath = uniquePath("copy-stale-typed") + ".txt"
+        defer { try? await other.removeFile(at: destPath) }
+        #expect(try await cached.itemExists(at: destPath) == .false)
+        try await other.dumpToFile(Data("KEEP".utf8), to: destPath)
+
+        await #expect(throws: SMB.Error.invalidArgument(
+            cause: .remoteDestinationAlreadyExists,
+            onOperation: .smbConnectionCopyFile
+        )) {
+            try await cached.copyFile(from: TestContent.helloPath, to: destPath)
+        }
+        #expect(try await other.loadFile(at: destPath) == Data("KEEP".utf8))
+    }
+
     @Test("copyFile rejects a directory destination even with overwrite")
     func overwriteRejectsDirectoryDestination() async throws {
         let connection = try await copyConnection()

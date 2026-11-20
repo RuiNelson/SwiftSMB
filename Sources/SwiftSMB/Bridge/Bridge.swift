@@ -1794,8 +1794,8 @@ class Bridge {
 
     /// A server-side copy in progress: the open handles, the server's resume key and how far the copy has got.
     ///
-    /// Created by ``Bridge/beginServerSideCopy(context:sourcePath:destinationPath:exclusiveDestination:)`` and driven
-    /// one COPYCHUNK request at a time, so the caller can report progress and check for cancellation between requests.
+    /// Created by ``Bridge/beginServerSideCopy(context:sourcePath:destinationPath:destination:)`` and driven one
+    /// COPYCHUNK request at a time, so the caller can report progress and check for cancellation between requests.
     /// Mutated only on the context's queue, through the `Bridge` functions that take it.
     final class ServerSideCopy: @unchecked Sendable {
         /// The size of the source file when the copy began.
@@ -1828,7 +1828,7 @@ class Bridge {
         sourcePath: String,
         destinationPath: String,
         chunkSize: UInt32,
-        exclusiveDestination: Bool
+        destination: CopyDestination
     ) throws -> ServerSideCopy {
         let stat = try _fileStatistics(context: context, path: sourcePath)
         // A directory reports size 0, which the empty-file shortcut below would silently "copy" to an empty file.
@@ -1836,13 +1836,13 @@ class Bridge {
             throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: .smbConnectionCopyFile)
         }
         let fileSize = stat.size
-        let destinationOptions: OpenOptions = exclusiveDestination ? [.create, .exclusive] : [.create, .truncate]
+        let destinationOptions = destination.openOptions
         // Start with one chunk sized to the negotiated max write size. If the server rejects that with its COPYCHUNK
         // limits, the first step adopts them once and retries the same region with batched chunks.
         let copy = ServerSideCopy(
             fileSize: fileSize,
             destinationPath: destinationPath,
-            exclusiveDestination: exclusiveDestination,
+            exclusiveDestination: destination == .createNew,
             limits: CopyChunkLimits(maxChunkCount: 1, maxChunkLength: chunkSize, maxTotalLength: chunkSize)
         )
 
@@ -1912,11 +1912,13 @@ class Bridge {
     }
 
     private static func _finishServerSideCopy(context: Context, copy: ServerSideCopy) throws {
+        // The source first, and without failing: the copy is complete, so a source that does not close cleanly must not
+        // make the caller abandon (and remove) the destination.
+        if let source = copy.source {
+            try? _close(context: context, file: source)
+        }
         if let destination = copy.destination {
             try _close(context: context, file: destination)
-        }
-        if let source = copy.source {
-            try _close(context: context, file: source)
         }
     }
 
@@ -1934,16 +1936,19 @@ class Bridge {
         }
     }
 
-    /// Opens a server-side copy: checks the source, creates (or truncates) the destination and asks the server for the
-    /// source's resume key. Nothing is copied until ``copyNextChunks(context:copy:)``.
+    /// Opens a server-side copy: stats the source, opens it and asks the server for its resume key, then opens the
+    /// destination as `destination` says. Nothing is copied until ``copyNextChunks(context:copy:)``. An empty source is
+    /// not opened: creating or truncating the destination is the whole copy.
     ///
-    /// A failure to open the destination leaves it untouched. Once this returns, finish the copy with
-    /// ``finishServerSideCopy(context:copy:)`` or give it up with ``abandonServerSideCopy(context:copy:)``.
+    /// The destination is opened last, so a source that cannot be copied (or a server without server-side copy) leaves
+    /// it untouched, and so does a failure to open it. Once this returns, finish the copy with
+    /// ``finishServerSideCopy(context:copy:)`` or give it up with ``abandonServerSideCopy(context:copy:)``, which
+    /// removes a ``CopyDestination/createNew`` destination.
     static func beginServerSideCopy(
         context: Context,
         sourcePath: String,
         destinationPath: String,
-        exclusiveDestination: Bool = false
+        destination: CopyDestination
     ) async throws -> ServerSideCopy {
         try await perform(context: context) {
             try _beginServerSideCopy(
@@ -1951,7 +1956,7 @@ class Bridge {
                 sourcePath: sourcePath,
                 destinationPath: destinationPath,
                 chunkSize: max(smb2_get_max_write_size(context.raw), 1),
-                exclusiveDestination: exclusiveDestination
+                destination: destination
             )
         }
     }
@@ -1993,7 +1998,7 @@ class Bridge {
                 sourcePath: sourcePath,
                 destinationPath: destinationPath,
                 chunkSize: max(smb2_get_max_write_size(context.raw), 1),
-                exclusiveDestination: exclusiveDestination
+                destination: exclusiveDestination ? .createNew : .createOrReplace
             )
             do {
                 while copy.copiedBytes < copy.fileSize {
