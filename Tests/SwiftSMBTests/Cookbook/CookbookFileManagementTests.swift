@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookFileManagementTests {
     @Test("makeDirectory with makePath compiles and runs")
     func makeDirectoryWithMakePath() async throws {

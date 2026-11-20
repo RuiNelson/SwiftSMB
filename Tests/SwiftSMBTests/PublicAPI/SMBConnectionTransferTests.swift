@@ -32,7 +32,7 @@ private actor ProgressRecorder {
     }
 }
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionTransferTests {
     @Test("leading slash in remote path is ignored")
     func leadingSlashInRemotePathIsIgnored() async throws {
@@ -733,7 +733,7 @@ struct SMBConnectionTransferTests {
     }
 }
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionStreamTransferTests {
     @Test("streamToRemote uploads a stream of unknown length")
     func streamToRemoteUploadsStreamOfUnknownLength() async throws {

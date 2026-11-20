@@ -13,7 +13,7 @@ import Testing
 /// Breaks are caused by a second connection opening the file in a way that conflicts with the first one's oplock or
 /// lease. The server holds that open back until the break is acknowledged, or until its break timeout (35 seconds)
 /// expires, so every conflicting open here runs under a timeout well below it.
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBFileOpLockBreakTests {
     private static let fullLease: SMB.File.LeaseState = [.readCaching, .writeCaching, .handleCaching]
 

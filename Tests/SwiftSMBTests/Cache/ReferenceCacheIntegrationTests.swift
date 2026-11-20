@@ -14,7 +14,7 @@ import Testing
 ///
 /// The cache is fed directly, the way a connection reports to it, so that these tests depend on nothing but the cache
 /// and the server.
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ReferenceCacheIntegrationTests {
     /// 40 000 bytes: three blocks of the 16 KiB sampling grid, of 13 334, 13 333, and 13 333 bytes.
     private static let payload = Data((0 ..< 40000).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ ($0 >> 9)) })

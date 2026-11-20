@@ -277,6 +277,12 @@ lockTask.cancel()
 
 The connection's command timeout and disconnecting also withdraw a waiting lock.
 
+A keep-alive changes how long a blocking lock waits. While ``SMB/Connection/startKeepAlive(_:)`` runs on a connection
+that had no command timeout, it imposes one (1 second by default), so a lock that would otherwise wait indefinitely
+fails with ``SMB/SMBStatus/ioTimeout`` after about a second. To wait for locks on a connection with a keep-alive, set a
+command timeout of your own, greater than zero and long enough, before starting the keep-alive (with
+``SMB/Configuration/timeout`` or ``SMB/Connection/setTimeout(_:)``), or use non-blocking locks.
+
 Lock a specific byte range instead of the entire file:
 
 ```swift
@@ -284,6 +290,10 @@ try await file.lock(.exclusive, nonBlocking: false, range: 1024..<2048)
 // ... work within the locked range ...
 try await file.unlock(range: 1024..<2048)
 ```
+
+`lock` and `unlock` also take a `Range<SMB.Offset>` (``SMB.Offset`` is a `UInt64`, the type of every file offset), which
+can address offsets above `Int64.max`. Integer literals such as `1024..<2048` keep selecting the `Range<Int64>`
+overload; a range of `SMB.Offset` values selects the other one.
 
 Only one mode can be active at a time—shared and exclusive are mutually exclusive. The lock is associated with the open handle and is automatically released when the file is closed.
 

@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookReadmeTests {
     @Test("listShares compiles and runs")
     func listSharesCompilesAndRuns() async throws {

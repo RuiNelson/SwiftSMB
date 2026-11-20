@@ -12,7 +12,7 @@ import Testing
 
 // MARK: - Live connection tests
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct ConnectionTests {
     @Test("connect to public share as guest") func connectToPublicShareAsGuest() async throws {
         try await withFreshContext { ctx in

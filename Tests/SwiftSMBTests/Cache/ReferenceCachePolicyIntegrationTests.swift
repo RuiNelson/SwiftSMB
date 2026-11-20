@@ -15,7 +15,12 @@ import Testing
 ///
 /// Samba updates a file's change time on every write, and does not let a client set it back, so a stat tells every
 /// version of a file apart: what the policies differ in is when a stat, or a check, is made.
-@Suite("ReferenceCache: trust and metadata policies through a live connection", .tags(.integration), .serialized)
+@Suite(
+    "ReferenceCache: trust and metadata policies through a live connection",
+    .tags(.integration),
+    .serverConcurrencyLimit,
+    .serialized
+)
 struct ReferenceCachePolicyIntegrationTests {
     static let payload = cachePayload(byteCount: 40000)
     static let marker = Data(repeating: 0xEE, count: 1000)

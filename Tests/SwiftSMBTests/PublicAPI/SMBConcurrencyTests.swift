@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConcurrencyTests {
     /// Connections run on their own queues, so many connects overlap. With `libsmb2`'s default timeout of 0, a connect
     /// whose TCP handshake crossed a wall-clock second boundary could fail with "Timeout expired and no connection

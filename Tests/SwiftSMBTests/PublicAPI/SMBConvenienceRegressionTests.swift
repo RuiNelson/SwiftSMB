@@ -45,7 +45,7 @@ private final class GracefulDisconnectRequest: @unchecked Sendable {
     }
 }
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConvenienceRegressionTests {
     @Test("graceful disconnect waits for the complete atomic upload and its commit")
     func gracefulDisconnectFinishesAtomicUpload() async throws {

@@ -193,6 +193,25 @@ class Bridge {
         }
     }
 
+    /// Sets the command timeout of a context to what `seconds` returns once the call reaches the context queue, in
+    /// seconds. `0` disables it.
+    ///
+    /// Reading the value on the queue lets changes made from several places without awaiting (the keep-alive starts and
+    /// stops synchronously) leave the context with the latest one, whatever order their calls are enqueued in.
+    static func setTimeout(context: Context, seconds: @escaping @Sendable () -> Int) async throws {
+        try await perform(context: context) {
+            smb2_set_timeout(context.raw, Int32(clamping: seconds()))
+        }
+    }
+
+    /// Like the `setTimeout(context:seconds:)` that takes a closure, without waiting for it. Skipped once the context
+    /// is destroyed.
+    static func setTimeoutInBackground(context: Context, seconds: @escaping @Sendable () -> Int) {
+        performInBackground(context: context) {
+            smb2_set_timeout(context.raw, Int32(clamping: seconds()))
+        }
+    }
+
     /// Returns the command timeout of a context, in seconds.
     static func timeout(context: Context) async throws -> Int {
         try await perform(context: context) {
@@ -1261,6 +1280,28 @@ class Bridge {
         }
     }
 
+    /// Sends an SMB echo request, calling `onStart` on the context queue right before it is sent and `onFinish` there
+    /// right after it ends, with its error or `nil`, so the caller can time the echo itself: not its wait behind
+    /// earlier operations, nor the time the awaiting task takes to resume. Both must return quickly. Neither is called
+    /// when the context is already destroyed.
+    static func echo(
+        context: Context,
+        onStart: @escaping @Sendable () -> Void,
+        onFinish: @escaping @Sendable (any Error?) -> Void
+    ) async throws {
+        try await perform(context: context) {
+            onStart()
+            do {
+                try _echo(context: context)
+            }
+            catch {
+                onFinish(error)
+                throw error
+            }
+            onFinish(nil)
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Checks an SMB status code and throws if it indicates an error.
@@ -1637,7 +1678,7 @@ class Bridge {
 
     /// Per-request limits for FSCTL_SRV_COPYCHUNK, as advertised by the server in a SRV_COPYCHUNK_RESPONSE (MS-SMB2
     /// 2.2.32.1).
-    private struct CopyChunkLimits {
+    fileprivate struct CopyChunkLimits {
         let maxChunkCount: UInt32
         let maxChunkLength: UInt32
         let maxTotalLength: UInt32
@@ -1792,109 +1833,196 @@ class Bridge {
         return chunks
     }
 
-    private static func _serverSideCopy(
+    /// A server-side copy in progress: the open handles, the server's resume key and how far the copy has got.
+    ///
+    /// Created by ``Bridge/beginServerSideCopy(context:sourcePath:destinationPath:destination:)`` and driven one
+    /// COPYCHUNK request at a time, so the caller can report progress and check for cancellation between requests.
+    /// Mutated only on the context's queue, through the `Bridge` functions that take it.
+    final class ServerSideCopy: @unchecked Sendable {
+        /// The size of the source file when the copy began.
+        let fileSize: UInt64
+        /// The bytes the server has copied so far.
+        fileprivate(set) var copiedBytes: UInt64 = 0
+        fileprivate let destinationPath: String
+        fileprivate let exclusiveDestination: Bool
+        fileprivate var source: FileHandle?
+        fileprivate var destination: FileHandle?
+        fileprivate var resumeKey: smb2_srv_copychunk_resume_key?
+        fileprivate var limits: CopyChunkLimits
+        fileprivate var didAdoptServerLimits = false
+
+        fileprivate init(
+            fileSize: UInt64,
+            destinationPath: String,
+            exclusiveDestination: Bool,
+            limits: CopyChunkLimits
+        ) {
+            self.fileSize = fileSize
+            self.destinationPath = destinationPath
+            self.exclusiveDestination = exclusiveDestination
+            self.limits = limits
+        }
+    }
+
+    private static func _beginServerSideCopy(
         context: Context,
         sourcePath: String,
         destinationPath: String,
         chunkSize: UInt32,
-        exclusiveDestination: Bool
-    ) throws {
+        destination: CopyDestination
+    ) throws -> ServerSideCopy {
         let stat = try _fileStatistics(context: context, path: sourcePath)
         // A directory reports size 0, which the empty-file shortcut below would silently "copy" to an empty file.
         guard stat.type != .directory else {
             throw SMB.Error.invalidArgument(cause: .remotePathIsNotAFile, onOperation: .smbConnectionCopyFile)
         }
         let fileSize = stat.size
-        let destinationOptions: OpenOptions = exclusiveDestination ? [.create, .exclusive] : [.create, .truncate]
+        let destinationOptions = destination.openOptions
+        // Start with one chunk sized to the negotiated max write size. If the server rejects that with its COPYCHUNK
+        // limits, the first step adopts them once and retries the same region with batched chunks.
+        let copy = ServerSideCopy(
+            fileSize: fileSize,
+            destinationPath: destinationPath,
+            exclusiveDestination: destination == .createNew,
+            limits: CopyChunkLimits(maxChunkCount: 1, maxChunkLength: chunkSize, maxTotalLength: chunkSize)
+        )
 
         guard fileSize > 0 else {
-            let destination = try _open(
+            // Creating (or truncating) the destination is the whole copy.
+            copy.destination = try _open(
                 context: context,
                 path: destinationPath,
                 flags: .init(.writeOnly, options: destinationOptions)
             )
-            do {
-                try _close(context: context, file: destination)
-            }
-            catch {
-                if exclusiveDestination, context.isAlive {
-                    try? _unlink(context: context, path: destinationPath)
-                }
-                throw error
-            }
-            return
+            return copy
         }
 
         let source = try _open(context: context, path: sourcePath)
-        defer { try? _close(context: context, file: source) }
-        let resumeKey = try _requestResumeKey(context: context, sourceHandle: source.requireRaw(operation: .smb2Read))
-
-        let destination = try _open(
-            context: context,
-            path: destinationPath,
-            flags: .init(.readWrite, options: destinationOptions)
-        )
-        defer { try? _close(context: context, file: destination) }
-
         do {
-            // Start with one chunk sized to the negotiated max write size. If the server rejects that with its
-            // COPYCHUNK limits, adopt them once and retry the same region with batched chunks.
-            var limits = CopyChunkLimits(maxChunkCount: 1, maxChunkLength: chunkSize, maxTotalLength: chunkSize)
-            var didAdoptServerLimits = false
-            var offset: UInt64 = 0
-            while offset < fileSize {
-                let chunks = planCopyChunks(from: offset, fileSize: fileSize, limits: limits)
-                if let serverLimits = try _copyChunks(
-                    context: context,
-                    destinationHandle: destination.requireRaw(operation: .smb2Write),
-                    resumeKey: resumeKey,
-                    chunks: chunks
-                ) {
-                    guard !didAdoptServerLimits,
-                          serverLimits.maxChunkCount > 0,
-                          serverLimits.maxChunkLength > 0,
-                          serverLimits.maxTotalLength > 0 else {
-                        throw SMB.Error.unknown(
-                            operation: "FSCTL_SRV_COPYCHUNK",
-                            message: "Server rejected a copy request that honors its advertised limits"
-                        )
-                    }
-                    didAdoptServerLimits = true
-                    limits = serverLimits
-                    continue
-                }
-                offset += chunks.reduce(0) { $0 + UInt64($1.length) }
-            }
-            try _close(context: context, file: destination)
-            try _close(context: context, file: source)
+            copy.resumeKey = try _requestResumeKey(
+                context: context,
+                sourceHandle: source.requireRaw(operation: .smb2Read)
+            )
+            // Until this open succeeds the destination is not ours: a failure here must not remove it.
+            copy.destination = try _open(
+                context: context,
+                path: destinationPath,
+                flags: .init(.readWrite, options: destinationOptions)
+            )
         }
         catch {
-            try? _close(context: context, file: destination)
-            // An exclusive creator owns its partial destination; an overwrite caller may have supplied an existing
-            // destination, which must remain the caller's responsibility on failure.
-            if exclusiveDestination, context.isAlive {
-                try? _unlink(context: context, path: destinationPath)
-            }
+            try? _close(context: context, file: source)
             throw error
+        }
+        copy.source = source
+        return copy
+    }
+
+    /// Sends one COPYCHUNK request, retrying it once under the server's own limits if it rejects ours.
+    private static func _copyNextChunks(context: Context, copy: ServerSideCopy) throws -> UInt64 {
+        guard let destination = copy.destination,
+              let resumeKey = copy.resumeKey,
+              copy.copiedBytes < copy.fileSize else {
+            return 0
+        }
+        while true {
+            let chunks = planCopyChunks(from: copy.copiedBytes, fileSize: copy.fileSize, limits: copy.limits)
+            if let serverLimits = try _copyChunks(
+                context: context,
+                destinationHandle: destination.requireRaw(operation: .smb2Write),
+                resumeKey: resumeKey,
+                chunks: chunks
+            ) {
+                guard !copy.didAdoptServerLimits,
+                      serverLimits.maxChunkCount > 0,
+                      serverLimits.maxChunkLength > 0,
+                      serverLimits.maxTotalLength > 0 else {
+                    throw SMB.Error.unknown(
+                        operation: "FSCTL_SRV_COPYCHUNK",
+                        message: "Server rejected a copy request that honors its advertised limits"
+                    )
+                }
+                copy.didAdoptServerLimits = true
+                copy.limits = serverLimits
+                continue
+            }
+            let written = chunks.reduce(0) { $0 + UInt64($1.length) }
+            copy.copiedBytes += written
+            return written
         }
     }
 
-    /// Copies a file from source to destination using SMB2 server-side copy.
-    static func serverSideCopy(
+    private static func _finishServerSideCopy(context: Context, copy: ServerSideCopy) throws {
+        // The source first, and without failing: the copy is complete, so a source that does not close cleanly must not
+        // make the caller abandon (and remove) the destination.
+        if let source = copy.source {
+            try? _close(context: context, file: source)
+        }
+        if let destination = copy.destination {
+            try _close(context: context, file: destination)
+        }
+    }
+
+    private static func _abandonServerSideCopy(context: Context, copy: ServerSideCopy) {
+        if let destination = copy.destination {
+            try? _close(context: context, file: destination)
+        }
+        if let source = copy.source {
+            try? _close(context: context, file: source)
+        }
+        // An exclusive creator owns its partial destination; an overwrite caller may have supplied an existing
+        // destination, which must remain the caller's responsibility on failure.
+        if copy.exclusiveDestination, context.isAlive {
+            try? _unlink(context: context, path: copy.destinationPath)
+        }
+    }
+
+    /// Opens a server-side copy: stats the source, opens it and asks the server for its resume key, then opens the
+    /// destination as `destination` says. Nothing is copied until ``copyNextChunks(context:copy:)``. An empty source is
+    /// not opened: creating or truncating the destination is the whole copy.
+    ///
+    /// The destination is opened last, so a source that cannot be copied (or a server without server-side copy) leaves
+    /// it untouched, and so does a failure to open it. Once this returns, finish the copy with
+    /// ``finishServerSideCopy(context:copy:)`` or give it up with ``abandonServerSideCopy(context:copy:)``, which
+    /// removes a ``CopyDestination/createNew`` destination.
+    static func beginServerSideCopy(
         context: Context,
         sourcePath: String,
         destinationPath: String,
-        exclusiveDestination: Bool = false
-    ) async throws {
+        destination: CopyDestination
+    ) async throws -> ServerSideCopy {
         try await perform(context: context) {
-            let chunkSize = max(smb2_get_max_write_size(context.raw), 1)
-            try _serverSideCopy(
+            try _beginServerSideCopy(
                 context: context,
                 sourcePath: sourcePath,
                 destinationPath: destinationPath,
-                chunkSize: chunkSize,
-                exclusiveDestination: exclusiveDestination
+                chunkSize: max(smb2_get_max_write_size(context.raw), 1),
+                destination: destination
             )
+        }
+    }
+
+    /// Has the server copy the next piece of the file, as large as one COPYCHUNK request allows.
+    ///
+    /// - Returns: The bytes copied, or `0` once the whole file has been copied.
+    static func copyNextChunks(context: Context, copy: ServerSideCopy) async throws -> UInt64 {
+        try await perform(context: context) {
+            try _copyNextChunks(context: context, copy: copy)
+        }
+    }
+
+    /// Closes the copy's handles, which commits the destination.
+    static func finishServerSideCopy(context: Context, copy: ServerSideCopy) async throws {
+        try await perform(context: context) {
+            try _finishServerSideCopy(context: context, copy: copy)
+        }
+    }
+
+    /// Closes the copy's handles after a failure or cancellation and, for an exclusive destination, removes it. Never
+    /// throws, so it can run in cleanup paths.
+    static func abandonServerSideCopy(context: Context, copy: ServerSideCopy) async {
+        try? await perform(context: context) {
+            _abandonServerSideCopy(context: context, copy: copy)
         }
     }
 }

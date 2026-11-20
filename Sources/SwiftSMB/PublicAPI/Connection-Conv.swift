@@ -154,51 +154,93 @@ public extension SMB.Connection {
     /// Copies a file from one path to another on the connected share using server-side copy.
     ///
     /// Data is copied directly on the server without transferring through the client. The source file must exist and
-    /// must not be a directory. If the destination file already exists, an error is thrown. If the copy fails after the
-    /// destination was created, the partial destination file is removed.
+    /// must not be a directory.
+    ///
+    /// By default the destination must not exist: if it does, the method throws an ``SMB/Error`` whose cause is
+    /// ``SMB/Error/InvalidArgumentException/remoteDestinationAlreadyExists`` (its ``SMB/Error/posixCode`` is `EEXIST`).
+    /// If the copy fails or is cancelled after it created the destination, the partial destination file is removed;
+    /// that includes `overwrite: true` when there was no destination to replace. A lost connection, or a call to
+    /// ``SMB/Connection/disconnect()`` while the copy runs, can leave the partial file behind, as nothing can reach the
+    /// server to remove it.
+    ///
+    /// With `overwrite` set to `true` an existing destination file is replaced. The server truncates it when the copy
+    /// starts, so a copy that fails or is cancelled leaves the destination partially written and the previous contents
+    /// lost; copy to a new path and move it into place when that matters. Copying a file onto itself throws
+    /// ``SMB/Error/InvalidArgumentException/sourceAndDestinationAreTheSameFile``.
+    ///
+    /// The copy stops between requests when the task is cancelled, and throws `CancellationError`. To follow the
+    /// progress or stop the copy without an error, use
+    /// ``copyFile(from:to:overwrite:continuation:)-(_,_,_,FileProgress)``.
     ///
     /// - Parameters:
     ///   - sourcePath: The source file path, relative to the share root.
     ///   - destinationPath: The destination file path, relative to the share root.
-    /// - Throws: ``SMB/Error`` if the source cannot be opened or is a directory, the destination already exists, or the
-    /// server does not support server-side copy.
-    func copyFile(from sourcePath: String, to destinationPath: String) async throws {
+    ///   - overwrite: A Boolean value indicating whether to replace an existing destination file.
+    /// - Throws: ``SMB/Error`` if the source cannot be opened or is a directory, the destination exists and `overwrite`
+    /// is `false` or is not a file, or the server does not support server-side copy, or `CancellationError` if the task
+    /// is cancelled.
+    func copyFile(from sourcePath: String, to destinationPath: String, overwrite: Bool = false) async throws {
+        let progress: AsyncFileProgress = { _, _, _, _ in true }
+        try await copyFile(from: sourcePath, to: destinationPath, overwrite: overwrite, continuation: progress)
+    }
+
+    /// Copies a file on the share using server-side copy, reporting progress through a closure that can suspend.
+    ///
+    /// Behaves like ``copyFile(from:to:overwrite:)``. The server copies the file in requests of up to its advertised
+    /// chunk limits (typically a few megabytes), and `continuation` is called after each one and once more when the
+    /// copy has completed, with a latest speed of `0`. The copy waits for it to return before it sends the next
+    /// request. Return `true` to continue, or `false` to stop the copy, which makes the method return normally; the
+    /// destination is then removed if the copy created it, and left partially written if it replaced an existing file.
+    ///
+    /// - Parameters:
+    ///   - sourcePath: The source file path, relative to the share root.
+    ///   - destinationPath: The destination file path, relative to the share root.
+    ///   - overwrite: A Boolean value indicating whether to replace an existing destination file.
+    ///   - continuation: A progress closure; see ``AsyncFileProgress``. `totalBytes` is the size of the source.
+    /// - Throws: ``SMB/Error`` as ``copyFile(from:to:overwrite:)`` does, or `CancellationError` if the task is
+    /// cancelled.
+    func copyFile(
+        from sourcePath: String,
+        to destinationPath: String,
+        overwrite: Bool = false,
+        continuation: @escaping AsyncFileProgress
+    ) async throws {
         try await self.withOperation {
             let sourcePath = try self.validatePath(sourcePath, operation: .smbConnectionCopyFile)
             let destinationPath = try self.validatePath(destinationPath, operation: .smbConnectionCopyFile)
-            let context = try requireContext()
-
-            switch try await itemExists(at: destinationPath) {
-            case .false:
-                break
-            case .file, .link:
-                throw SMB.Error.posix(
-                    code: POSIXErrorCode.EEXIST.rawValue,
-                    operation: "SMB.Connection.copyFile",
-                    message: "Destination file already exists"
-                )
-            case .directory, .other:
-                throw SMB.Error.invalidArgument(
-                    cause: .remoteDestinationIsNotAFile,
-                    onOperation: .smbConnectionCopyFile
-                )
-            }
-
-            // A copy that fails removes the destination it created.
-            try await reportingChange(
-                at: [destinationPath],
-                to: cacheAttachment,
-                removing: false,
-                removingIfFailed: true
-            ) {
-                try await Bridge.serverSideCopy(
-                    context: context,
-                    sourcePath: sourcePath,
-                    destinationPath: destinationPath,
-                    exclusiveDestination: true
-                )
-            }
+            // Before anything reaches the server: a cancelled task must not create (and remove) a destination.
+            try Task.checkCancellation()
+            try await copyRemoteFile(
+                on: self,
+                from: sourcePath,
+                to: destinationPath,
+                overwrite: overwrite,
+                continuation: continuation
+            )
         }
+    }
+
+    /// Copies a file on the share using server-side copy, reporting progress through a synchronous closure.
+    ///
+    /// Behaves like ``copyFile(from:to:overwrite:continuation:)-(_,_,_,AsyncFileProgress)``; Swift selects this method
+    /// when the progress closure doesn't use `await`.
+    ///
+    /// - Parameters:
+    ///   - sourcePath: The source file path, relative to the share root.
+    ///   - destinationPath: The destination file path, relative to the share root.
+    ///   - overwrite: A Boolean value indicating whether to replace an existing destination file.
+    ///   - continuation: A progress closure; see ``FileProgress``. `totalBytes` is the size of the source.
+    /// - Throws: ``SMB/Error`` as ``copyFile(from:to:overwrite:)`` does, or `CancellationError` if the task is
+    /// cancelled.
+    func copyFile(
+        from sourcePath: String,
+        to destinationPath: String,
+        overwrite: Bool = false,
+        continuation: @escaping FileProgress
+    ) async throws {
+        // Passing `continuation` directly would select the non-suspending overload again.
+        let progress: AsyncFileProgress = continuation
+        try await copyFile(from: sourcePath, to: destinationPath, overwrite: overwrite, continuation: progress)
     }
 
     /// Returns a read block size accepted by the server.

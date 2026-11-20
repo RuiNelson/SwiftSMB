@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionCompareTests {
     private static let maximumBlockSize: UInt64 = 1000
     private static let scans: [SMB.FileCompareScan] = [.startToEnd, .endToStart, .bisection]

@@ -10,15 +10,12 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct CookbookHandlesTests {
     @Test("negotiated dialect compiles and runs")
     func negotiatedDialect() async throws {
         let connection = try await cookbookConnection()
         defer { try? await connection.disconnect() }
-
-        let rawDialect = try await connection.negotiatedDialect
-        _ = rawDialect
 
         switch try await connection.negotiatedDialectKind {
         case .smb3_11:

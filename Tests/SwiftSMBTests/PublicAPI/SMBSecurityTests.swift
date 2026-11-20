@@ -9,7 +9,7 @@
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBSecurityTests {
     @Test("sets an Everyone full-control DACL")
     func setsEveryoneFullControlDACL() async throws {

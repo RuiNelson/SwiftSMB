@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite("Cache: reports about open files", .tags(.integration), .serialized)
+@Suite("Cache: reports about open files", .tags(.integration), .serverConcurrencyLimit, .serialized)
 struct CacheReportsTests {
     static let payload = cachePayload(byteCount: 64 * 1024)
 

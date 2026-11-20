@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionAuthTests {
     @Test("connect with wrong password throws logon failure")
     func connectWithWrongPasswordThrowsLogonFailure() async throws {

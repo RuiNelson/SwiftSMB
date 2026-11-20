@@ -1359,6 +1359,268 @@ private func commitAtomicUpload(
     }
 }
 
+// MARK: - Server-Side Copy
+
+/// Thrown out of a copy when the progress closure asked to stop, so that the failure path cleans up and reports.
+private struct CopyStoppedByProgress: Error {
+}
+
+/// Copies a remote file on the server in COPYCHUNK requests, reporting progress after each one.
+///
+/// Returns normally when `continuation` returned `false`. The destination was validated by the caller's path rules;
+/// this function checks that it can be created (or replaced) and tells the cache attached to `connection` about the
+/// change.
+///
+/// Whether the destination exists is asked of the server, never of the cache, whose answer may be stale. A destination
+/// that exists is replaced with `FILE_OVERWRITE` and a missing one is created with `FILE_CREATE`, so the copy never
+/// creates a file it does not then own (and remove if it fails). A destination that appears or disappears between that
+/// check and the open makes the open fail, and the copy checks again and opens it the other way.
+func copyRemoteFile(
+    on connection: SMB.Connection,
+    from sourcePath: String,
+    to destinationPath: String,
+    overwrite: Bool,
+    continuation: SMB.Connection.AsyncFileProgress
+) async throws {
+    let operation = SMB.Error.InvalidArgumentOperation.smbConnectionCopyFile
+    let context = try connection.requireContext()
+
+    // A copy that creates its destination removes it again if it fails or is stopped, whether or not it was asked to
+    // overwrite. One that replaces an existing destination has already truncated it, so what it wrote so far stays.
+    var exclusive = try await !copyDestinationExists(
+        source: sourcePath,
+        destination: destinationPath,
+        overwrite: overwrite,
+        context: context
+    )
+
+    // Reported like `reportingChange`, except that whether a failure may have removed the destination is only known
+    // once the destination has been opened.
+    let attachment = connection.cacheAttachment
+    let ticket = attachment?.openFiles.beginChange()
+    // Whether this copy created the destination, which a failure then removes. Until the open succeeds the file at the
+    // destination (if any) is someone else's, and the cache must not hear that it was removed.
+    var createdDestination = false
+    do {
+        let finished: (total: UInt64, averageSpeed: Double)
+        do {
+            var retries = 0
+            let copy: Bridge.ServerSideCopy
+            while true {
+                do {
+                    copy = try await Bridge.beginServerSideCopy(
+                        context: context,
+                        sourcePath: sourcePath,
+                        destinationPath: destinationPath,
+                        destination: exclusive ? .createNew : .replaceExisting
+                    )
+                    createdDestination = exclusive
+                    break
+                }
+                catch let error as SMB.Error where exclusive && error.isNameCollision {
+                    // The destination appeared after the check.
+                    guard overwrite else {
+                        throw SMB.Error.invalidArgument(cause: .remoteDestinationAlreadyExists, onOperation: operation)
+                    }
+                    guard retries < maximumCopyDestinationRetries else { throw error }
+                    retries += 1
+                    exclusive = try await !copyDestinationExists(
+                        source: sourcePath,
+                        destination: destinationPath,
+                        overwrite: overwrite,
+                        context: context
+                    )
+                }
+                catch let error as SMB.Error where !exclusive && error.isPathNotFound {
+                    // Either the destination disappeared after the check, or the source is missing.
+                    guard retries < maximumCopyDestinationRetries else { throw error }
+                    retries += 1
+                    let exists = try await copyDestinationExists(
+                        source: sourcePath,
+                        destination: destinationPath,
+                        overwrite: overwrite,
+                        context: context
+                    )
+                    guard !exists else { throw error }
+                    exclusive = true
+                }
+            }
+            finished = try await runServerSideCopy(copy, context: context, continuation: continuation)
+        }
+        catch {
+            await connection.reportChange(
+                at: [destinationPath],
+                to: attachment,
+                removing: createdDestination,
+                since: ticket
+            )
+            throw error
+        }
+        await connection.reportChange(at: [destinationPath], to: attachment, removing: false, since: ticket)
+        _ = await continuation(finished.total, finished.total, 0, finished.averageSpeed)
+    }
+    catch is CopyStoppedByProgress {
+        return
+    }
+}
+
+/// How many times a copy opens its destination again after it appeared or disappeared since it was checked.
+private let maximumCopyDestinationRetries = 3
+
+/// Drives `copy` to its end, reporting progress after each COPYCHUNK request, and finishes it; abandons it if that
+/// fails, the task is cancelled, or `continuation` returns `false` (``CopyStoppedByProgress``).
+private func runServerSideCopy(
+    _ copy: Bridge.ServerSideCopy,
+    context: Bridge.Context,
+    continuation: SMB.Connection.AsyncFileProgress
+) async throws -> (total: UInt64, averageSpeed: Double) {
+    var tracker = ProgressTracker(totalBytes: copy.fileSize)
+    do {
+        // Stop at the size, not at an empty step: a cancellation after the last request must not discard a complete
+        // copy.
+        while tracker.transferred < copy.fileSize {
+            try Task.checkCancellation()
+            let blockStart = DispatchTime.now()
+            let written = try await Bridge.copyNextChunks(context: context, copy: copy)
+            guard await tracker.record(
+                bytes: written,
+                blockStart: blockStart,
+                continuation: continuation
+            ) else {
+                throw CopyStoppedByProgress()
+            }
+        }
+        try await Bridge.finishServerSideCopy(context: context, copy: copy)
+    }
+    catch {
+        await Bridge.abandonServerSideCopy(context: context, copy: copy)
+        throw error
+    }
+    return (total: copy.fileSize, averageSpeed: tracker.averageSpeed)
+}
+
+/// Asks the server whether `destination` exists and checks that the copy may go ahead.
+///
+/// - Returns: `true` if `destination` is an existing file that `overwrite` allows replacing, `false` if it does not
+/// exist.
+/// - Throws: `.remoteDestinationAlreadyExists` for an existing file when `overwrite` is `false`,
+/// `.remoteDestinationIsNotAFile` for a directory or other node, and `.sourceAndDestinationAreTheSameFile` when
+/// replacing would empty the source.
+private func copyDestinationExists(
+    source: String,
+    destination: String,
+    overwrite: Bool,
+    context: Bridge.Context
+) async throws -> Bool {
+    let operation = SMB.Error.InvalidArgumentOperation.smbConnectionCopyFile
+    let destinationStat: Bridge.Stat
+    do {
+        destinationStat = try await Bridge.fileStatistics(context: context, path: destination)
+    }
+    catch let error as SMB.Error where error.isPathNotFound {
+        return false
+    }
+
+    switch destinationStat.type {
+    case .file, .link:
+        guard overwrite else {
+            throw SMB.Error.invalidArgument(cause: .remoteDestinationAlreadyExists, onOperation: operation)
+        }
+        // Replacing truncates the destination first, which would empty the source if they are the same file.
+        if try await isSameFile(source, destination, destinationStat: destinationStat, context: context) {
+            throw SMB.Error.invalidArgument(cause: .sourceAndDestinationAreTheSameFile, onOperation: operation)
+        }
+        return true
+    default:
+        throw SMB.Error.invalidArgument(cause: .remoteDestinationIsNotAFile, onOperation: operation)
+    }
+}
+
+/// Whether the source and an existing destination name the same file, so that truncating one would empty the other.
+///
+/// The paths are compared byte by byte (`String` equality would equate canonically equivalent spellings that are
+/// different names). Otherwise the server's inodes decide, read straight from the server because a cache could answer
+/// with a stale entry. When the server reports no inode (`0`), paths that differ in more than case or Unicode
+/// normalization are different files; paths that differ only in that are different files only if the share stores both
+/// spellings as entries of their own (a case-sensitive share), and otherwise count as the same file. A `stat` of the
+/// source, or a listing, that fails throws: the copy must not go on unchecked.
+private func isSameFile(
+    _ source: String,
+    _ destination: String,
+    destinationStat: Bridge.Stat,
+    context: Bridge.Context
+) async throws -> Bool {
+    if source.utf8.elementsEqual(destination.utf8) {
+        return true
+    }
+    let sourceStat = try await Bridge.fileStatistics(context: context, path: source)
+    if sourceStat.inode != 0, destinationStat.inode != 0 {
+        return sourceStat.inode == destinationStat.inode
+    }
+    guard CachePath.equivalenceKey(source) == CachePath.equivalenceKey(destination) else {
+        return false
+    }
+    return try await !directoryListsBothSpellings(source, destination, context: context)
+}
+
+/// Whether `source` and `destination`, which differ only in case or Unicode normalization, are entries of their own:
+/// both in the same directory, spelled byte for byte alike, whose listing has an entry spelled exactly like each name.
+///
+/// A share that matches names regardless of case lists the file once, under one spelling, so at most one name matches.
+/// Paths whose directories are spelled differently can't be told apart this way and return `false`.
+private func directoryListsBothSpellings(
+    _ source: String,
+    _ destination: String,
+    context: Bridge.Context
+) async throws -> Bool {
+    func split(_ path: String) -> (directory: Substring, name: Substring) {
+        guard let slash = path.lastIndex(of: "/") else {
+            return ("", path[...])
+        }
+        return (path[..<slash], path[path.index(after: slash)...])
+    }
+    let (sourceDirectory, sourceName) = split(source)
+    let (destinationDirectory, destinationName) = split(destination)
+    guard sourceDirectory.utf8.elementsEqual(destinationDirectory.utf8) else {
+        return false
+    }
+
+    let directory = try await Bridge.openDir(context: context, path: String(sourceDirectory))
+    var listsSource = false
+    var listsDestination = false
+    do {
+        while !(listsSource && listsDestination),
+              let entry = try await Bridge.readDir(context: context, directory: directory) {
+            if entry.name.utf8.elementsEqual(sourceName.utf8) {
+                listsSource = true
+            }
+            else if entry.name.utf8.elementsEqual(destinationName.utf8) {
+                listsDestination = true
+            }
+        }
+    }
+    catch {
+        try? await Bridge.closeDir(context: context, directory: directory)
+        throw error
+    }
+    try? await Bridge.closeDir(context: context, directory: directory)
+    return listsSource && listsDestination
+}
+
+private extension SMB.Error {
+    /// Whether the server refused to create a file because it exists.
+    var isNameCollision: Bool {
+        switch self {
+        case let .ntStatus(status, _, _, _):
+            status == .objectNameCollision
+        case let .posix(code, _, _):
+            code == POSIXErrorCode.EEXIST.rawValue
+        default:
+            false
+        }
+    }
+}
+
 // MARK: - Block Size & Speed
 
 /// Validates a caller-preferred block size before the connection clamps it to its server limit.

@@ -278,7 +278,10 @@ struct ReferenceCacheInvariantFuzzTests {
         return nil
     }
 
-    @Test("no sequence of calls breaks the cache's bookkeeping, or has it answer with bytes it was never given")
+    @Test(
+        "no sequence of calls breaks the cache's bookkeeping, or has it answer with bytes it was never given",
+        .fuzzing
+    )
     func anyCallsInAnyOrder() async {
         await CacheFuzz.forEachSeed(CacheFuzz.seeds(500)) { seed in
             await Self.fuzz(seed: seed)

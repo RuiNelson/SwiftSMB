@@ -14,7 +14,7 @@
     import Testing
     import UniformTypeIdentifiers
 
-    @Suite(.tags(.integration))
+    @Suite(.tags(.integration), .serverConcurrencyLimit)
     struct SMBMediaAssetTests {
         @available(macOS 13, iOS 16, tvOS 16, macCatalyst 16, visionOS 1, *)
         @Test("asset loads duration and tracks from an SMB file") func assetLoadsDurationAndTracks() async throws {

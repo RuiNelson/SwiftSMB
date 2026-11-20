@@ -10,7 +10,7 @@ import Foundation
 import SwiftSMB
 import Testing
 
-@Suite(.tags(.integration))
+@Suite(.tags(.integration), .serverConcurrencyLimit)
 struct SMBConnectionFileTests {
     @Test("copyFile copies known file") func copyFileCopiesKnownFile() async throws {
         let connection = try await publicFileConnection()

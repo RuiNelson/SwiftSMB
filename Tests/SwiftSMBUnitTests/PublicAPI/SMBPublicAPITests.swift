@@ -64,7 +64,7 @@ struct SMBPublicAPITests {
             dialect: .anySMB3,
             securityMode: [.signingEnabled],
             encryption: .disabled,
-            requiresSigning: false,
+            signing: .disabled,
             authentication: .ntlmssp,
             transferBlockSize: 65536
         )
@@ -73,6 +73,7 @@ struct SMBPublicAPITests {
         #expect(configuration.dialect == .anySMB3)
         #expect(configuration.securityMode?.contains(.signingEnabled) == true)
         #expect(configuration.encryption == .disabled)
+        #expect(configuration.signing == .disabled)
         #expect(configuration.authentication == .ntlmssp)
         #expect(configuration.transferBlockSize == 65536)
     }
@@ -95,6 +96,41 @@ struct SMBPublicAPITests {
         #expect(object["requiresEncryption"] as? Bool == true)
         #expect(object["encryptionRequirement"] == nil)
         #expect(try JSONDecoder().decode(SMB.Configuration.self, from: encoded).encryption == .required)
+    }
+
+    @Test("configurations encoded with the legacy signing key decode to the typed policy")
+    func legacySigningKeyDecodesToTypedPolicy() throws {
+        func decode(_ json: String) throws -> SMB.Configuration.Signing {
+            try JSONDecoder().decode(SMB.Configuration.self, from: Data(json.utf8)).signing
+        }
+        #expect(try decode("{}") == .automatic)
+        #expect(try decode(#"{"requiresSigning": false}"#) == .disabled)
+        #expect(try decode(#"{"requiresSigning": true}"#) == .required)
+    }
+
+    @Test("configuration keeps the legacy signing coding key")
+    func configurationKeepsLegacySigningCodingKey() throws {
+        let encoded = try JSONEncoder().encode(SMB.Configuration(signing: .required))
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        #expect(object["requiresSigning"] as? Bool == true)
+        #expect(object["signingRequirement"] == nil)
+        #expect(try JSONDecoder().decode(SMB.Configuration.self, from: encoded).signing == .required)
+    }
+
+    @available(*, deprecated)
+    @Test("the deprecated requiresSigning API still maps to signing")
+    func deprecatedRequiresSigningMapsToSigning() {
+        var configuration = SMB.Configuration(requiresSigning: false)
+        #expect(configuration.signing == .disabled)
+        #expect(configuration.requiresSigning == false)
+
+        configuration.signing = .required
+        #expect(configuration.requiresSigning == true)
+
+        configuration.requiresSigning = nil
+        #expect(configuration.signing == .automatic)
+        #expect(SMB.Configuration(requiresSigning: true).signing == .required)
     }
 
     @Test(
@@ -144,7 +180,7 @@ struct SMBPublicAPITests {
             dialect: .smb3_11,
             securityMode: [.signingEnabled, .signingRequired],
             encryption: .required,
-            requiresSigning: true,
+            signing: .required,
             authentication: .kerberos,
             transferBlockSize: 131_072,
             pathValidation: .ntfsOverSMB
@@ -193,6 +229,12 @@ struct SMBPublicAPITests {
         #expect(SMB.NegotiatedDialect(rawValue: 0x0302) == .smb3_02)
         #expect(SMB.NegotiatedDialect(rawValue: 0x0311) == .smb3_11)
         #expect(SMB.NegotiatedDialect(rawValue: 0x9999) == .unknown(0x9999))
+    }
+
+    @Test("negotiated dialect round-trips its raw value") func negotiatedDialectRoundTripsRawValue() {
+        for raw: UInt16 in [0x0202, 0x0210, 0x0300, 0x0302, 0x0311, 0x9999] {
+            #expect(SMB.NegotiatedDialect(rawValue: raw).rawValue == raw)
+        }
     }
 
     @Test("security values model an Everyone full-control DACL")

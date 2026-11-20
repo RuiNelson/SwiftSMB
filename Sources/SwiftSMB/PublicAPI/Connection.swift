@@ -53,6 +53,14 @@ public extension SMB {
             [:],
             label: "com.ruinelson.SwiftSMB.SMB.Connection.notifyWatchers"
         )
+        /// The keep-alive started with ``startKeepAlive(_:)``, which must stop before context teardown.
+        let protectedKeepAlive = Protected(
+            SMBKeepAliveRegistry(),
+            label: "com.ruinelson.SwiftSMB.SMB.Connection.keepAlive"
+        )
+        /// The command timeout in force on the context, kept here so it can be read without waiting on the context
+        /// queue. Every change to the context's timeout goes through it.
+        let protectedCommandTimeout: Protected<SMBCommandTimeout>
         /// Routes the oplock and lease breaks of the context to the files they name.
         let opLockBreakRouter = SMBOpLockBreakRouter()
         /// The cache attached with ``attachCache(_:)``, or `nil`.
@@ -76,9 +84,10 @@ public extension SMB {
             context?.isAlive == true
         }
 
-        /// The negotiated SMB dialect.
+        /// The negotiated SMB dialect, as its raw revision number.
         ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
+        @available(*, deprecated, message: "Use negotiatedDialectKind; its rawValue is the raw dialect revision.")
         public var negotiatedDialect: UInt16 {
             get async throws {
                 try await self.withOperation {
@@ -94,7 +103,8 @@ public extension SMB {
         public var negotiatedDialectKind: NegotiatedDialect {
             get async throws {
                 try await self.withOperation {
-                    try await NegotiatedDialect(rawValue: negotiatedDialect)
+                    let context = try requireContext()
+                    return try await NegotiatedDialect(rawValue: Bridge.dialect(context: context).rawValue)
                 }
             }
         }
@@ -172,6 +182,11 @@ public extension SMB {
             self.credentials = credentials
             negotiatedMaxReadSize = maxReadSize
             negotiatedMaxWriteSize = maxWriteSize
+            // `SMB.configure(_:with:)` applied this value to the context, or left libsmb2's default of 0.
+            protectedCommandTimeout = Protected(
+                SMBCommandTimeout(seconds: configuration.timeout ?? 0),
+                label: "com.ruinelson.SwiftSMB.SMB.Connection.commandTimeout"
+            )
             self.context = context
         }
 
@@ -239,7 +254,9 @@ public extension SMB {
         /// - ``Configuration/transferBlockSize`` is the larger of ``acceptedReadBlockSize`` and
         /// ``acceptedWriteBlockSize``. Each direction is still clamped to the server maximum, so the new connection
         /// reads and writes in the same blocks as this one.
-        /// - ``Configuration/timeout`` is the current command timeout, including changes made with ``setTimeout(_:)``.
+        /// - ``Configuration/timeout`` is the command timeout you chose: the configured one, or the one set with
+        /// ``setTimeout(_:)``. A timeout the keep-alive imposed is not inherited (see ``startKeepAlive(_:)``), since it
+        /// is also the new connection's connection timeout; the new connection has no keep-alive.
         ///
         /// The dialect and the other negotiation options are negotiated again from the configured preferences.
         ///
@@ -251,12 +268,14 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if this connection is closed or the new connection cannot be established.
         public func fork() async throws -> Connection {
             try await self.withOperation {
-                let context = try requireContext()
+                _ = try requireContext()
                 let cacheAttachment = cacheAttachment
                 var configuration = configuration
 
-                // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form.
-                let timeout = try await Bridge.timeout(context: context)
+                // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form. A
+                // timeout the keep-alive imposed is left out: it would also bound the new connection's connect (1-2 s),
+                // and the fork has no keep-alive.
+                let timeout = protectedCommandTimeout.current.chosenByUser
                 if timeout != configuration.timeout ?? 0 {
                     configuration.timeout = timeout
                 }
@@ -300,13 +319,29 @@ public extension SMB {
         /// Commands that exceed the timeout are aborted by `libsmb2` with an I/O timeout status. Pass `0` to disable
         /// command timeouts. Negative values are treated as `0`; values larger than `Int32.max` are clamped.
         ///
+        /// The value replaces a command timeout that ``startKeepAlive(_:)`` imposed, and the keep-alive no longer
+        /// removes it when it stops. Passing `0` while a keep-alive runs removes the protection that timeout gave: an
+        /// echo to a server that no longer answers can then hold the connection, and a ``disconnect()`` behind it,
+        /// until the operating system gives up on the TCP connection. A later ``startKeepAlive(_:)`` imposes a timeout
+        /// again over that `0`.
+        ///
+        /// The command timeout is also how long a blocking ``File/lock(_:nonBlocking:range:)`` waits; `0` lets it wait
+        /// indefinitely.
+        ///
         /// - Parameter timeout: The timeout interval, in seconds.
         /// - Throws: ``SMB/Error`` if the connection is already closed.
         public func setTimeout(_ timeout: Int) async throws {
             try await self.withOperation {
                 let context = try requireContext()
-                try await Bridge.setTimeout(context: context, seconds: max(timeout, 0))
+                protectedCommandTimeout.withLock { $0.setByUser(Int(Int32(clamping: max(timeout, 0)))) }
+                let commandTimeout = protectedCommandTimeout
+                try await Bridge.setTimeout(context: context) { commandTimeout.current.seconds }
             }
+        }
+
+        /// The command timeout in force on the context, in seconds; `0` when there is none. Read without the queue.
+        var commandTimeoutSeconds: Int {
+            protectedCommandTimeout.current.seconds
         }
 
         /// Sets the owner, group, or discretionary access-control list for an item.
@@ -855,7 +890,12 @@ public extension SMB {
 
         /// Atomically closes watcher registration and takes ownership of the context and registered watchers.
         private func takeContextAndNotifyWatchers() -> (context: Bridge.Context?, watchers: [SMBNotifyWatcherState]) {
+            // Admission closes first: `startKeepAlive(_:)` checks it under the keep-alive's lock, so a keep-alive
+            // started concurrently is either refused or installed before `stopKeepAlive()` and stopped by it. The
+            // command timeout it imposed stays, so the shutdown does not wait for TCP to give up on a server that
+            // stopped answering, and nothing is enqueued for a context about to be destroyed.
             closeOperationAdmission()
+            stopKeepAlive(restoringTimeout: false)
             return protectedNotifyWatchers.withLock { watchers in
                 let context = protectedContext.take()
                 let activeWatchers = Array(watchers.values)

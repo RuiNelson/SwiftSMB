@@ -12,7 +12,7 @@
     import SwiftSMB
     import Testing
 
-    @Suite(.tags(.integration))
+    @Suite(.tags(.integration), .serverConcurrencyLimit)
     struct EXIFKitIntegrationTests {
         @Test("EXIFKit reads, edits and strips a remote image through SMB handles")
         func readEditAndStrip() async throws {

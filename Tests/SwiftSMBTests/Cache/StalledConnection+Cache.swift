@@ -45,7 +45,7 @@ private struct Stall {
 /// Cache reports of operations on a connection stalled behind a blocking byte-range lock, while its fork, which shares
 /// its cache, goes on: what the stalled calls hand the cache arrives after the fork's, though the stalled calls began
 /// first.
-@Suite("Cache: a connection stalled behind a blocking lock", .tags(.integration), .serialized)
+@Suite("Cache: a connection stalled behind a blocking lock", .tags(.integration), .serverConcurrencyLimit, .serialized)
 struct StalledConnectionCacheTests {
     static let payload = cachePayload(byteCount: 64 * 1024)
     static let marker = Data(repeating: 0xEE, count: 1000)

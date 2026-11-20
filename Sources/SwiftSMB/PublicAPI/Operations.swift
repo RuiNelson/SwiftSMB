@@ -161,8 +161,13 @@ public extension SMB {
             try await Bridge.setSeal(context: context, enabled: true)
         }
 
-        if let requiresSigning = configuration.requiresSigning {
-            try await Bridge.setSign(context: context, required: requiresSigning)
+        switch configuration.signing {
+        case .automatic:
+            break
+        case .disabled:
+            try await Bridge.setSign(context: context, required: false)
+        case .required:
+            try await Bridge.setSign(context: context, required: true)
         }
 
         if let authentication = configuration.authentication {

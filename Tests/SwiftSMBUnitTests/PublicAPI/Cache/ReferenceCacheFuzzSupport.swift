@@ -11,6 +11,21 @@ import Foundation
 import SMB2
 import Testing
 
+// MARK: Fuzzing
+
+extension Trait where Self == ConditionTrait {
+    /// Marks a randomized test that runs many seeds, and skips it when `SWIFTSMB_SKIP_FUZZ_TESTS` is set.
+    ///
+    /// These tests keep every core busy for minutes on a small machine, which starves the timing-sensitive tests
+    /// running beside them, so CI skips them; run them locally (and longer with `SWIFTSMB_CACHE_FUZZ_SCALE`).
+    static var fuzzing: Self {
+        .enabled(
+            if: ProcessInfo.processInfo.environment["SWIFTSMB_SKIP_FUZZ_TESTS"] == nil,
+            "SWIFTSMB_SKIP_FUZZ_TESTS is set"
+        )
+    }
+}
+
 // MARK: Deterministic randomness
 
 /// SplitMix64: one seed gives one sequence, on every run, so a failing randomized test can be run again.
