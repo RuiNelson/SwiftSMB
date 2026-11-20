@@ -588,20 +588,26 @@ struct SMBErrorTests {
 
 struct SMBPathValidationTests {
     @Test("validates share relative paths using PathWorks") func validatesShareRelativePathsUsingPathworks() throws {
-        #expect(try SMB.validatePath("dir/file.txt", operation: .smb2Open) == "dir/file.txt")
-        #expect(try SMB.validatePath("/dir/file.txt", operation: .smb2Open) == "dir/file.txt")
-        #expect(try SMB.validatePath("//dir/file.txt", operation: .smb2Open) == "dir/file.txt")
-        #expect(try SMB.validatePath("", operation: .smb2Open, allowRoot: true) == "")
-        #expect(try SMB.validatePath("/", operation: .smb2Open, allowRoot: true) == "")
+        func validate(_ path: String, allowRoot: Bool = false, _ validation: SMB.Configuration.PathValidation = .smb)
+        throws -> String {
+            try SMB.validatePath(path, operation: .smb2Open, allowRoot: allowRoot, validation: validation)
+        }
+
+        #expect(try validate("dir/file.txt") == "dir/file.txt")
+        #expect(try validate("/dir/file.txt") == "dir/file.txt")
+        #expect(try validate("//dir/file.txt") == "dir/file.txt")
+        #expect(try validate("", allowRoot: true) == "")
+        #expect(try validate("/", allowRoot: true) == "")
+        #expect(try validate("dir/CON.txt") == "dir/CON.txt")
 
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("dir/bad:name.txt", operation: .smb2Open)
+            try validate("dir/bad:name.txt")
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("dir/CON.txt", operation: .smb2Open)
+            try validate("dir/CON.txt", .ntfsOverSMB)
         }
         #expect(throws: SMB.Error.self) {
-            try SMB.validatePath("", operation: .smb2Open)
+            try validate("")
         }
     }
 

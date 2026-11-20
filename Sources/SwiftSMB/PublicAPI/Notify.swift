@@ -321,7 +321,7 @@ public extension SMB.Connection {
         filter: SMB.NotifyFilter = .all
     ) async throws -> SMB.NotifyWatcher {
         try await self.withOperation {
-            let path = try SMB.validatePath(path, operation: .smb2Open, allowRoot: true)
+            let path = try self.validatePath(path, operation: .smb2Open, allowRoot: true)
             let context = try requireContext()
             let directory = try await Bridge.open(
                 context: context,

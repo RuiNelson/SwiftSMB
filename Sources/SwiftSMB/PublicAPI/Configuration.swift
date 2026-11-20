@@ -87,7 +87,7 @@ public extension SMB {
         }
     }
 
-    /// Connection options that affect SMB negotiation and transfer behavior.
+    /// Connection options that affect SMB negotiation and transfer behaviour.
     struct Configuration: Codable, CustomDebugStringConvertible, Equatable, Hashable, Sendable {
         /// How SMB encryption is negotiated with the server.
         public enum Encryption: String, Codable, Equatable, Hashable, Sendable {
@@ -154,6 +154,42 @@ public extension SMB {
         /// and ``SMB/Connection/acceptedWriteBlockSize(_:)``.
         public var transferBlockSize: Int?
 
+        /// How strictly paths are checked before they are sent to the server.
+        ///
+        /// SMB does not tell the client which file system holds a share, and each one accepts different names: `CON` is
+        /// a valid directory on a Mac or a Samba server, but not on NTFS. The server always has the final word and
+        /// returns its own error for a name its file system rejects. A stricter level only rejects such names locally,
+        /// before any request is sent.
+        public enum PathValidation: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+            /// Only the rules of the SMB protocol ([MS-FSCC] 2.1.5): each component is 1 to 255 UTF-16 code units long,
+            /// has no control characters (U+0000–U+001F) and none of `" \ / : | < > * ?`, and is not `..`; the whole
+            /// path is at most 32,760 UTF-16 code units long.
+            case smb
+
+            /// The ``smb`` rules and those of NTFS: no component ends in a space or a period, and none is a reserved
+            /// device name such as `CON`, `PRN`, `AUX`, `NUL`, `COM1` or `LPT1`, with or without an extension.
+            case ntfsOverSMB
+
+            /// The ``smb`` rules and those of Unix file systems such as ext4, APFS and ZFS: each component is at most
+            /// 255 bytes long in UTF-8.
+            case unixOverSMB
+        }
+
+        /// The encoded form of ``pathValidation``: `nil` stands for ``PathValidation/smb``, so that configurations
+        /// encoded with the default level stay the same as those encoded by earlier versions.
+        private var _pathValidation: PathValidation?
+
+        /// How strictly paths are checked before they are sent to the server. The default is
+        /// ``PathValidation/smb``.
+        public var pathValidation: PathValidation {
+            get {
+                _pathValidation ?? .smb
+            }
+            set {
+                _pathValidation = newValue == .smb ? nil : newValue
+            }
+        }
+
         /// Creates an SMB connection configuration.
         ///
         /// - Parameters:
@@ -164,6 +200,7 @@ public extension SMB {
         ///   - requiresSigning: Whether SMB signing is required.
         ///   - authentication: The authentication mechanism to request.
         ///   - transferBlockSize: The preferred read/write block size.
+        ///   - pathValidation: How strictly paths are checked before they are sent to the server.
         public init(
             timeout: Int? = nil,
             dialect: Dialect? = nil,
@@ -171,7 +208,8 @@ public extension SMB {
             encryption: Encryption = .automatic,
             requiresSigning: Bool? = nil,
             authentication: AuthenticationMethod? = nil,
-            transferBlockSize: Int? = nil
+            transferBlockSize: Int? = nil,
+            pathValidation: PathValidation = .smb
         ) {
             self.timeout = timeout
             self.dialect = dialect
@@ -180,10 +218,28 @@ public extension SMB {
             self.requiresSigning = requiresSigning
             self.authentication = authentication
             self.transferBlockSize = transferBlockSize
+            self.pathValidation = pathValidation
+        }
+
+        /// Decodes a configuration.
+        ///
+        /// An unknown ``pathValidation`` value, such as a level added by a later version, decodes as
+        /// ``PathValidation/smb``: the server still checks every name, so the configuration stays usable.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            timeout = try container.decodeIfPresent(Int.self, forKey: .timeout)
+            dialect = try container.decodeIfPresent(Dialect.self, forKey: .dialect)
+            securityMode = try container.decodeIfPresent(SecurityMode.self, forKey: .securityMode)
+            encryptionRequirement = try container.decodeIfPresent(Bool.self, forKey: .encryptionRequirement)
+            requiresSigning = try container.decodeIfPresent(Bool.self, forKey: .requiresSigning)
+            authentication = try container.decodeIfPresent(AuthenticationMethod.self, forKey: .authentication)
+            transferBlockSize = try container.decodeIfPresent(Int.self, forKey: .transferBlockSize)
+            let pathValidation = try container.decodeIfPresent(String.self, forKey: ._pathValidation)
+            self.pathValidation = pathValidation.flatMap(PathValidation.init(rawValue:)) ?? .smb
         }
 
         public var debugDescription: String {
-            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), encryption: \(encryption), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)))"
+            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), encryption: \(encryption), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)), pathValidation: \(pathValidation))"
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -194,6 +250,7 @@ public extension SMB {
             case requiresSigning
             case authentication
             case transferBlockSize
+            case _pathValidation = "pathValidation"
         }
     }
 

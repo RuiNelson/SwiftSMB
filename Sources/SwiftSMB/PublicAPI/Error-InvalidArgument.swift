@@ -129,6 +129,8 @@ public extension SMB.Error {
         case pathMustNotBeEmpty
         case pathMustContainAtLeastOneComponent
         case invalidPathComponent(String)
+        /// A path is longer than the 32,760 UTF-16 code units SMB allows ([MS-FSCC] 2.1.5). The value is its length.
+        case pathTooLong(Int)
         case timeoutMustFitInInt32Seconds
         case fileAlreadyClosed
         case directoryAlreadyClosed
@@ -162,6 +164,7 @@ public extension SMB.Error {
             case .pathMustNotBeEmpty: "Path must not be empty"
             case .pathMustContainAtLeastOneComponent: "Path must contain at least one component"
             case let .invalidPathComponent(component): "Invalid path component '\(component)'"
+            case let .pathTooLong(length): "Path is \(length) UTF-16 code units long, more than the \(SMB.maximumPathLength) SMB allows"
             case .timeoutMustFitInInt32Seconds: "Timeout must fit in Int32 seconds"
             case .fileAlreadyClosed: "File is already closed"
             case .directoryAlreadyClosed: "Directory is already closed"

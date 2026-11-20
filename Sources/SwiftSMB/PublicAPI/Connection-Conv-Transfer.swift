@@ -120,7 +120,7 @@ public extension SMB.Connection {
         continuation: @escaping AsyncFileProgress
     ) async throws {
         try await self.withOperation {
-            let remote = try SMB.validatePath(remote, operation: .smbConnectionDownloadFile)
+            let remote = try self.validatePath(remote, operation: .smbConnectionDownloadFile)
             try Task.checkCancellation()
             let offset = from.offsetValue
             let operation = SMB.Error.InvalidArgumentOperation.smbConnectionDownloadFile
@@ -275,7 +275,7 @@ public extension SMB.Connection {
         continuation: @escaping AsyncFileProgress
     ) async throws {
         try await self.withOperation {
-            let remote = try SMB.validatePath(remote, operation: .smbConnectionUploadFile)
+            let remote = try self.validatePath(remote, operation: .smbConnectionUploadFile)
             try Task.checkCancellation()
             let offset = from.offsetValue
             let operation = SMB.Error.InvalidArgumentOperation.smbConnectionUploadFile
@@ -417,7 +417,7 @@ public extension SMB.Connection {
     ) async throws {
         try await self.withOperation {
             let operation = SMB.Error.InvalidArgumentOperation.smbConnectionStreamToRemote
-            let remote = try SMB.validatePath(remote, operation: operation)
+            let remote = try self.validatePath(remote, operation: operation)
             try Task.checkCancellation()
             let preferredBlockSize = try transferBlockSize(maxBlockSize)
             let blockSize = try await acceptedWriteBlockSize(preferredBlockSize)
@@ -482,7 +482,7 @@ public extension SMB.Connection {
     ) async throws {
         try await self.withOperation {
             let operation = SMB.Error.InvalidArgumentOperation.smbConnectionStreamFromRemote
-            let remote = try SMB.validatePath(remote, operation: operation)
+            let remote = try self.validatePath(remote, operation: operation)
             try Task.checkCancellation()
             let offset = from.offsetValue
 

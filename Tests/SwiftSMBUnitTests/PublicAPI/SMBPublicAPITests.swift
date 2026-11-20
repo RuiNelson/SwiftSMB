@@ -97,6 +97,64 @@ struct SMBPublicAPITests {
         #expect(try JSONDecoder().decode(SMB.Configuration.self, from: encoded).encryption == .required)
     }
 
+    @Test(
+        "path validation round-trips under the pathValidation key",
+        arguments: SMB.Configuration.PathValidation.allCases
+    )
+    func pathValidationRoundTrips(_ validation: SMB.Configuration.PathValidation) throws {
+        let encoded = try JSONEncoder().encode(SMB.Configuration(pathValidation: validation))
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        #expect(object["_pathValidation"] == nil)
+        #expect(object["pathValidation"] as? String == (validation == .smb ? nil : validation.rawValue))
+        #expect(try JSONDecoder().decode(SMB.Configuration.self, from: encoded).pathValidation == validation)
+    }
+
+    @Test("configurations without a path validation key decode to the SMB rules")
+    func missingPathValidationDecodesToSMB() throws {
+        let configuration = try JSONDecoder().decode(SMB.Configuration.self, from: Data(#"{"timeout": 5}"#.utf8))
+        #expect(configuration.pathValidation == .smb)
+        #expect(SMB.Configuration().pathValidation == .smb)
+    }
+
+    @Test("an explicit SMB path validation decodes to the default configuration")
+    func explicitSMBPathValidationEqualsDefault() throws {
+        let decoded = try JSONDecoder().decode(SMB.Configuration.self, from: Data(#"{"pathValidation": "smb"}"#.utf8))
+
+        #expect(decoded == SMB.Configuration())
+        #expect(decoded.hashValue == SMB.Configuration().hashValue)
+        let reencoded = try JSONEncoder().encode(decoded)
+        let object = try #require(JSONSerialization.jsonObject(with: reencoded) as? [String: Any])
+        #expect(object["pathValidation"] == nil)
+    }
+
+    @Test("an unknown path validation decodes to the SMB rules")
+    func unknownPathValidationDecodesToSMB() throws {
+        let json = #"{"pathValidation": "fat32OverSMB", "timeout": 7}"#
+        let decoded = try JSONDecoder().decode(SMB.Configuration.self, from: Data(json.utf8))
+
+        #expect(decoded.pathValidation == .smb)
+        #expect(decoded == SMB.Configuration(timeout: 7))
+    }
+
+    @Test("every configuration field survives an encode and decode")
+    func configurationRoundTrips() throws {
+        let configuration = SMB.Configuration(
+            timeout: 12,
+            dialect: .smb3_11,
+            securityMode: [.signingEnabled, .signingRequired],
+            encryption: .required,
+            requiresSigning: true,
+            authentication: .kerberos,
+            transferBlockSize: 131_072,
+            pathValidation: .ntfsOverSMB
+        )
+        let decoded = try JSONDecoder().decode(SMB.Configuration.self, from: JSONEncoder().encode(configuration))
+
+        #expect(decoded == configuration)
+        #expect(try JSONDecoder().decode(SMB.Configuration.self, from: Data("{}".utf8)) == SMB.Configuration())
+    }
+
     @Test("public server and credentials are separate") func publicServerAndCredentialsAreSeparate() {
         let server = SMB.Server(host: "example.test", port: 445, domain: "CORP")
         let credentials = SMB.Credentials(

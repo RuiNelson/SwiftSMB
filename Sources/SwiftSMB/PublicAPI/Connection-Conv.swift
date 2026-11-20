@@ -57,7 +57,7 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the file cannot be opened or read.
     func loadFile(at path: String, chunkSize: Int? = nil) async throws -> Data {
         try await self.withOperation {
-            let path = try SMB.validatePath(path, operation: .smbConnectionReadFile)
+            let path = try self.validatePath(path, operation: .smbConnectionReadFile)
             let file = try await openFile(at: path)
             defer { try? await file.close() }
             return try await file.read(transferChunkSize: chunkSize.map { Int64($0) })
@@ -81,7 +81,7 @@ public extension SMB.Connection {
         chunkSize: Int? = nil
     ) async throws {
         try await self.withOperation {
-            let path = try SMB.validatePath(path, operation: .smbConnectionWriteFile)
+            let path = try self.validatePath(path, operation: .smbConnectionWriteFile)
             let file = try await openFile(at: path, accessMode: .writeOnly, options: options)
             defer { try? await file.close() }
             _ = try await file.write(data, transferChunkSize: chunkSize.map { Int64($0) })
@@ -98,7 +98,7 @@ public extension SMB.Connection {
     /// - Throws: ``SMB/Error`` if the directory cannot be opened or read.
     func listDirectory(at path: String = "") async throws -> [SMB.DirectoryEntry] {
         try await self.withOperation {
-            let path = try SMB.validatePath(path, operation: .smbConnectionListDirectory, allowRoot: true)
+            let path = try self.validatePath(path, operation: .smbConnectionListDirectory, allowRoot: true)
             func listOnServer() async throws -> [SMB.DirectoryEntry] {
                 let directory = try await openDirectory(at: path)
                 defer { await directory.close() }
@@ -131,7 +131,7 @@ public extension SMB.Connection {
     /// cancelled between items. Items removed before cancellation stay removed.
     func removeItem(at path: String) async throws {
         try await self.withOperation {
-            let path = try SMB.validatePath(path, operation: .smbConnectionRemoveItem, allowRoot: false)
+            let path = try self.validatePath(path, operation: .smbConnectionRemoveItem, allowRoot: false)
             try Task.checkCancellation()
 
             let entryStat = try await stat(at: path)
@@ -164,8 +164,8 @@ public extension SMB.Connection {
     /// server does not support server-side copy.
     func copyFile(from sourcePath: String, to destinationPath: String) async throws {
         try await self.withOperation {
-            let sourcePath = try SMB.validatePath(sourcePath, operation: .smbConnectionCopyFile)
-            let destinationPath = try SMB.validatePath(destinationPath, operation: .smbConnectionCopyFile)
+            let sourcePath = try self.validatePath(sourcePath, operation: .smbConnectionCopyFile)
+            let destinationPath = try self.validatePath(destinationPath, operation: .smbConnectionCopyFile)
             let context = try requireContext()
 
             switch try await itemExists(at: destinationPath) {

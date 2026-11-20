@@ -321,7 +321,7 @@ public extension SMB {
         /// security update.
         public func setSecurityDescriptor(_ descriptor: SecurityDescriptor, at path: String) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smbConnectionSetSecurityDescriptor)
+                let path = try self.validatePath(path, operation: .smbConnectionSetSecurityDescriptor)
                 let context = try requireContext()
                 try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
                     try await Bridge.setSecurityDescriptor(
@@ -355,7 +355,7 @@ public extension SMB {
             opLock: File.OpLock = .none
         ) async throws -> File {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Open)
+                let path = try self.validatePath(path, operation: .smb2Open)
                 let context = try requireContext()
 
                 let bridgeLeaseState: Bridge.LeaseState
@@ -468,7 +468,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the directory cannot be opened.
         public func openDirectory(at path: String = "") async throws -> Directory {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Opendir, allowRoot: true)
+                let path = try self.validatePath(path, operation: .smb2Opendir, allowRoot: true)
                 let context = try requireContext()
                 let handle = try await Bridge.openDir(context: context, path: path)
                 return Directory(connection: self, path: path, handle: handle)
@@ -486,7 +486,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the directory cannot be created.
         public func makeDirectory(at path: String, makePath: Bool = false) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Mkdir)
+                let path = try self.validatePath(path, operation: .smb2Mkdir)
 
                 if makePath {
                     // check if directory is in the root of the share
@@ -525,7 +525,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the directory cannot be removed.
         public func removeDirectory(at path: String) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Rmdir)
+                let path = try self.validatePath(path, operation: .smb2Rmdir)
                 let context = try requireContext()
                 try await reportingChange(at: [path], to: cacheAttachment, removing: true) {
                     try await Bridge.removeDir(context: context, path: path)
@@ -539,7 +539,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the path cannot be removed.
         public func removeFile(at path: String) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Unlink)
+                let path = try self.validatePath(path, operation: .smb2Unlink)
                 let context = try requireContext()
                 try await reportingChange(at: [path], to: cacheAttachment, removing: true) {
                     try await Bridge.unlink(context: context, path: path)
@@ -555,8 +555,8 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the move fails.
         public func move(from oldPath: String, to newPath: String) async throws {
             try await self.withOperation {
-                let oldPath = try SMB.validatePath(oldPath, operation: .smb2Rename)
-                let newPath = try SMB.validatePath(newPath, operation: .smb2Rename)
+                let oldPath = try self.validatePath(oldPath, operation: .smb2Rename)
+                let newPath = try self.validatePath(newPath, operation: .smb2Rename)
                 let context = try requireContext()
                 try await reportingRename(from: oldPath, to: newPath, attachment: cacheAttachment) {
                     try await Bridge.rename(context: context, oldPath: oldPath, newPath: newPath)
@@ -572,7 +572,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the file cannot be truncated.
         public func truncateFile(at path: String, toLength length: UInt64) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Truncate)
+                let path = try self.validatePath(path, operation: .smb2Truncate)
                 let context = try requireContext()
                 try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
                     try await Bridge.truncate(context: context, path: path, length: length)
@@ -589,7 +589,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the link cannot be read.
         public func readLink(at path: String, bufferSize: Int = 16384) async throws -> String {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Readlink)
+                let path = try self.validatePath(path, operation: .smb2Readlink)
                 let context = try requireContext()
                 return try await Bridge.readLink(context: context, path: path, bufferSize: bufferSize)
             }
@@ -621,7 +621,7 @@ public extension SMB {
             isDirectory: Bool? = nil,
             isAbsolute: Bool = false
         ) async throws {
-            let path = try SMB.validatePath(path, operation: .smb2MakeLink)
+            let path = try self.validatePath(path, operation: .smb2MakeLink)
             guard !pointingTo.isEmpty else {
                 throw SMB.Error.invalidArgument(cause: .pathMustNotBeEmpty, onOperation: .smb2MakeLink)
             }
@@ -674,8 +674,8 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the hard link cannot be created.
         public func makeHardLink(at path: String, pointingTo existingPath: String) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Link)
-                let existingPath = try SMB.validatePath(existingPath, operation: .smb2Link)
+                let path = try self.validatePath(path, operation: .smb2Link)
+                let existingPath = try self.validatePath(existingPath, operation: .smb2Link)
                 let context = try requireContext()
                 // The existing file's link count and change time change too.
                 try await reportingChange(at: [path, existingPath], to: cacheAttachment, removing: false) {
@@ -693,7 +693,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if metadata cannot be read.
         public func stat(at path: String) async throws -> Stat {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Stat, allowRoot: true)
+                let path = try self.validatePath(path, operation: .smb2Stat, allowRoot: true)
                 let context = try requireContext()
                 guard let cache else {
                     return try await Stat(Bridge.fileStatistics(context: context, path: path))
@@ -770,7 +770,7 @@ public extension SMB {
             access: Date? = nil
         ) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
+                let path = try self.validatePath(path, operation: .smb2SetBasicInfo)
                 let context = try requireContext()
                 try await reportingChange(at: [path], to: cacheAttachment, removing: false) {
                     try await Bridge.setStats(
@@ -792,7 +792,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if the connection is closed, the path is invalid, or the server rejects the query.
         public func attributes(at path: String) async throws -> FileAttributes {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
+                let path = try self.validatePath(path, operation: .smb2SetBasicInfo, allowRoot: true)
                 let context = try requireContext()
                 return try await FileAttributes(rawValue: Bridge.fileAttributes(context: context, path: path).rawValue)
             }
@@ -812,7 +812,7 @@ public extension SMB {
             _ change: (FileAttributes) -> FileAttributes
         ) async throws {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2SetBasicInfo)
+                let path = try self.validatePath(path, operation: .smb2SetBasicInfo)
                 let context = try requireContext()
                 let current = try await attributes(at: path)
                 let new = change(current)
@@ -836,7 +836,7 @@ public extension SMB {
         /// - Throws: ``SMB/Error`` if statistics cannot be read.
         public func statFilesystem(at path: String = "") async throws -> FilesystemStat {
             try await self.withOperation {
-                let path = try SMB.validatePath(path, operation: .smb2Statvfs, allowRoot: true)
+                let path = try self.validatePath(path, operation: .smb2Statvfs, allowRoot: true)
                 let context = try requireContext()
                 return try await FilesystemStat(Bridge.statVFS(context: context, path: path))
             }
