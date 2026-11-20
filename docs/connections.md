@@ -130,6 +130,77 @@ The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidStri
 print("libsmb2 \(SMB.libsmb2Version)") // libsmb2 7.0.0
 ```
 
+## Keeping a connection alive
+
+Servers and network equipment close connections that stay quiet for too long. ``SMB.Connection.startKeepAlive(_:)``
+sends an SMB echo while the connection is idle, and tells you when it stops answering:
+
+```swift
+let keepAlive = SMB.KeepAliveConfiguration(interval: 30, timeout: 1) { [weak connection] problem in
+    switch problem {
+    case .slow(let roundTrip):
+        print("The server answered in \(roundTrip) s")
+    case .noResponse, .failed:
+        // The connection is most likely broken, and the keep-alive has stopped.
+        try? await connection?.disconnect()
+    }
+}
+try connection.startKeepAlive(keepAlive)
+
+// Later:
+connection.stopKeepAlive()
+```
+
+The callback captures the connection `weak`: the keep-alive holds its callback, so a strong capture would keep the
+connection alive, and connected, until the keep-alive stops, and releasing the connection would no longer stop it.
+
+The keep-alive is not part of ``SMB.Configuration`` so that it can be started and stopped while the connection is open.
+
+- **Idle only.** Every operation, from the moment it starts until it finishes, postpones the next echo by a whole
+  `interval`, so a connection that is being used sends none. Starting counts as activity.
+- **Deadline.** `timeout` (1 second by default) is how long an echo may take to answer, counted from when the echo
+  starts running on the connection. It is enforced by SwiftSMB, and is reduced to the connection's command timeout
+  (``SMB.Configuration/timeout``, or the value set with ``SMB.Connection/setTimeout(_:)``) when that is not zero. The
+  echo is timed on the connection itself, from when it starts until its answer is processed, so a busy thread pool in
+  your app does not turn a timely answer into `.noResponse` or `.slow`.
+- **Command timeout.** An echo to a server that stopped answering holds the connection until it gives up, and
+  without a command timeout libsmb2 would wait for the operating system to drop the TCP connection, with a
+  `disconnect()` from the callback stuck behind it. So while the keep-alive runs, a connection with no command timeout
+  gets one: `timeout` rounded up to whole seconds (libsmb2 counts whole seconds), so 2.1 s becomes 3 s. It applies to
+  **every** operation on the connection, not only to echoes: a single request that takes longer, such as a large block
+  over a slow link, fails with ``SMB.SMBStatus/ioTimeout``. A blocking ``SMB.File/lock(_:nonBlocking:range:)`` that
+  would otherwise wait indefinitely gives up with ``SMB.SMBStatus/ioTimeout`` once it expires, after about a second by
+  default. On slow connections, or to wait for locks, set a command timeout of your own, greater than zero and long
+  enough, before starting the keep-alive, or use non-blocking locks; the keep-alive never changes a timeout that is
+  set. ``SMB.Connection/stopKeepAlive()`` removes the timeout the keep-alive set, unless
+  ``SMB.Connection/setTimeout(_:)`` was called meanwhile. It stays when a problem stops the keep-alive, because the
+  connection is most likely broken and a `disconnect()` must not wait for TCP to give up, and disconnecting keeps it
+  until the connection is gone: to disconnect from the callback, call `disconnect()` without `stopKeepAlive()` first.
+  Setting the timeout to `0` with `setTimeout(_:)` while the keep-alive runs removes that protection, and a later
+  `startKeepAlive(_:)` imposes one again. ``SMB.Connection/fork()`` does not inherit a timeout the keep-alive set: the
+  new connection starts with the one you chose.
+- **Problems.** The callback receives ``SMB.KeepAliveProblem/slow(roundTrip:)`` when the answer takes longer than
+  `slowRoundTrip` (the keep-alive goes on), and ``SMB.KeepAliveProblem/noResponse(timeout:)`` or
+  ``SMB.KeepAliveProblem/failed(_:)`` when the connection looks broken. After those two the keep-alive stops once the
+  callback returns; it never reconnects, so the callback is the place to disconnect or to connect again. The callback
+  is `async`, and the keep-alive waits for it. It runs in a task of its own, so stopping or replacing the keep-alive,
+  or disconnecting, from inside it does not cancel the rest of the callback. ``SMB.Connection/isKeepAliveRunning`` is
+  still `true` while the callback for a problem that stops the keep-alive runs. A `slowRoundTrip` at or above the
+  deadline never reports `.slow`, since such an answer is `.noResponse`. When the connection's command timeout expires
+  first, that is `.noResponse` too. An echo that gets no answer while another operation started on the connection
+  reports nothing: that operation meets the problem itself, and the keep-alive tries again after the next idle
+  `interval`.
+- **Starting again** replaces the running keep-alive. ``SMB.Connection/isKeepAliveRunning`` tells whether one is running.
+  It cannot start once the connection is closed or disconnecting gracefully.
+- **Stopping.** ``SMB.Connection/stopKeepAlive()`` is synchronous and may be called from the callback, as may
+  `startKeepAlive(_:)` and `disconnect()`. No callback starts after it returns, but one that was already starting at
+  that moment can still run; it does not wait for a callback that is running. Disconnecting, gracefully or not, and
+  releasing the connection stop it too. The keep-alive does not keep the connection alive, but a callback that
+  captures the connection strongly does until the keep-alive stops.
+
+`interval`, `timeout` and `slowRoundTrip` must be finite and greater than zero; anything else is a programmer error and
+traps.
+
 ## Disconnecting
 
 ``SMB.Connection.disconnect()`` cancels watchers and closes all file and directory handles before destroying the

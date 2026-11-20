@@ -704,6 +704,12 @@ public extension SMB {
         /// granted after this method has thrown. If the server grants the lock before the request is withdrawn, the
         /// lock is held and this method returns normally.
         ///
+        /// While ``Connection/startKeepAlive(_:)`` runs on a connection that had no command timeout, the keep-alive
+        /// imposes one (1 s with the default configuration), so a blocking lock that would otherwise wait indefinitely
+        /// fails with ``SMB/SMBStatus/ioTimeout`` once it expires. To wait for locks on a connection with a keep-alive,
+        /// set a command timeout of your own, greater than zero and long enough, before starting the keep-alive, or use
+        /// non-blocking locks.
+        ///
         /// - Parameters:
         ///   - mode: The lock mode, either ``LockMode/shared`` or ``LockMode/exclusive``.
         ///   - nonBlocking: When `true`, the operation fails immediately if the lock conflicts with an existing lock
