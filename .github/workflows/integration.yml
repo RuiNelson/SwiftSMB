@@ -3,6 +3,8 @@ name: Integration
 # Runs the whole test suite, integration tests included, against the Docker Samba server in `TestServer/`.
 # Manual only: start it from the Actions tab (or `gh workflow run integration.yml`).
 on:
+  push:
+    branches: [ci/manual-integration-workflow] # TEMPORARY
   workflow_dispatch:
     inputs:
       filter:
