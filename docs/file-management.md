@@ -167,13 +167,21 @@ if info.type == .directory {
 }
 ```
 
+Timestamps, Windows attributes, and node types are covered in [Changing File Properties](file-properties.md).
+
 ## Truncating a file
 
 ``SMB.Connection.truncateFile(at:toLength:)`` resizes a file by path:
 
 ```swift
-try await connection.truncateFile(at: "log.txt", toLength: 0)
+// Empty a log file
+try await connection.truncateFile(at: "app.log", toLength: 0)
+
+// Shrink a file to 1024 bytes
+try await connection.truncateFile(at: "data.bin", toLength: 1024)
 ```
+
+To truncate a file you already have open, see [Truncating a file handle](handles.md#truncating-a-file-handle).
 
 ## Creating a symbolic link
 

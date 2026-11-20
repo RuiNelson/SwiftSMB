@@ -135,36 +135,3 @@ if info.attributes.contains(.reparsePoint), let tag = info.reparseTag {
 
 ``SMB/Stat/reparseTag`` is `nil` for items that are not reparse points and for servers that do not report the tag.
 The special file types are only reported for the reparse points that WSL uses to store them on a Windows filesystem.
-
-## Filesystem statistics
-
-``SMB.Connection.statFilesystem(at:)`` returns capacity and usage information for the share:
-
-```swift
-let fs = try await connection.statFilesystem()
-
-print("Total space:  \(UInt64(fs.blockSize) * fs.blocks)")
-print("Free space:   \(fs.freeBytes)")
-print("Avail space:  \(fs.availableBytes)")
-print("Max filename: \(fs.maximumNameLength)")
-```
-
-## Truncating a file
-
-``SMB.Connection.truncateFile(at:toLength:)`` resizes a file by path:
-
-```swift
-// Empty a log file
-try await connection.truncateFile(at: "app.log", toLength: 0)
-
-// Shrink a file to 1024 bytes
-try await connection.truncateFile(at: "data.bin", toLength: 1024)
-```
-
-You can also truncate through an open file handle:
-
-```swift
-let file = try await connection.openFile(at: "data.bin", accessMode: .readWrite)
-defer { try? await file.close() }
-try await file.truncate(toLength: 1024)
-```

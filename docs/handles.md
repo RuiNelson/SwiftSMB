@@ -1,6 +1,7 @@
 # Working with File and Directory Handles
 
-This cookbook covers low-level handle-based I/O for when you need streaming, random access, or fine-grained control over reads and writes.
+This cookbook covers low-level handle-based I/O for when you need streaming, random access, or fine-grained control
+over reads and writes. Connecting, configuring, and disconnecting are covered in [Connections](connections.md).
 
 All examples assume you already have an open ``SMB.Connection``:
 
@@ -9,78 +10,6 @@ let server = SMB.Server(host: "RASPBERRYPI.local")
 let credentials = SMB.Credentials(user: "Anna", password: "1987")
 let connection = try await SMB.connect(server: server, credentials: credentials, share: "Documents")
 defer { try? await connection.disconnect() }
-```
-
-## Adjusting command timeouts
-
-Pass ``SMB.Configuration.timeout`` when connecting to apply a timeout from the start:
-
-```swift
-let connection = try await SMB.connect(
-    server: server,
-    credentials: credentials,
-    share: "Documents",
-    configuration: SMB.Configuration(timeout: 30)
-)
-```
-
-Use ``SMB.Connection.setTimeout(_:)`` to change the timeout for subsequent operations on an existing connection. Pass
-`0` to disable command timeouts. Establishing a connection always has a deadline: the configured timeout when it is
-positive, otherwise 30 seconds.
-
-```swift
-try await connection.setTimeout(10)
-try await connection.setTimeout(0)
-```
-
-## Choosing an encryption policy
-
-``SMB/Configuration/Encryption`` represents all three `libsmb2` encryption states:
-
-- `.automatic` advertises encryption support and uses it when the server or share requires it.
-- `.disabled` does not advertise encryption; connections to encryption-only servers or shares fail.
-- `.required` requires negotiated SMB encryption.
-
-```swift
-let configuration = SMB.Configuration(encryption: .required)
-```
-
-## Checking the negotiated dialect
-
-``SMB.Connection.negotiatedDialect`` returns the raw SMB dialect revision the server agreed to after connecting:
-
-```swift
-let rawDialect = try await connection.negotiatedDialect
-```
-
-``SMB.Connection.negotiatedDialectKind`` maps that raw value to ``SMB.NegotiatedDialect``, a typed enum covering the
-known SMB2/SMB3 dialects with a `.unknown(UInt16)` fallback for revisions this library doesn't recognize yet:
-
-```swift
-switch try await connection.negotiatedDialectKind {
-case .smb3_11:
-    print("Connected using SMB 3.1.1")
-case .unknown(let rawValue):
-    print("Connected using an unrecognized dialect: \(rawValue)")
-default:
-    break
-}
-```
-
-## Identifying the server
-
-``SMB/Connection/serverGUID`` returns the identifier negotiated with the server as Foundation's native ``UUID``:
-
-```swift
-let serverID: UUID = try await connection.serverGUID
-```
-
-The SMB GUID wire fields are normalized to the byte order used by `UUID.uuidString`.
-
-``SMB/libsmb2Version`` tells which libsmb2 release SwiftSMB is built on, which is useful in bug reports:
-
-```swift
-print("libsmb2 \(SMB.libsmb2Version)") // libsmb2 7.0.0
 ```
 
 ## Opening a file handle
@@ -299,6 +228,8 @@ Close a directory handle:
 await directory.close()
 ```
 
+Both handles close automatically when they go out of scope, but explicit close is recommended in tight loops or when you open many handles.
+
 ## Locking a file handle
 
 Acquire an exclusive (write) lock on the entire file:
@@ -395,33 +326,3 @@ for try await opLockBreak in file.opLockBreaks {
   asked for. They are still delivered, with ``SMB/File/OpLockBreak/requiresAcknowledgement`` set to `false`.
 - Iteration ends when the file is closed or the connection is disconnected. A file opened without an oplock has no
   breaks.
-
-## Closing handles
-
-Close a file handle when you are done:
-
-```swift
-try await file.close()
-```
-
-Close a directory handle:
-
-```swift
-await directory.close()
-```
-
-Both handles close automatically when they go out of scope, but explicit close is recommended in tight loops or when you open many handles.
-
-## Disconnecting
-
-``SMB.Connection.disconnect()`` cancels watchers and closes all file and directory handles before destroying the connection.
-Use ``SMB.Connection.disconnectGracefully()`` to let complete operations already in progress finish first, including
-multi-block reads, writes, and uploads or downloads:
-
-```swift
-try await connection.disconnectGracefully()
-```
-
-Once graceful disconnection starts, new operations fail with ``SMB.Error.operationRequestedAfterConnectionClosed``.
-The nested operations and cleanup needed by an existing operation can still finish. Calling `disconnect()` explicitly
-during the wait interrupts those operations.
