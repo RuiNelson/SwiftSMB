@@ -66,7 +66,7 @@ let package = Package(
         .default(enabledTraits: []),
     ],
     dependencies: [
-        .package(url: "https://github.com/RuiNelson/PathWorks.git", .upToNextMajor(from: "2.0.1")),
+        .package(url: "https://github.com/RuiNelson/PathWorks.git", .upToNextMajor(from: "2.1.0")),
         .package(url: "https://github.com/RuiNelson/EXIFKit.git", .upToNextMajor(from: "0.4.0")),
     ],
     targets: [

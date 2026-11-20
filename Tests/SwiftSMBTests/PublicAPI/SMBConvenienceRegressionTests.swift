@@ -281,6 +281,129 @@ struct SMBConvenienceRegressionTests {
         #expect(results.filter(\.self).count == 1)
         await #expect(try connection.loadFile(at: destination) == Data(TestContent.helloBytes))
     }
+
+    @Test("directories with names only NTFS reserves open by the name the server returns (issue #12)")
+    func ntfsReservedDirectoryNamesOpen() async throws {
+        let connection = try await convenienceRegressionConnection()
+        defer { try? await connection.disconnect() }
+        let parent = uniquePath("ntfs-reserved-names")
+        try await connection.makeDirectory(at: parent)
+        defer { try? await connection.removeItem(at: parent) }
+
+        let names = ["Music", "CON", "COM1"]
+        for name in names {
+            try await connection.makeDirectory(at: parent + "/" + name)
+            try await connection.dumpToFile(Data(name.utf8), to: parent + "/" + name + "/sample.mp3")
+        }
+
+        // Samba mangles names Windows reserves into 8.3 names in listings (macOS returns them unchanged), so every
+        // child is opened by the name the listing returns, and then by the name it was created with.
+        let listed = try await connection.listDirectory(at: parent).map(\.name).filter { $0 != "." && $0 != ".." }
+        #expect(listed.count == names.count, "\(listed)")
+        var contents: Set<String> = []
+        for name in listed {
+            let path = parent + "/" + name
+            #expect(try await connection.listDirectory(at: path).map(\.name).contains("sample.mp3"))
+            try await contents.insert(String(decoding: connection.loadFile(at: path + "/sample.mp3"), as: UTF8.self))
+        }
+        #expect(contents == Set(names))
+        for name in names {
+            #expect(try await connection.loadFile(at: parent + "/" + name + "/sample.mp3") == Data(name.utf8))
+        }
+    }
+
+    /// Names NTFS rejects that a Samba share on a Unix file system stores as they are.
+    static let ntfsOnlyNames = ["file.", "name ", "CON", "com1.txt", "Lpt9.log"]
+
+    @Test("the Unix rules let a Samba share store names NTFS rejects", arguments: [
+        SMB.Configuration.PathValidation.smb,
+        .unixOverSMB,
+    ])
+    func unixRulesStoreNamesNTFSRejects(_ validation: SMB.Configuration.PathValidation) async throws {
+        let connection = try await pathValidationConnection(validation)
+        defer { try? await connection.disconnect() }
+        let parent = uniquePath("path-validation-\(validation.rawValue)")
+        try await connection.makeDirectory(at: parent)
+        defer { try? await connection.removeItem(at: parent) }
+
+        for name in Self.ntfsOnlyNames {
+            try await connection.dumpToFile(Data(name.utf8), to: parent + "/" + name)
+        }
+        for name in Self.ntfsOnlyNames {
+            #expect(try await connection.loadFile(at: parent + "/" + name) == Data(name.utf8), "\(name)")
+        }
+        let listed = try await connection.listDirectory(at: parent).filter { $0.name != "." && $0.name != ".." }
+        #expect(listed.count == Self.ntfsOnlyNames.count)
+    }
+
+    @Test("the NTFS rules reject those names before any request reaches the server")
+    func ntfsRulesRejectNamesLocally() async throws {
+        let connection = try await pathValidationConnection(.ntfsOverSMB)
+        defer { try? await connection.disconnect() }
+        let parent = uniquePath("path-validation-ntfs")
+        try await connection.makeDirectory(at: parent)
+        defer { try? await connection.removeItem(at: parent) }
+
+        for name in Self.ntfsOnlyNames {
+            await #expect(throws: SMB.Error.invalidArgument(
+                cause: .invalidPathComponent(name),
+                onOperation: .smbConnectionWriteFile
+            )) {
+                try await connection.dumpToFile(Data(name.utf8), to: parent + "/" + name)
+            }
+            await #expect(throws: SMB.Error.invalidArgument(
+                cause: .invalidPathComponent(name),
+                onOperation: .smb2Mkdir
+            )) {
+                try await connection.makeDirectory(at: parent + "/" + name)
+            }
+        }
+        let listed = try await connection.listDirectory(at: parent).filter { $0.name != "." && $0.name != ".." }
+        #expect(listed.isEmpty)
+    }
+
+    @Test("the Unix rules reject a name over 255 UTF-8 bytes that the SMB rules leave to the server")
+    func unixRulesRejectOverlongUTF8Names() async throws {
+        let name = String(repeating: "音", count: 86)
+        #expect(name.utf16.count == 86)
+        #expect(name.utf8.count == 258)
+
+        let unix = try await pathValidationConnection(.unixOverSMB)
+        defer { try? await unix.disconnect() }
+        let smb = try await pathValidationConnection(.smb)
+        defer { try? await smb.disconnect() }
+        let parent = uniquePath("path-validation-utf8")
+        try await smb.makeDirectory(at: parent)
+        defer { try? await smb.removeItem(at: parent) }
+
+        await #expect(throws: SMB.Error.invalidArgument(
+            cause: .invalidPathComponent(name),
+            onOperation: .smbConnectionWriteFile
+        )) {
+            try await unix.dumpToFile(Data(), to: parent + "/" + name)
+        }
+
+        // The SMB rules accept the name, so the request reaches Samba, whose file system refuses it.
+        let serverError = await #expect(throws: SMB.Error.self) {
+            try await smb.dumpToFile(Data(), to: parent + "/" + name)
+        }
+        if case .invalidArgument = serverError {
+            Issue.record("Expected the server to reject the name, got \(String(describing: serverError))")
+        }
+
+        // A name that fits in 255 UTF-8 bytes is stored under the Unix rules.
+        let fitting = String(repeating: "音", count: 85)
+        try await unix.dumpToFile(Data(fitting.utf8), to: parent + "/" + fitting)
+        #expect(try await unix.loadFile(at: parent + "/" + fitting) == Data(fitting.utf8))
+    }
+}
+
+private func pathValidationConnection(_ validation: SMB.Configuration.PathValidation) async throws -> SMB.Connection {
+    try await SMB.connect(
+        server: SMB.Server(host: testServerHost),
+        share: TestShare.public,
+        configuration: SMB.Configuration(pathValidation: validation)
+    )
 }
 
 private func convenienceRegressionConnection() async throws -> SMB.Connection {

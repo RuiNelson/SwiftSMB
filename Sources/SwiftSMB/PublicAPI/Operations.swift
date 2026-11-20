@@ -108,7 +108,7 @@ public extension SMB {
         let parsedURL = try ParsedURL(Bridge.parseURL(string))
         try validateShareName(parsedURL.share, operation: .smb2ParseURL)
         if let path = parsedURL.path {
-            try validatePath(path, operation: .smb2ParseURL, allowRoot: true)
+            try validatePath(path, operation: .smb2ParseURL, allowRoot: true, validation: .smb)
         }
         return parsedURL
     }
