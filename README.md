@@ -231,7 +231,7 @@ Add SwiftSMB to your package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.0"),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.1"),
 ]
 ```
 
@@ -253,7 +253,7 @@ To read and edit image metadata, enable the `EXIFKit` trait and also add
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.0", traits: ["EXIFKit"]),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.1", traits: ["EXIFKit"]),
 ]
 ```
 
