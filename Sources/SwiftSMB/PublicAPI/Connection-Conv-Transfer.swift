@@ -1398,6 +1398,9 @@ func copyRemoteFile(
     // once the destination has been opened.
     let attachment = connection.cacheAttachment
     let ticket = attachment?.openFiles.beginChange()
+    // Whether this copy created the destination, which a failure then removes. Until the open succeeds the file at the
+    // destination (if any) is someone else's, and the cache must not hear that it was removed.
+    var createdDestination = false
     do {
         let finished: (total: UInt64, averageSpeed: Double)
         do {
@@ -1411,6 +1414,7 @@ func copyRemoteFile(
                         destinationPath: destinationPath,
                         destination: exclusive ? .createNew : .replaceExisting
                     )
+                    createdDestination = exclusive
                     break
                 }
                 catch let error as SMB.Error where exclusive && error.isNameCollision {
@@ -1444,7 +1448,12 @@ func copyRemoteFile(
             finished = try await runServerSideCopy(copy, context: context, continuation: continuation)
         }
         catch {
-            await connection.reportChange(at: [destinationPath], to: attachment, removing: exclusive, since: ticket)
+            await connection.reportChange(
+                at: [destinationPath],
+                to: attachment,
+                removing: createdDestination,
+                since: ticket
+            )
             throw error
         }
         await connection.reportChange(at: [destinationPath], to: attachment, removing: false, since: ticket)
@@ -1531,9 +1540,10 @@ private func copyDestinationExists(
 ///
 /// The paths are compared byte by byte (`String` equality would equate canonically equivalent spellings that are
 /// different names). Otherwise the server's inodes decide, read straight from the server because a cache could answer
-/// with a stale entry. A server that reports no inode (`0`) can't tell, so then any spelling that differs only in case
-/// or Unicode normalization counts as the same file. A `stat` of the source that fails throws: the copy must not go on
-/// unchecked.
+/// with a stale entry. When the server reports no inode (`0`), paths that differ in more than case or Unicode
+/// normalization are different files; paths that differ only in that are different files only if the share stores both
+/// spellings as entries of their own (a case-sensitive share), and otherwise count as the same file. A `stat` of the
+/// source, or a listing, that fails throws: the copy must not go on unchecked.
 private func isSameFile(
     _ source: String,
     _ destination: String,
@@ -1547,7 +1557,54 @@ private func isSameFile(
     if sourceStat.inode != 0, destinationStat.inode != 0 {
         return sourceStat.inode == destinationStat.inode
     }
-    return CachePath.equivalenceKey(source) == CachePath.equivalenceKey(destination)
+    guard CachePath.equivalenceKey(source) == CachePath.equivalenceKey(destination) else {
+        return false
+    }
+    return try await !directoryListsBothSpellings(source, destination, context: context)
+}
+
+/// Whether `source` and `destination`, which differ only in case or Unicode normalization, are entries of their own:
+/// both in the same directory, spelled byte for byte alike, whose listing has an entry spelled exactly like each name.
+///
+/// A share that matches names regardless of case lists the file once, under one spelling, so at most one name matches.
+/// Paths whose directories are spelled differently can't be told apart this way and return `false`.
+private func directoryListsBothSpellings(
+    _ source: String,
+    _ destination: String,
+    context: Bridge.Context
+) async throws -> Bool {
+    func split(_ path: String) -> (directory: Substring, name: Substring) {
+        guard let slash = path.lastIndex(of: "/") else {
+            return ("", path[...])
+        }
+        return (path[..<slash], path[path.index(after: slash)...])
+    }
+    let (sourceDirectory, sourceName) = split(source)
+    let (destinationDirectory, destinationName) = split(destination)
+    guard sourceDirectory.utf8.elementsEqual(destinationDirectory.utf8) else {
+        return false
+    }
+
+    let directory = try await Bridge.openDir(context: context, path: String(sourceDirectory))
+    var listsSource = false
+    var listsDestination = false
+    do {
+        while !(listsSource && listsDestination),
+              let entry = try await Bridge.readDir(context: context, directory: directory) {
+            if entry.name.utf8.elementsEqual(sourceName.utf8) {
+                listsSource = true
+            }
+            else if entry.name.utf8.elementsEqual(destinationName.utf8) {
+                listsDestination = true
+            }
+        }
+    }
+    catch {
+        try? await Bridge.closeDir(context: context, directory: directory)
+        throw error
+    }
+    try? await Bridge.closeDir(context: context, directory: directory)
+    return listsSource && listsDestination
 }
 
 private extension SMB.Error {

@@ -2025,34 +2025,6 @@ class Bridge {
             _abandonServerSideCopy(context: context, copy: copy)
         }
     }
-
-    /// Copies a file from source to destination using SMB2 server-side copy.
-    static func serverSideCopy(
-        context: Context,
-        sourcePath: String,
-        destinationPath: String,
-        exclusiveDestination: Bool = false
-    ) async throws {
-        try await perform(context: context) {
-            let copy = try _beginServerSideCopy(
-                context: context,
-                sourcePath: sourcePath,
-                destinationPath: destinationPath,
-                chunkSize: max(smb2_get_max_write_size(context.raw), 1),
-                destination: exclusiveDestination ? .createNew : .createOrReplace
-            )
-            do {
-                while copy.copiedBytes < copy.fileSize {
-                    _ = try _copyNextChunks(context: context, copy: copy)
-                }
-                try _finishServerSideCopy(context: context, copy: copy)
-            }
-            catch {
-                _abandonServerSideCopy(context: context, copy: copy)
-                throw error
-            }
-        }
-    }
 }
 
 extension Bridge.PendingOperationState {

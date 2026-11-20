@@ -782,7 +782,7 @@ struct ServerSideCopyTests {
             let destPath = uniquePath("copy") + ".txt"
             defer { try? await Bridge.unlink(context: ctx, path: destPath) }
 
-            try await Bridge.serverSideCopy(context: ctx, sourcePath: TestContent.helloPath, destinationPath: destPath)
+            try await copyOnServer(ctx, from: TestContent.helloPath, to: destPath, destination: .createNew)
 
             let rh = try await Bridge.open(context: ctx, path: destPath)
             defer { try? await Bridge.close(context: ctx, file: rh) }
@@ -804,7 +804,7 @@ struct ServerSideCopyTests {
             _ = try await writeAllBytes(context: ctx, file: wh, data: Array("WRONG CONTENT".utf8))
             try await Bridge.close(context: ctx, file: wh)
 
-            try await Bridge.serverSideCopy(context: ctx, sourcePath: TestContent.helloPath, destinationPath: destPath)
+            try await copyOnServer(ctx, from: TestContent.helloPath, to: destPath, destination: .replaceExisting)
 
             let rh = try await Bridge.open(context: ctx, path: destPath)
             defer { try? await Bridge.close(context: ctx, file: rh) }
@@ -829,7 +829,7 @@ struct ServerSideCopyTests {
             )
             try await Bridge.close(context: ctx, file: wh)
 
-            try await Bridge.serverSideCopy(context: ctx, sourcePath: sourcePath, destinationPath: destPath)
+            try await copyOnServer(ctx, from: sourcePath, to: destPath, destination: .createNew)
 
             let stat = try await Bridge.fileStatistics(context: ctx, path: destPath)
             #expect(stat.type == .file)
@@ -843,13 +843,39 @@ struct ServerSideCopyTests {
             defer { try? await Bridge.unlink(context: ctx, path: destPath) }
 
             await #expect(throws: SMB.Error.self) {
-                try await Bridge.serverSideCopy(
-                    context: ctx,
-                    sourcePath: "nonexistent_\(uniquePath()).txt",
-                    destinationPath: destPath
+                try await copyOnServer(
+                    ctx,
+                    from: "nonexistent_\(uniquePath()).txt",
+                    to: destPath,
+                    destination: .createNew
                 )
             }
         }
+    }
+}
+
+/// Copies a file with the server-side copy steps the public `copyFile` drives: begin, copy every chunk, finish, and
+/// abandon on failure.
+private func copyOnServer(
+    _ ctx: Bridge.Context,
+    from sourcePath: String,
+    to destinationPath: String,
+    destination: Bridge.CopyDestination
+) async throws {
+    let copy = try await Bridge.beginServerSideCopy(
+        context: ctx,
+        sourcePath: sourcePath,
+        destinationPath: destinationPath,
+        destination: destination
+    )
+    do {
+        while try await Bridge.copyNextChunks(context: ctx, copy: copy) > 0 {
+        }
+        try await Bridge.finishServerSideCopy(context: ctx, copy: copy)
+    }
+    catch {
+        await Bridge.abandonServerSideCopy(context: ctx, copy: copy)
+        throw error
     }
 }
 
