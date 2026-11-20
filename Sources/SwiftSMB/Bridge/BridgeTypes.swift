@@ -209,6 +209,26 @@ extension Bridge {
         }
     }
 
+    /// How a server-side copy opens its destination.
+    enum CopyDestination: Equatable, Sendable {
+        /// Creates the destination and fails with `STATUS_OBJECT_NAME_COLLISION` if it exists (`FILE_CREATE`). The copy
+        /// owns the file, so giving it up removes it.
+        case createNew
+        /// Truncates an existing destination and fails with `STATUS_OBJECT_NAME_NOT_FOUND` if there is none
+        /// (`FILE_OVERWRITE`), so it never creates a file it would not own.
+        case replaceExisting
+        /// Creates the destination or truncates the existing one (`FILE_OVERWRITE_IF`).
+        case createOrReplace
+
+        var openOptions: OpenOptions {
+            switch self {
+            case .createNew: [.create, .exclusive]
+            case .replaceExisting: [.truncate]
+            case .createOrReplace: [.create, .truncate]
+            }
+        }
+    }
+
     /// The dialects a context offers when it negotiates (`smb2_negotiate_version`).
     enum DialectPreference: Equatable, Sendable {
         case any
