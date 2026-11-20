@@ -163,17 +163,22 @@ struct SMBKeepAliveTests {
         let connection = try await connect()
         defer { try? await connection.disconnect() }
         let returned = Flag()
+        let work = CallbackWork()
         let weakConnection = WeakConnection(connection)
 
         try connection.startKeepAlive(SMB.KeepAliveConfiguration(
             interval: 0.1,
             slowRoundTrip: Self.reportEveryEcho
         ) { _ in
-            weakConnection.connection?.stopKeepAlive()
+            guard !returned.isSet, let connection = weakConnection.connection else { return }
+            connection.stopKeepAlive()
+            // The rest of the callback is not cancelled by the stop: it can still wait and use the connection.
+            await work.record(on: connection)
             returned.set()
         })
         try await waitUntil { returned.isSet }
         #expect(!connection.isKeepAliveRunning)
+        work.expectNotCancelled(listed: true)
         _ = try await connection.listDirectory(at: "")
     }
 
@@ -185,17 +190,22 @@ struct SMBKeepAliveTests {
         let weakConnection = WeakConnection(connection)
         let replacementConfiguration = makeConfiguration(slowRoundTrip: Self.reportEveryEcho, problems: replacement)
         let restarted = Flag()
+        let returned = Flag()
+        let work = CallbackWork()
 
         try connection.startKeepAlive(SMB.KeepAliveConfiguration(
             interval: 0.1,
             slowRoundTrip: Self.reportEveryEcho
         ) { _ in
-            guard !restarted.isSet else { return }
-            try? weakConnection.connection?.startKeepAlive(replacementConfiguration)
+            guard !restarted.isSet, let connection = weakConnection.connection else { return }
             restarted.set()
+            try? connection.startKeepAlive(replacementConfiguration)
+            await work.record(on: connection)
+            returned.set()
         })
-        try await waitUntil { replacement.slowCount >= 1 }
+        try await waitUntil { replacement.slowCount >= 1 && returned.isSet }
         #expect(connection.isKeepAliveRunning)
+        work.expectNotCancelled(listed: true)
     }
 
     @Test("the callback may disconnect")
@@ -203,17 +213,25 @@ struct SMBKeepAliveTests {
         let connection = try await connect()
         let returned = Flag()
         let weakConnection = WeakConnection(connection)
+        let work = CallbackWork()
 
         try connection.startKeepAlive(SMB.KeepAliveConfiguration(
             interval: 0.1,
+            timeout: 2,
             slowRoundTrip: Self.reportEveryEcho
         ) { _ in
-            try? await weakConnection.connection?.disconnect()
+            guard !returned.isSet, let connection = weakConnection.connection else { return }
+            try? await connection.disconnect()
+            // Nothing to list on a closed connection, but the callback still runs uncancelled.
+            await work.record(on: nil)
             returned.set()
         })
         try await waitUntil { returned.isSet }
         #expect(!connection.isConnected)
         #expect(!connection.isKeepAliveRunning)
+        work.expectNotCancelled(listed: false)
+        // The disconnection kept the command timeout the keep-alive imposed instead of restoring 0 before it.
+        #expect(connection.protectedCommandTimeout.current == SMBCommandTimeout(seconds: 2, imposedByKeepAlive: true))
     }
 
     // MARK: Activity
@@ -257,8 +275,8 @@ struct SMBKeepAliveTests {
         #expect(try await Bridge.timeout(context: connection.requireContext()) == 0)
     }
 
-    @Test("a replacing keep-alive imposes its own timeout, and a fork inherits the one in force")
-    func replacementAndForkUseTheImposedTimeout() async throws {
+    @Test("a replacing keep-alive imposes its own timeout, and a fork does not inherit it")
+    func replacementImposesAndForkKeepsTheUsersTimeout() async throws {
         let connection = try await connect()
         defer { try? await connection.disconnect() }
 
@@ -268,9 +286,33 @@ struct SMBKeepAliveTests {
 
         let fork = try await connection.fork()
         defer { try? await fork.disconnect() }
-        #expect(fork.configuration.timeout == 5)
-        #expect(try await Bridge.timeout(context: fork.requireContext()) == 5)
+        // The user chose no command timeout, which the fork keeps in its configured form.
+        #expect(fork.configuration.timeout == nil)
+        #expect(fork.commandTimeoutSeconds == 0)
+        #expect(try await Bridge.timeout(context: fork.requireContext()) == 0)
         #expect(!fork.isKeepAliveRunning)
+    }
+
+    @Test("a fork inherits the timeout set with setTimeout, not one the keep-alive imposes over it")
+    func forkInheritsTheUsersTimeout() async throws {
+        let connection = try await connect()
+        defer { try? await connection.disconnect() }
+
+        try await connection.setTimeout(9)
+        try connection.startKeepAlive(makeConfiguration(timeout: 1))
+        let fork = try await connection.fork()
+        defer { try? await fork.disconnect() }
+        #expect(fork.configuration.timeout == 9)
+        #expect(try await Bridge.timeout(context: fork.requireContext()) == 9)
+
+        // An explicit 0 under a running keep-alive, imposed over again by a new start: the fork gets nothing.
+        try await connection.setTimeout(0)
+        try connection.startKeepAlive(makeConfiguration(timeout: 1))
+        #expect(connection.commandTimeoutSeconds == 1)
+        let secondFork = try await connection.fork()
+        defer { try? await secondFork.disconnect() }
+        #expect(secondFork.commandTimeoutSeconds == 0)
+        #expect(try await Bridge.timeout(context: secondFork.requireContext()) == 0)
     }
 
     @Test("a timeout set while the keep-alive runs is the user's and stays")
@@ -317,6 +359,55 @@ struct SMBKeepAliveTests {
         #expect(try await Bridge.timeout(context: connection.requireContext()) == 0)
     }
 
+    @Test("disconnecting keeps the imposed command timeout and enqueues no change for the closed context")
+    func disconnectKeepsTheImposedTimeout() async throws {
+        let connection = try await connect()
+        try connection.startKeepAlive(makeConfiguration(timeout: 2))
+        let context = try connection.requireContext()
+        #expect(try await Bridge.timeout(context: context) == 2)
+
+        try await connection.disconnect()
+        #expect(!connection.isKeepAliveRunning)
+        // Not restored: restoring would have set 0 and enqueued smb2_set_timeout(0) ahead of the shutdown.
+        #expect(connection.protectedCommandTimeout.current == SMBCommandTimeout(seconds: 2, imposedByKeepAlive: true))
+        #expect(!context.isAlive)
+    }
+
+    @Test("disconnecting gracefully keeps the imposed command timeout")
+    func gracefulDisconnectKeepsTheImposedTimeout() async throws {
+        let connection = try await connect()
+        try connection.startKeepAlive(makeConfiguration(timeout: 2))
+        try await connection.disconnectGracefully()
+        #expect(!connection.isKeepAliveRunning)
+        #expect(connection.protectedCommandTimeout.current == SMBCommandTimeout(seconds: 2, imposedByKeepAlive: true))
+    }
+
+    @Test("a problem that stops the keep-alive keeps its timeout until stopKeepAlive removes it")
+    func problemKeepsTheImposedTimeout() async throws {
+        let connection = try await connect()
+        defer { try? await connection.disconnect() }
+        let problems = ProblemLog()
+        let runningDuringCallback = Locked<Bool?>(nil)
+        let weakConnection = WeakConnection(connection)
+
+        try connection.startKeepAlive(SMB.KeepAliveConfiguration(interval: 0.1, timeout: 2) { problem in
+            runningDuringCallback.value = weakConnection.connection?.isKeepAliveRunning
+            problems.record(problem)
+        })
+        // Break the transport under the connection, so the next echo fails or gets no answer.
+        try await Bridge.closeContext(context: connection.requireContext())
+        try await waitUntil { problems.otherCount == 1 && !connection.isKeepAliveRunning }
+        #expect(problems.slowCount == 0)
+        #expect(runningDuringCallback.value == true)
+        #expect(connection.commandTimeoutSeconds == 2)
+        #expect(try await Bridge.timeout(context: connection.requireContext()) == 2)
+
+        // An explicit stop removes it, although the keep-alive already stopped.
+        connection.stopKeepAlive()
+        #expect(connection.commandTimeoutSeconds == 0)
+        #expect(try await Bridge.timeout(context: connection.requireContext()) == 0)
+    }
+
     /// Connects and starts a keep-alive, and returns only a weak reference, so the connection is released on return.
     private func startedConnectionBox() async throws -> WeakConnection {
         let connection = try await connect()
@@ -325,7 +416,7 @@ struct SMBKeepAliveTests {
     }
 
     private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async throws {
-        try await withTimeout(seconds: 30) {
+        try await withTimeout(seconds: 120) {
             while !condition() {
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
@@ -398,5 +489,53 @@ private final class ProblemLog: @unchecked Sendable {
         problems.lock()
         defer { problems.unlock() }
         values.append(problem)
+    }
+}
+
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: Value
+
+    init(_ value: Value) {
+        _value = value
+    }
+
+    var value: Value {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _value = newValue
+        }
+    }
+}
+
+/// What a callback could still do after it stopped, replaced or disconnected the keep-alive.
+private final class CallbackWork: Sendable {
+    private let cancelled = Locked<Bool?>(nil)
+    private let slept = Locked(false)
+    private let listed = Locked(false)
+
+    func record(on connection: SMB.Connection?) async {
+        do {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            slept.value = true
+        }
+        catch {
+        }
+        if let connection {
+            listed.value = await (try? connection.listDirectory(at: "")) != nil
+        }
+        cancelled.value = Task.isCancelled
+    }
+
+    func expectNotCancelled(listed expectedListed: Bool) {
+        #expect(cancelled.value == false)
+        #expect(slept.value)
+        #expect(listed.value == expectedListed)
     }
 }

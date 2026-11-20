@@ -1280,12 +1280,25 @@ class Bridge {
         }
     }
 
-    /// Sends an SMB echo request, calling `onStart` on the context queue right before it is sent, so the caller can
-    /// time the echo itself rather than its wait behind earlier operations. `onStart` must return quickly.
-    static func echo(context: Context, onStart: @escaping @Sendable () -> Void) async throws {
+    /// Sends an SMB echo request, calling `onStart` on the context queue right before it is sent and `onFinish` there
+    /// right after it ends, with its error or `nil`, so the caller can time the echo itself: not its wait behind
+    /// earlier operations, nor the time the awaiting task takes to resume. Both must return quickly. Neither is called
+    /// when the context is already destroyed.
+    static func echo(
+        context: Context,
+        onStart: @escaping @Sendable () -> Void,
+        onFinish: @escaping @Sendable (any Error?) -> Void
+    ) async throws {
         try await perform(context: context) {
             onStart()
-            try _echo(context: context)
+            do {
+                try _echo(context: context)
+            }
+            catch {
+                onFinish(error)
+                throw error
+            }
+            onFinish(nil)
         }
     }
 

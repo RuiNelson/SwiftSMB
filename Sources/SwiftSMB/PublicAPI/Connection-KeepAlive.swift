@@ -19,9 +19,14 @@ struct SMBKeepAliveRegistry: Sendable {
 struct SMBCommandTimeout: Sendable, Equatable {
     /// In seconds. `0` disables command timeouts.
     var seconds: Int
-    /// Whether ``seconds`` is the keep-alive's, given because the connection had no command timeout. The keep-alive
-    /// puts back `0` when it stops, unless the user set a timeout meanwhile.
+    /// Whether ``seconds`` is the keep-alive's, given because the connection had no command timeout. An explicit
+    /// ``SMB/Connection/stopKeepAlive()`` puts back `0`, unless the user set a timeout meanwhile.
     var imposedByKeepAlive = false
+
+    /// The command timeout the user chose: ``seconds``, or `0` when the keep-alive imposed it.
+    var chosenByUser: Int {
+        imposedByKeepAlive ? 0 : seconds
+    }
 
     /// Gives a connection with no command timeout, or with one an earlier keep-alive imposed, the keep-alive's deadline
     /// in whole seconds. A timeout the user chose is left alone.
@@ -66,8 +71,10 @@ private final class SMBWeakConnection: Sendable {
 public extension SMB.Connection {
     /// A Boolean value indicating whether a keep-alive is running on this connection.
     ///
-    /// It becomes `false` after ``stopKeepAlive()``, after a problem that stops the keep-alive, and when the connection
-    /// is disconnected.
+    /// It becomes `false` after ``stopKeepAlive()``, when the connection is disconnected or starts disconnecting
+    /// gracefully, and after a problem that stops the keep-alive. In that last case it stays `true` while
+    /// ``SMB/KeepAliveConfiguration/onProblem`` runs, and becomes `false` once the callback returns, unless the
+    /// callback started another keep-alive.
     var isKeepAliveRunning: Bool {
         protectedKeepAlive.withLock { $0.task != nil }
     }
@@ -88,15 +95,26 @@ public extension SMB.Connection {
     /// connection is deallocated. It never keeps the connection alive by itself, but a callback that captures the
     /// connection strongly does until the keep-alive stops. It does not reconnect.
     ///
-    /// - Important: If the connection has no command timeout (``SMB/Configuration/timeout`` is `nil` or `0`, and
-    ///   ``setTimeout(_:)`` was not called with a positive value), the keep-alive gives it one while it runs:
-    ///   ``SMB/KeepAliveConfiguration/timeout`` rounded up to whole seconds (2.1 s becomes 3 s). Otherwise an echo to a
-    ///   server that no longer answers would hold the connection, and a ``disconnect()`` behind it, until the operating
-    /// system gives up on the TCP connection. That timeout applies to every operation on the connection: a single
-    /// request that takes longer, such as a large block on a slow link, fails with ``SMB/SMBStatus/ioTimeout``, and
-    ///   ``fork()`` starts the new connection with it. Set a command timeout of your own on slow connections; the
-    ///   keep-alive leaves it alone. When the keep-alive stops, it puts back "no command timeout", unless
-    ///   ``setTimeout(_:)`` was called meanwhile, whose value then stays.
+    /// - Important: On a connection with no command timeout, the keep-alive imposes one on every operation.
+    ///
+    /// If the connection has no command timeout (``SMB/Configuration/timeout`` is `nil` or `0`, and ``setTimeout(_:)``
+    /// was not called with a positive value), the keep-alive gives it one: ``SMB/KeepAliveConfiguration/timeout``
+    /// rounded up to whole seconds (2.1 s becomes 3 s). Otherwise an echo to a server that no longer answers would hold
+    /// the connection, and a ``disconnect()`` behind it, until the operating system gives up on the TCP connection.
+    ///
+    /// That timeout applies to every operation on the connection: a single request that takes longer, such as a large
+    /// block on a slow link, fails with ``SMB/SMBStatus/ioTimeout``, and a blocking
+    /// ``SMB/File/lock(_:nonBlocking:range:)`` that used to wait indefinitely gives up with ``SMB/SMBStatus/ioTimeout``
+    /// once it expires (1 s with the default configuration). On slow connections, or to wait for locks, set a command
+    /// timeout of your own, greater than zero and long enough, before starting the keep-alive, or use non-blocking
+    /// locks; the keep-alive leaves such a timeout alone. ``fork()`` does not inherit the imposed timeout: the new
+    /// connection gets the one you chose.
+    ///
+    /// ``stopKeepAlive()`` puts back "no command timeout", unless ``setTimeout(_:)`` was called meanwhile, whose value
+    /// then stays. The imposed timeout stays when a problem stops the keep-alive, because the connection is most likely
+    /// broken and a ``disconnect()`` must not wait for TCP to give up; call ``stopKeepAlive()``, ``setTimeout(_:)`` or
+    /// ``startKeepAlive(_:)`` to change it then. Disconnecting does not restore it either, since the connection's
+    /// context is destroyed.
     ///
     /// - Parameter configuration: How the keep-alive behaves and where it reports.
     /// - Throws: ``SMB/Error/operationRequestedAfterConnectionClosed`` if the connection is closed, or is disconnecting
@@ -115,7 +133,8 @@ public extension SMB.Connection {
             let timeoutChanged = protectedCommandTimeout.withLock {
                 $0.imposeForKeepAlive(timeout: configuration.timeout)
             }
-            registry.task = Task {
+            // Detached: it inherits neither the caller's task-local values nor its priority.
+            registry.task = Task.detached(priority: .utility) {
                 await SMBKeepAliveEngine.run(
                     configuration: configuration,
                     isCurrent: { weakConnection.connection?.isCurrentKeepAlive(generation) ?? false },
@@ -139,14 +158,27 @@ public extension SMB.Connection {
 
     /// Stops the keep-alive. Does nothing when none is running.
     ///
-    /// The call does not wait for the keep-alive's task, so it may be made from
-    /// ``SMB/KeepAliveConfiguration/onProblem``. No callback starts after it returns, although one that was already
-    /// starting may still run. A command timeout the keep-alive imposed is removed (see ``startKeepAlive(_:)``).
+    /// The call does not wait for the keep-alive's task, nor for a callback that is running, so it may be made from
+    /// ``SMB/KeepAliveConfiguration/onProblem``, whose remaining work it does not cancel. No callback starts after it
+    /// returns, although one that was already starting may still run. A command timeout the keep-alive imposed is
+    /// removed, also when a problem already stopped the keep-alive (see ``startKeepAlive(_:)``); to disconnect, call
+    /// ``disconnect()`` directly instead, which stops the keep-alive and keeps that timeout for the disconnection.
     func stopKeepAlive() {
+        stopKeepAlive(restoringTimeout: true)
+    }
+}
+
+extension SMB.Connection {
+    /// Stops the keep-alive, and removes the command timeout it imposed when `restoringTimeout` is `true`.
+    ///
+    /// Disconnection and `deinit` pass `false`: the context is about to be destroyed, a restored `0` would let the
+    /// teardown wait for TCP to give up on a dead server, and nothing must be enqueued for it.
+    func stopKeepAlive(restoringTimeout: Bool) {
         let (task, timeoutChanged) = protectedKeepAlive.withLock { registry -> (Task<Void, Never>?, Bool) in
             registry.generation += 1
             let task = registry.task
             registry.task = nil
+            guard restoringTimeout else { return (task, false) }
             return (task, protectedCommandTimeout.withLock { $0.restoreAfterKeepAlive() })
         }
         task?.cancel()
@@ -161,16 +193,15 @@ private extension SMB.Connection {
         protectedKeepAlive.withLock { $0.generation == generation }
     }
 
-    /// Clears the keep-alive that ended by itself, unless it was stopped or replaced meanwhile, and removes the command
-    /// timeout it imposed.
+    /// Clears the keep-alive that ended by itself, unless it was stopped or replaced meanwhile.
+    ///
+    /// The command timeout it imposed stays. A run ends by itself after a problem, when the connection is most likely
+    /// broken, or because the connection is disconnecting: either way a `disconnect()` may follow, and it must not run
+    /// with no command timeout. An explicit ``stopKeepAlive()``, `setTimeout(_:)` or a new start changes it.
     func finishKeepAlive(_ generation: UInt64) {
-        let timeoutChanged = protectedKeepAlive.withLock { registry -> Bool in
-            guard registry.generation == generation else { return false }
+        protectedKeepAlive.withLock { registry in
+            guard registry.generation == generation else { return }
             registry.task = nil
-            return protectedCommandTimeout.withLock { $0.restoreAfterKeepAlive() }
-        }
-        if timeoutChanged {
-            applyCommandTimeoutInBackground()
         }
     }
 
@@ -196,8 +227,8 @@ private extension SMB.Connection {
 
     /// Sends one echo that does not count as activity, against the deadline in force.
     ///
-    /// The deadline uses the command timeout kept in Swift, so nothing waits on the context queue before the echo, and
-    /// it starts when the echo starts running on the queue.
+    /// The deadline uses the command timeout kept in Swift, so nothing waits on the context queue before the echo. The
+    /// echo is stamped on the queue when it starts and when it finishes, and those stamps decide the outcome.
     func sendKeepAliveEcho(configuredTimeout: TimeInterval) async -> SMBKeepAliveEchoOutcome {
         do {
             return try await withOperation(trackingActivity: false) {
@@ -206,8 +237,8 @@ private extension SMB.Connection {
                     configured: configuredTimeout,
                     connectionTimeoutSeconds: commandTimeoutSeconds
                 )
-                return await SMBKeepAliveEchoRace.run(timeout: timeout) { started in
-                    try await Bridge.echo(context: context, onStart: started)
+                return await SMBKeepAliveEchoRace.run(timeout: timeout) { started, finished in
+                    try await Bridge.echo(context: context, onStart: started, onFinish: finished)
                 }
             }
         }

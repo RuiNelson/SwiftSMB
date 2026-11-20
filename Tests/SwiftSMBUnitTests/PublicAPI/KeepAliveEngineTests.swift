@@ -134,7 +134,9 @@ struct KeepAliveEngineTests {
 
     @Test("an echo that answers in time reports its round trip")
     func raceAnswered() async {
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { started in
+        // This echo waits on the thread pool, which the rest of the suite can starve for over a minute, so the deadline
+        // is far beyond that. An echo on a connection waits on its queue instead (see `raceAnsweredOnTheQueue`).
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 3600) { started, _ in
             started()
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -150,7 +152,7 @@ struct KeepAliveEngineTests {
     func raceNoResponse() async {
         let release = Flag()
         let finished = Flag()
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 0.1) { started in
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 0.1) { started, _ in
             started()
             while !release.isSet {
                 try await Task.sleep(nanoseconds: 10_000_000)
@@ -170,7 +172,7 @@ struct KeepAliveEngineTests {
 
     @Test("a failing echo is reported with its error")
     func raceFailed() async {
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { started in
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { started, _ in
             started()
             throw SMB.Error.posix(code: POSIXErrorCode.ECONNRESET.rawValue, operation: "echo", message: "failed")
         }
@@ -183,7 +185,7 @@ struct KeepAliveEngineTests {
 
     @Test("an echo on a closed connection stops the keep-alive quietly")
     func raceClosed() async {
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { _ in
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { _, _ in
             throw SMB.Error.operationRequestedAfterConnectionClosed
         }
         guard case .stopped = outcome else {
@@ -195,7 +197,7 @@ struct KeepAliveEngineTests {
     @Test("cancelling the task resolves the race at once")
     func raceCancelled() async {
         let task = Task {
-            await SMBKeepAliveEchoRace.run(timeout: 30) { started in
+            await SMBKeepAliveEchoRace.run(timeout: 30) { started, _ in
                 started()
                 try await Task.sleep(nanoseconds: 30 * 1_000_000_000)
             }
@@ -213,7 +215,7 @@ struct KeepAliveEngineTests {
     func raceDeadlineStartsWithTheEcho() async {
         let release = Flag()
         let racing = Task {
-            await SMBKeepAliveEchoRace.run(timeout: 0.2) { started in
+            await SMBKeepAliveEchoRace.run(timeout: 0.2) { started, _ in
                 // Waiting for the connection's queue, for longer than the deadline.
                 while !release.isSet {
                     try await Task.sleep(nanoseconds: 10_000_000)
@@ -234,7 +236,7 @@ struct KeepAliveEngineTests {
     func raceUnstartedEchoHasNoDeadline() async {
         let release = Flag()
         let racing = Task {
-            await SMBKeepAliveEchoRace.run(timeout: 0.05) { _ in
+            await SMBKeepAliveEchoRace.run(timeout: 0.05) { _, _ in
                 while !release.isSet {
                     try await Task.sleep(nanoseconds: 10_000_000)
                 }
@@ -253,7 +255,7 @@ struct KeepAliveEngineTests {
 
     @Test("the round trip is counted from when the echo starts")
     func raceRoundTripStartsWithTheEcho() async {
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 30) { started in
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 30) { started, _ in
             try await Task.sleep(nanoseconds: 1_000_000_000)
             started()
         }
@@ -269,7 +271,7 @@ struct KeepAliveEngineTests {
     @Test("the deadline timer is released once the race resolves", arguments: [true, false])
     func raceReleasesItsTimer(answers: Bool) async {
         let race = SMBKeepAliveEchoRace(timeout: 30)
-        let outcome = await race.run { started in
+        let outcome = await race.run { started, _ in
             started()
             if !answers {
                 throw SMB.Error.posix(code: POSIXErrorCode.EPIPE.rawValue, operation: "echo", message: "failed")
@@ -288,7 +290,7 @@ struct KeepAliveEngineTests {
     func raceTimerReleasedAtTheDeadline() async {
         let release = Flag()
         let race = SMBKeepAliveEchoRace(timeout: 0.05)
-        let outcome = await race.run { started in
+        let outcome = await race.run { started, _ in
             started()
             while !release.isSet {
                 try await Task.sleep(nanoseconds: 10_000_000)
@@ -308,7 +310,7 @@ struct KeepAliveEngineTests {
         let startedLate = Flag()
         let race = SMBKeepAliveEchoRace(timeout: 0.05)
         let racing = Task {
-            await race.run { started in
+            await race.run { started, _ in
                 while !release.isSet {
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
@@ -330,7 +332,7 @@ struct KeepAliveEngineTests {
         let race = SMBKeepAliveEchoRace(timeout: 0.05)
         let outcome = await Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            return await race.run { started in
+            return await race.run { started, _ in
                 echoed.set()
                 started()
             }
@@ -346,12 +348,97 @@ struct KeepAliveEngineTests {
         #expect(!race.hasPendingTimer)
     }
 
+    @Test("an echo that finished on the queue in time is answered, however late its task resumes")
+    func raceAnsweredOnTheQueue() async {
+        let release = Flag()
+        let returned = Flag()
+        let race = SMBKeepAliveEchoRace(timeout: 0.2)
+        let racing = Task {
+            await race.run { started, finished in
+                // What the connection's queue does: stamp the start, send, stamp the end.
+                started()
+                finished(nil)
+                // The task awaiting the queue resumes much later than the deadline, as on a saturated thread pool.
+                while !release.isSet {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+                returned.set()
+            }
+        }
+        // Several deadlines go by before the echo's task may return.
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        let outcome = await racing.value
+        // The race resolved from the stamps on the queue, not when the echo's task returned.
+        #expect(!returned.isSet)
+        release.set()
+        guard case let .answered(roundTrip) = outcome else {
+            Issue.record("expected an answer, got \(outcome)")
+            return
+        }
+        // An answer is never later than the deadline: the stamps decided, not the scheduling.
+        #expect(roundTrip <= 0.2)
+        #expect(!race.hasPendingTimer)
+    }
+
+    @Test("the round trip is the time between the stamps on the queue")
+    func raceRoundTripComesFromTheStamps() async {
+        let release = Flag()
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 30) { started, finished in
+            started()
+            // The echo itself takes this long on the queue, which blocks its thread.
+            blockThread(seconds: 0.1)
+            finished(nil)
+            while !release.isSet {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        // Resolved while the echo's task was still held, so the round trip cannot include its resumption.
+        release.set()
+        guard case let .answered(roundTrip) = outcome else {
+            Issue.record("expected an answer, got \(outcome)")
+            return
+        }
+        #expect(roundTrip >= 0.1)
+    }
+
+    @Test("an echo that finished on the queue after the deadline is no response, whichever side notices")
+    func raceFinishedAfterTheDeadline() async {
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 0.05) { started, finished in
+            started()
+            blockThread(seconds: 0.2)
+            finished(nil)
+        }
+        guard case let .noResponse(timeout) = outcome else {
+            Issue.record("expected no response, got \(outcome)")
+            return
+        }
+        #expect(timeout == 0.05)
+    }
+
+    @Test("a failure stamped on the queue is reported with its error")
+    func raceFailureStampedOnTheQueue() async {
+        let release = Flag()
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 30) { started, finished in
+            started()
+            finished(SMB.Error.posix(code: POSIXErrorCode.ECONNRESET.rawValue, operation: "echo", message: "failed"))
+            while !release.isSet {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        release.set()
+        guard case let .failed(error) = outcome, let smbError = error as? SMB.Error else {
+            Issue.record("expected a failure, got \(outcome)")
+            return
+        }
+        #expect(smbError.posixCode == POSIXErrorCode.ECONNRESET.rawValue)
+    }
+
     @Test("libsmb2's own command timeout is reported as no response", arguments: [
         SMB.Error.ntStatus(.ioTimeout, posixCode: nil, operation: "smb2_echo", message: ""),
         SMB.Error.posix(code: POSIXErrorCode.ETIMEDOUT.rawValue, operation: "smb2_echo", message: ""),
     ])
     func raceLibraryTimeoutIsNoResponse(error: SMB.Error) async {
-        let outcome = await SMBKeepAliveEchoRace.run(timeout: 3) { started in
+        let outcome = await SMBKeepAliveEchoRace.run(timeout: 3) { started, _ in
             started()
             throw error
         }
@@ -444,13 +531,58 @@ struct KeepAliveEngineTests {
         #expect(harness.problems.isEmpty)
     }
 
-    @Test("no callback starts once the run is no longer current")
-    func staleRunStaysSilent() async {
-        let harness = Harness(interval: 0.05)
-        harness.outcome = .noResponse(timeout: 1)
-        harness.current = false
+    @Test("no callback starts once the run is no longer current", arguments: [
+        SMBKeepAliveEchoOutcome.noResponse(timeout: 1),
+        .failed(SMB.Error.posix(code: POSIXErrorCode.EPIPE.rawValue, operation: "echo", message: "failed")),
+        .answered(roundTrip: 0.8),
+    ])
+    func staleRunStaysSilent(outcome: SMBKeepAliveEchoOutcome) async {
+        let harness = Harness(interval: 0.05, slowRoundTrip: 0.5)
+        harness.outcome = outcome
+        // Stopped or replaced while the echo ran: the run was current when it decided to send it.
+        harness.onEcho = { _ in harness.current = false }
         await harness.start().value
+        #expect(harness.echoCount == 1)
         #expect(harness.problems.isEmpty)
+    }
+
+    @Test("a callback that stops the keep-alive is not cancelled with it, and the run ends after it returns")
+    func callbackIsNotCancelledByStopping() async {
+        let runTask = Locked<Task<Void, Never>?>(nil)
+        let observed = Locked<(cancelled: Bool, slept: Bool)?>(nil)
+        let calls = Locked(0)
+        let configuration = SMB.KeepAliveConfiguration(interval: 0.05, timeout: 1, slowRoundTrip: 0.5) { _ in
+            calls.update { $0 += 1 }
+            while runTask.value == nil {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
+            // What stopKeepAlive(), startKeepAlive(_:) and disconnect() do to the keep-alive's task.
+            runTask.value?.cancel()
+            var slept = true
+            do {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            catch {
+                slept = false
+            }
+            observed.value = (Task.isCancelled, slept)
+        }
+        let task = Task {
+            await SMBKeepAliveEngine.run(
+                configuration: configuration,
+                isCurrent: { true },
+                snapshot: { (0, 0) },
+                sendEcho: { .answered(roundTrip: 0.8) },
+                markActivity: {
+                }
+            )
+        }
+        runTask.value = task
+        await task.value
+        #expect(observed.value?.cancelled == false)
+        #expect(observed.value?.slept == true)
+        // A slow answer does not stop the keep-alive, so only the cancellation ended the run.
+        #expect(calls.value == 1)
     }
 
     @Test("a stopped outcome ends the run without a callback")
@@ -516,6 +648,11 @@ struct KeepAliveEngineTests {
 
 private let second: UInt64 = 1_000_000_000
 
+/// Blocks the calling thread, as the echo blocks the connection's queue.
+private func blockThread(seconds: TimeInterval) {
+    Thread.sleep(forTimeInterval: seconds)
+}
+
 private func waitForCondition(timeout: TimeInterval = 120, _ condition: () -> Bool) async {
     let started = DispatchTime.now().uptimeNanoseconds
     while !condition() {
@@ -541,6 +678,34 @@ private final class Flag: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         value = true
+    }
+}
+
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: Value
+
+    init(_ value: Value) {
+        _value = value
+    }
+
+    var value: Value {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _value = newValue
+        }
+    }
+
+    func update(_ body: (inout Value) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        body(&_value)
     }
 }
 

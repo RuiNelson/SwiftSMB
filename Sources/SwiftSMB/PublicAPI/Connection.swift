@@ -252,8 +252,9 @@ public extension SMB {
         /// - ``Configuration/transferBlockSize`` is the larger of ``acceptedReadBlockSize`` and
         /// ``acceptedWriteBlockSize``. Each direction is still clamped to the server maximum, so the new connection
         /// reads and writes in the same blocks as this one.
-        /// - ``Configuration/timeout`` is the current command timeout, including changes made with ``setTimeout(_:)``
-        /// and the one a running keep-alive imposes (see ``startKeepAlive(_:)``).
+        /// - ``Configuration/timeout`` is the command timeout you chose: the configured one, or the one set with
+        /// ``setTimeout(_:)``. A timeout the keep-alive imposed is not inherited (see ``startKeepAlive(_:)``), since it
+        /// is also the new connection's connection timeout; the new connection has no keep-alive.
         ///
         /// The dialect and the other negotiation options are negotiated again from the configured preferences.
         ///
@@ -269,9 +270,10 @@ public extension SMB {
                 let cacheAttachment = cacheAttachment
                 var configuration = configuration
 
-                // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form. This
-                // is the timeout in force, including one the keep-alive imposed.
-                let timeout = commandTimeoutSeconds
+                // `nil` and `0` both disable command timeouts, so an unchanged timeout keeps its configured form. A
+                // timeout the keep-alive imposed is left out: it would also bound the new connection's connect (1-2 s),
+                // and the fork has no keep-alive.
+                let timeout = protectedCommandTimeout.current.chosenByUser
                 if timeout != configuration.timeout ?? 0 {
                     configuration.timeout = timeout
                 }
@@ -316,7 +318,13 @@ public extension SMB {
         /// command timeouts. Negative values are treated as `0`; values larger than `Int32.max` are clamped.
         ///
         /// The value replaces a command timeout that ``startKeepAlive(_:)`` imposed, and the keep-alive no longer
-        /// removes it when it stops.
+        /// removes it when it stops. Passing `0` while a keep-alive runs removes the protection that timeout gave: an
+        /// echo to a server that no longer answers can then hold the connection, and a ``disconnect()`` behind it,
+        /// until the operating system gives up on the TCP connection. A later ``startKeepAlive(_:)`` imposes a timeout
+        /// again over that `0`.
+        ///
+        /// The command timeout is also how long a blocking ``File/lock(_:nonBlocking:range:)`` waits; `0` lets it wait
+        /// indefinitely.
         ///
         /// - Parameter timeout: The timeout interval, in seconds.
         /// - Throws: ``SMB/Error`` if the connection is already closed.
@@ -881,9 +889,11 @@ public extension SMB {
         /// Atomically closes watcher registration and takes ownership of the context and registered watchers.
         private func takeContextAndNotifyWatchers() -> (context: Bridge.Context?, watchers: [SMBNotifyWatcherState]) {
             // Admission closes first: `startKeepAlive(_:)` checks it under the keep-alive's lock, so a keep-alive
-            // started concurrently is either refused or installed before `stopKeepAlive()` and stopped by it.
+            // started concurrently is either refused or installed before `stopKeepAlive()` and stopped by it. The
+            // command timeout it imposed stays, so the shutdown does not wait for TCP to give up on a server that
+            // stopped answering, and nothing is enqueued for a context about to be destroyed.
             closeOperationAdmission()
-            stopKeepAlive()
+            stopKeepAlive(restoringTimeout: false)
             return protectedNotifyWatchers.withLock { watchers in
                 let context = protectedContext.take()
                 let activeWatchers = Array(watchers.values)
