@@ -57,7 +57,10 @@ jobs:
 
       - name: Test server log
         if: failure()
-        run: docker logs swiftsmb-test-server
+        run: |
+          docker ps -a --filter name=swiftsmb-test-server
+          docker logs swiftsmb-test-server 2>&1 | tail -100
+          docker exec swiftsmb-test-server sh -c 'for f in /var/log/samba/log.*; do echo "== $f"; tail -100 "$f"; done' || true
 
       - name: Stop the test server
         if: always()
