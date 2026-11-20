@@ -1,0 +1,62 @@
+name: Integration
+
+# Runs the whole test suite, integration tests included, against the Docker Samba server in `TestServer/`.
+# Manual only: start it from the Actions tab (or `gh workflow run integration.yml`).
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Optional `swift test --filter` expression (empty runs everything)"
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  integration:
+    name: Linux + Samba
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Start the test server
+        run: |
+          docker build -t swiftsmb-test-server TestServer
+          docker run -d --name swiftsmb-test-server -p 44445:445 swiftsmb-test-server
+
+      - name: Wait for the test server
+        run: |
+          for _ in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/44445) 2>/dev/null; then
+              echo "Samba is accepting connections"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Samba did not start" >&2
+          docker logs swiftsmb-test-server
+          exit 1
+
+      # The tests run in the Swift container on the host network, so they reach the server at localhost:44445.
+      - name: Test (offline and integration)
+        env:
+          FILTER: ${{ inputs.filter }}
+        run: |
+          docker run --rm --network host \
+            -v "$PWD":/work -w /work \
+            -e FILTER \
+            swift:6.4-resolute \
+            bash -c 'swift --version && swift test --scratch-path /tmp/swift-test --traits EXIFKit ${FILTER:+--filter "$FILTER"}'
+
+      - name: Test server log
+        if: failure()
+        run: docker logs swiftsmb-test-server
+
+      - name: Stop the test server
+        if: always()
+        run: docker rm -f swiftsmb-test-server

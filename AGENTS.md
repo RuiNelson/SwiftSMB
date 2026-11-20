@@ -275,6 +275,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Dockerfile with SAMBA configuration in `TestServer/Dockerfile`
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
+- The push/PR workflows (`apple.yml`, `linux.yml`) skip the integration tests. `.github/workflows/integration.yml` is a manual run (`gh workflow run integration.yml`, optional `-f filter=...`) that builds `TestServer/`, starts it on port 44445 and runs the whole suite in the `swift:6.4-resolute` container on the host network.
 - Integration tests that wait for asynchronous events use `withTimeout(seconds:_:)` from `Tests/SwiftSMBTests/Utils` rather than sleeps.
 - AddressSanitizer (macOS): run `asan.sh`; extra arguments go to `swift test` (for example `zsh asan.sh --filter SMBNotify`). SwiftPM does not link the ASan runtime into the dynamic `libsmb2` product, so the script passes it to the linker. The Swift 6.4 toolchain reports a false `stack-buffer-overflow` (a 9-byte read in `_convertToAnyHashable`) when `#expect` compares an optional against an arithmetic expression, such as `#expect(optionalSize == 100 * 1024 * 1024)`; precompute the expected value in a constant instead.
 
