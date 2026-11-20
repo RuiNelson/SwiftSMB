@@ -107,6 +107,14 @@ server or share, `.disabled` suppresses encryption, and `.required` fails unless
 let configuration = SMB.Configuration(encryption: .required)
 ```
 
+Paths are checked before they are sent to the server. By default only the SMB protocol rules apply, so names such as
+`CON` that a Mac or Samba share accepts are allowed and the server decides. Choose `.ntfsOverSMB` or `.unixOverSMB` to
+reject names the share's file system would refuse before any request is sent:
+
+```swift
+let configuration = SMB.Configuration(pathValidation: .ntfsOverSMB)
+```
+
 ### Listing a directory
 
 `listDirectory(at:)` returns an array with the entries in a directory:
@@ -237,7 +245,7 @@ Add SwiftSMB to your package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.1"),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.1.0"),
 ]
 ```
 
@@ -259,7 +267,7 @@ To read and edit image metadata, enable the `EXIFKit` trait and also add
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.0.1", traits: ["EXIFKit"]),
+    .package(url: "https://github.com/RuiNelson/SwiftSMB.git", from: "5.1.0", traits: ["EXIFKit"]),
 ]
 ```
 
