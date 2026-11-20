@@ -9,6 +9,12 @@
 import Foundation
 
 public extension SMB {
+    /// A byte position within a file.
+    ///
+    /// Offsets are unsigned, as on the wire. ``SMB/File/seek(offset:from:)`` still takes a signed `Int64` delta, since
+    /// a relative seek can move backwards.
+    typealias Offset = UInt64
+
     /// A share advertised by an SMB server.
     struct Share: Equatable, Hashable, CustomDebugStringConvertible, Sendable {
         /// The resource kind behind a share.
@@ -375,6 +381,18 @@ public extension SMB {
                 self = .smb3_11
             default:
                 self = .unknown(rawValue)
+            }
+        }
+
+        /// The raw dialect revision, as the server reports it.
+        public var rawValue: UInt16 {
+            switch self {
+            case .smb2_02: 0x0202
+            case .smb2_10: 0x0210
+            case .smb3_00: 0x0300
+            case .smb3_02: 0x0302
+            case .smb3_11: 0x0311
+            case let .unknown(rawValue): rawValue
             }
         }
 

@@ -76,9 +76,10 @@ public extension SMB {
             context?.isAlive == true
         }
 
-        /// The negotiated SMB dialect.
+        /// The negotiated SMB dialect, as its raw revision number.
         ///
         /// - Throws: ``SMB/Error`` if the connection is already closed.
+        @available(*, deprecated, message: "Use negotiatedDialectKind; its rawValue is the raw dialect revision.")
         public var negotiatedDialect: UInt16 {
             get async throws {
                 try await self.withOperation {
@@ -94,7 +95,8 @@ public extension SMB {
         public var negotiatedDialectKind: NegotiatedDialect {
             get async throws {
                 try await self.withOperation {
-                    try await NegotiatedDialect(rawValue: negotiatedDialect)
+                    let context = try requireContext()
+                    return try await NegotiatedDialect(rawValue: Bridge.dialect(context: context).rawValue)
                 }
             }
         }

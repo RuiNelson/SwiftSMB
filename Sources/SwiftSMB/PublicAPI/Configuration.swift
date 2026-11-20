@@ -103,6 +103,21 @@ public extension SMB {
             case required
         }
 
+        /// How SMB signing is negotiated with the server.
+        public enum Signing: String, Codable, Equatable, Hashable, Sendable {
+            /// Sign messages when the server or share requires it, and otherwise leave the decision to libsmb2.
+            case automatic
+
+            /// Do not require signing.
+            ///
+            /// Connections to servers that require signing still sign their messages, because the server does not
+            /// accept unsigned ones.
+            case disabled
+
+            /// Require SMB signing and fail the connection when it cannot be negotiated.
+            case required
+        }
+
         /// The command timeout, in seconds.
         ///
         /// Commands that exceed the timeout are aborted with an I/O timeout status. `nil` or `0` disables command
@@ -142,8 +157,41 @@ public extension SMB {
             }
         }
 
+        /// The encoded form of ``signing``: `nil`, `false`, and `true` stand for ``Signing/automatic``,
+        /// ``Signing/disabled``, and ``Signing/required``. It is kept, under the `requiresSigning` key, so that
+        /// configurations encoded by earlier versions still decode.
+        private var signingRequirement: Bool?
+
+        /// The SMB signing negotiation policy.
+        public var signing: Signing {
+            get {
+                switch signingRequirement {
+                case nil: .automatic
+                case false: .disabled
+                case true: .required
+                }
+            }
+            set {
+                switch newValue {
+                case .automatic:
+                    signingRequirement = nil
+                case .disabled:
+                    signingRequirement = false
+                case .required:
+                    signingRequirement = true
+                }
+            }
+        }
+
         /// Whether SMB signing is required.
-        public var requiresSigning: Bool?
+        ///
+        /// `nil`, `false`, and `true` stand for ``Signing/automatic``, ``Signing/disabled``, and
+        /// ``Signing/required``.
+        @available(*, deprecated, message: "Use signing, which has the same three states as encryption.")
+        public var requiresSigning: Bool? {
+            get { signingRequirement }
+            set { signingRequirement = newValue }
+        }
 
         /// The authentication mechanism to request.
         public var authentication: AuthenticationMethod?
@@ -197,7 +245,7 @@ public extension SMB {
         ///   - dialect: The SMB dialect negotiation preference.
         ///   - securityMode: The SMB signing negotiation flags.
         ///   - encryption: The SMB encryption negotiation policy.
-        ///   - requiresSigning: Whether SMB signing is required.
+        ///   - signing: The SMB signing negotiation policy.
         ///   - authentication: The authentication mechanism to request.
         ///   - transferBlockSize: The preferred read/write block size.
         ///   - pathValidation: How strictly paths are checked before they are sent to the server.
@@ -206,7 +254,7 @@ public extension SMB {
             dialect: Dialect? = nil,
             securityMode: SecurityMode? = nil,
             encryption: Encryption = .automatic,
-            requiresSigning: Bool? = nil,
+            signing: Signing = .automatic,
             authentication: AuthenticationMethod? = nil,
             transferBlockSize: Int? = nil,
             pathValidation: PathValidation = .smb
@@ -215,10 +263,49 @@ public extension SMB {
             self.dialect = dialect
             self.securityMode = securityMode
             self.encryption = encryption
-            self.requiresSigning = requiresSigning
+            self.signing = signing
             self.authentication = authentication
             self.transferBlockSize = transferBlockSize
             self.pathValidation = pathValidation
+        }
+
+        /// Creates an SMB connection configuration with the signing requirement as a `Bool?`.
+        ///
+        /// - Parameters:
+        ///   - timeout: The command timeout, in seconds.
+        ///   - dialect: The SMB dialect negotiation preference.
+        ///   - securityMode: The SMB signing negotiation flags.
+        ///   - encryption: The SMB encryption negotiation policy.
+        ///   - requiresSigning: Whether SMB signing is required.
+        ///   - authentication: The authentication mechanism to request.
+        ///   - transferBlockSize: The preferred read/write block size.
+        ///   - pathValidation: How strictly paths are checked before they are sent to the server.
+        @available(
+            *,
+            deprecated,
+            message: "Use init(timeout:dialect:securityMode:encryption:signing:authentication:transferBlockSize:pathValidation:)."
+        )
+        public init(
+            timeout: Int? = nil,
+            dialect: Dialect? = nil,
+            securityMode: SecurityMode? = nil,
+            encryption: Encryption = .automatic,
+            requiresSigning: Bool?,
+            authentication: AuthenticationMethod? = nil,
+            transferBlockSize: Int? = nil,
+            pathValidation: PathValidation = .smb
+        ) {
+            self.init(
+                timeout: timeout,
+                dialect: dialect,
+                securityMode: securityMode,
+                encryption: encryption,
+                signing: .automatic,
+                authentication: authentication,
+                transferBlockSize: transferBlockSize,
+                pathValidation: pathValidation
+            )
+            signingRequirement = requiresSigning
         }
 
         /// Decodes a configuration.
@@ -231,7 +318,7 @@ public extension SMB {
             dialect = try container.decodeIfPresent(Dialect.self, forKey: .dialect)
             securityMode = try container.decodeIfPresent(SecurityMode.self, forKey: .securityMode)
             encryptionRequirement = try container.decodeIfPresent(Bool.self, forKey: .encryptionRequirement)
-            requiresSigning = try container.decodeIfPresent(Bool.self, forKey: .requiresSigning)
+            signingRequirement = try container.decodeIfPresent(Bool.self, forKey: .signingRequirement)
             authentication = try container.decodeIfPresent(AuthenticationMethod.self, forKey: .authentication)
             transferBlockSize = try container.decodeIfPresent(Int.self, forKey: .transferBlockSize)
             let pathValidation = try container.decodeIfPresent(String.self, forKey: ._pathValidation)
@@ -239,7 +326,7 @@ public extension SMB {
         }
 
         public var debugDescription: String {
-            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), encryption: \(encryption), requiresSigning: \(String(describing: requiresSigning)), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)), pathValidation: \(pathValidation))"
+            "SMB.Configuration(timeout: \(String(describing: timeout)), dialect: \(String(describing: dialect)), securityMode: \(String(describing: securityMode)), encryption: \(encryption), signing: \(signing), authentication: \(String(describing: authentication)), transferBlockSize: \(String(describing: transferBlockSize)), pathValidation: \(pathValidation))"
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -247,7 +334,7 @@ public extension SMB {
             case dialect
             case securityMode
             case encryptionRequirement = "requiresEncryption"
-            case requiresSigning
+            case signingRequirement = "requiresSigning"
             case authentication
             case transferBlockSize
             case _pathValidation = "pathValidation"
@@ -304,6 +391,10 @@ public extension SMB {
         case ntlmssp = 1
 
         /// Use Kerberos authentication.
+        ///
+        /// - Important: Kerberos does not work yet. SwiftSMB's libsmb2 build has no Kerberos support (it needs a GSSAPI
+        /// library), so connecting with this method fails. Use ``ntlmssp`` or ``automatic`` instead. The case is kept
+        /// so that the type and stored configurations stay stable until Kerberos is implemented.
         case kerberos = 2
 
         /// The bridge representation for this authentication method.
