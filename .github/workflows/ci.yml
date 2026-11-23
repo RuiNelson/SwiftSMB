@@ -83,8 +83,18 @@ jobs:
 
   windows:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    name: Windows (x86_64)
-    runs-on: windows-latest
+    name: Windows (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-latest
+            build_arch: amd64
+          - arch: arm64
+            runner: windows-11-arm
+            build_arch: arm64
     timeout-minutes: 60
     steps:
       - name: Enable long paths
@@ -101,6 +111,7 @@ jobs:
         with:
           swift-version: swift-6.4.3-release
           swift-build: 6.4.3-RELEASE
+          build_arch: ${{ matrix.build_arch }}
 
       - name: Swift version
         run: swift --version
