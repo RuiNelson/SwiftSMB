@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts and the test server's Dockerfile run on Linux, so they keep LF when checked out on Windows
+# (where Git converts text files to CRLF, and a shebang line then fails with "env: use -[v]S").
+*.sh text eol=lf
+TestServer/Dockerfile text eol=lf
