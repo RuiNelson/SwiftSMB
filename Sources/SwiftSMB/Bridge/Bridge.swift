@@ -266,10 +266,11 @@ class Bridge {
     }
 
     /// Returns the server GUID negotiated for a connected context as a native Swift UUID.
-    static func serverGUID(context: Context) async throws -> UUID {
+    // Qualified: on Windows the SMB2 module pulls in <windows.h>, whose own `UUID` would make the name ambiguous.
+    static func serverGUID(context: Context) async throws -> Foundation.UUID {
         try await perform(context: context) {
             guard let rawGUID = smb2_get_server_guid(context.raw) else {
-                return UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+                return Foundation.UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
             }
 
             var bytes = Array(UnsafeRawBufferPointer(start: rawGUID, count: 16))
@@ -279,7 +280,7 @@ class Bridge {
             bytes.swapAt(1, 2)
             bytes.swapAt(4, 5)
             bytes.swapAt(6, 7)
-            return UUID(uuid: (
+            return Foundation.UUID(uuid: (
                 bytes[0],
                 bytes[1],
                 bytes[2],
