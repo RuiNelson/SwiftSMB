@@ -871,7 +871,7 @@ class Bridge {
             let (sum, overflow) = base.addingReportingOverflow(UInt64(offset))
             guard !overflow else {
                 throw SMB.Error.posix(
-                    code: POSIXErrorCode.EOVERFLOW.rawValue,
+                    code: EOVERFLOW,
                     operation: "smb2_lseek",
                     message: "Seek offset cannot be represented as Int64"
                 )
@@ -880,7 +880,7 @@ class Bridge {
         }
         guard destination <= UInt64(Int64.max) else {
             throw SMB.Error.posix(
-                code: POSIXErrorCode.EOVERFLOW.rawValue,
+                code: EOVERFLOW,
                 operation: "smb2_lseek",
                 message: "Seek offset cannot be represented as Int64"
             )
@@ -1421,7 +1421,7 @@ class Bridge {
 
     /// The error thrown when a context has no connection to service.
     static func noConnectionError(operation: String) -> SMB.Error {
-        .posix(code: POSIXErrorCode.ENOTCONN.rawValue, operation: operation, message: "No connection exists")
+        .posix(code: ENOTCONN, operation: operation, message: "No connection exists")
     }
 
     /// Balances `Unmanaged.passRetained(state)` for a queued command once no callback can reference `state` any more.
