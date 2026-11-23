@@ -10,6 +10,7 @@
 [![tvOS](https://img.shields.io/badge/tvOS-15+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](Scripts/LinuxBuild/build.sh)
 [![Android](https://img.shields.io/badge/Android-28+-lightgrey?logo=android&logoColor=white)](Scripts/AndroidBuild/build.sh)
+[![Windows](https://img.shields.io/badge/Windows-x86__64-lightgrey?logo=windows&logoColor=white)](.github/workflows/ci.yml)
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
 [![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
@@ -217,7 +218,7 @@ dependencies: [
 The trait is disabled by default, so packages that don't enable it never resolve or fetch EXIFKit; without it, the
 `SwiftSMBEXIFKit` module is empty.
 
-SwiftSMB currently declares support for macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, visionOS 1+, and watchOS 9+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
+SwiftSMB currently declares support for macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, visionOS 1+, and watchOS 9+. It also builds for Linux, Android (aarch64, API 28+), and Windows (x86_64). The package uses Swift tools version 6.4.
 
 ### Xcode Project
 
