@@ -394,7 +394,7 @@ final class SMBKeepAliveEchoRace: Sendable {
         // libsmb2's own command timeout expired, which can happen first when the Swift deadline equals it.
         case .ntStatus(.ioTimeout, _, _, _):
             return .noResponse(timeout: timeout)
-        case let .posix(code, _, _) where code == POSIXErrorCode.ETIMEDOUT.rawValue:
+        case let .posix(code, _, _) where code == ETIMEDOUT:
             return .noResponse(timeout: timeout)
         default:
             return .failed(error)
