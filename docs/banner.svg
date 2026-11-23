@@ -169,7 +169,7 @@
   <g font-family="'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif">
     <text x="248" y="106" font-size="13" font-weight="600" letter-spacing="2.6" class="eyebrow">SWIFT PACKAGE</text>
     <text x="246" y="164" font-size="62" font-weight="700" letter-spacing="-1.8" class="ink">Swift<tspan fill="url(#smb-word)">SMB</tspan></text>
-    <text x="248" y="198" font-size="22" font-weight="400" class="ink2">SMB2 and SMB3 file shares for Swift.</text>
+    <text x="248" y="198" font-size="22" font-weight="400" class="ink2">Feature-rich SMB2/SMB3 client in Swift</text>
     <text x="248" y="238" font-size="15" font-weight="500" letter-spacing="0.3" class="ink3">Apple  ·  Linux  ·  Android  ·  Windows</text>
   </g>
 </svg>
