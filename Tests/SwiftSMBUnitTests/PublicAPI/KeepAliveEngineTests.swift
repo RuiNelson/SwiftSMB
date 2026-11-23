@@ -174,13 +174,13 @@ struct KeepAliveEngineTests {
     func raceFailed() async {
         let outcome = await SMBKeepAliveEchoRace.run(timeout: 5) { started, _ in
             started()
-            throw SMB.Error.posix(code: POSIXErrorCode.ECONNRESET.rawValue, operation: "echo", message: "failed")
+            throw SMB.Error.posix(code: ECONNRESET, operation: "echo", message: "failed")
         }
         guard case let .failed(error) = outcome, let smbError = error as? SMB.Error else {
             Issue.record("expected a failure, got \(outcome)")
             return
         }
-        #expect(smbError.posixCode == POSIXErrorCode.ECONNRESET.rawValue)
+        #expect(smbError.posixCode == ECONNRESET)
     }
 
     @Test("an echo on a closed connection stops the keep-alive quietly")
@@ -420,7 +420,7 @@ struct KeepAliveEngineTests {
         let release = Flag()
         let outcome = await SMBKeepAliveEchoRace.run(timeout: 30) { started, finished in
             started()
-            finished(SMB.Error.posix(code: POSIXErrorCode.ECONNRESET.rawValue, operation: "echo", message: "failed"))
+            finished(SMB.Error.posix(code: ECONNRESET, operation: "echo", message: "failed"))
             while !release.isSet {
                 try? await Task.sleep(nanoseconds: 10_000_000)
             }
@@ -430,12 +430,12 @@ struct KeepAliveEngineTests {
             Issue.record("expected a failure, got \(outcome)")
             return
         }
-        #expect(smbError.posixCode == POSIXErrorCode.ECONNRESET.rawValue)
+        #expect(smbError.posixCode == ECONNRESET)
     }
 
     @Test("libsmb2's own command timeout is reported as no response", arguments: [
         SMB.Error.ntStatus(.ioTimeout, posixCode: nil, operation: "smb2_echo", message: ""),
-        SMB.Error.posix(code: POSIXErrorCode.ETIMEDOUT.rawValue, operation: "smb2_echo", message: ""),
+        SMB.Error.posix(code: ETIMEDOUT, operation: "smb2_echo", message: ""),
     ])
     func raceLibraryTimeoutIsNoResponse(error: SMB.Error) async {
         let outcome = await SMBKeepAliveEchoRace.run(timeout: 3) { started, _ in
