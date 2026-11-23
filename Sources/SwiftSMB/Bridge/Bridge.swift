@@ -88,6 +88,7 @@ class Bridge {
     /// The new context is not shared yet, so this runs on the caller's thread.
     static func createContext() throws -> Context {
         installGCMSeal
+        installNetworking
         guard let raw = lifecycleLock.withLock({ _ in smb2_init_context() }) else {
             throw SMB.Error.contextCreationFailed
         }
@@ -1397,29 +1398,14 @@ class Bridge {
     ) throws {
         let pollTimeoutMilliseconds = cancellation == nil ? 1000 : RequestCancellation.pollIntervalMilliseconds
         do {
-            var pfd = pollfd()
             while !state.isFinished {
                 try cancellation?.withdrawIfRequested(context: context)
-                // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
-                // synchronous wait loop fails in this case too.
-                pfd.fd = smb2_get_fd(context.raw)
-                guard pfd.fd >= 0 else {
-                    throw noConnectionError(operation: "smb2_service")
-                }
-                pfd.events = Int16(smb2_which_events(context.raw))
-                var rc: Int32 = 0
-                repeat {
-                    rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, pollTimeoutMilliseconds) }
-                }
-                while rc < 0 && errno == EINTR
-                if rc < 0 {
-                    throw SMB.Error.posix(
-                        code: errno,
-                        operation: "poll",
-                        message: "poll failed while waiting for SMB2 operation"
-                    )
-                }
-                if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+                let revents = try waitForConnectionEvents(
+                    context: context,
+                    timeoutMilliseconds: pollTimeoutMilliseconds,
+                    failureMessage: "poll failed while waiting for SMB2 operation"
+                )
+                if smb2_service(context.raw, revents) < 0 {
                     throw SMB.Error.fromBridge(context, operation: "smb2_service")
                 }
             }

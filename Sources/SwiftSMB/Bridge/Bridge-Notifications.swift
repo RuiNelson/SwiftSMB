@@ -114,28 +114,13 @@ extension Bridge {
         timeoutMilliseconds: Int32 = defaultServiceTimeoutMilliseconds
     ) throws {
         do {
-            var pfd = pollfd()
-            pfd.fd = smb2_get_fd(context.raw)
-            guard pfd.fd >= 0 else {
-                throw noConnectionError(operation: "smb2_service")
-            }
-            pfd.events = Int16(smb2_which_events(context.raw))
+            let revents = try waitForConnectionEvents(
+                context: context,
+                timeoutMilliseconds: timeoutMilliseconds,
+                failureMessage: "poll failed while waiting for SMB2 notification"
+            )
 
-            var rc: Int32 = 0
-            repeat {
-                rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, timeoutMilliseconds) }
-            }
-            while rc < 0 && errno == EINTR
-
-            if rc < 0 {
-                throw SMB.Error.posix(
-                    code: errno,
-                    operation: "poll",
-                    message: "poll failed while waiting for SMB2 notification"
-                )
-            }
-
-            if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+            if smb2_service(context.raw, revents) < 0 {
                 throw SMB.Error.fromBridge(context, operation: "smb2_service")
             }
         }

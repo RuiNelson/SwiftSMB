@@ -80,3 +80,28 @@ jobs:
       android_sdk_pre_build_command: |
         git submodule update --init --recursive
       android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build --traits EXIFKit -v
+
+  windows:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: Windows (x86_64)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Enable long paths
+        run: git config --system core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.4"
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --scratch-path ${{ runner.temp }}\swift-build -v

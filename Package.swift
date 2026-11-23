@@ -93,6 +93,8 @@ let package = Package(
             sources: [
                 "Vendored/libsmb2-SwiftSMB/lib",
                 "Sources/libsmb2/xcode_compat.c",
+                // arc4random_buf over BCryptGenRandom on Windows; empty elsewhere.
+                "Sources/libsmb2/windows_compat.c",
             ],
             publicHeadersPath: "Sources/libsmb2/include",
             cSettings: [
@@ -111,10 +113,24 @@ let package = Package(
                 // On Linux, the system's OpenSSL, loaded with dlopen, seals GCM before BearSSL does (the fork's
                 // MODS.md M6). Not on Android, whose system libcrypto is not available to applications.
                 .define("SMB2_GCM_DLOPEN_OPENSSL", to: "1", .when(platforms: [.linux])),
-                .disableWarning("conversion")
+                .disableWarning("conversion"),
+                // libsmb2 keys its Windows code on _WINDOWS, which only MSVC project files define. The configuration
+                // header defines it too (the Swift importer needs it), and the NEED_* macros select compat.c's
+                // replacements for getpid, getlogin_r, random and srandom. lib/compat.c's `random` is rand(); the
+                // strong source for smb2_random_bytes() is arc4random_buf in windows_compat.c.
+                .define("_WINDOWS", .when(platforms: [.windows])),
+                .define("WIN32_LEAN_AND_MEAN", .when(platforms: [.windows])),
+                .define("_CRT_SECURE_NO_WARNINGS", .when(platforms: [.windows])),
+                .define("_WINSOCK_DEPRECATED_NO_WARNINGS", .when(platforms: [.windows])),
+                .define("NEED_GETLOGIN_R", .when(platforms: [.windows])),
+                .define("NEED_GETPID", .when(platforms: [.windows])),
+                .define("NEED_RANDOM", .when(platforms: [.windows])),
+                .define("NEED_SRANDOM", .when(platforms: [.windows])),
             ],
             linkerSettings: [
                 .linkedLibrary("dl", .when(platforms: [.linux])),
+                .linkedLibrary("ws2_32", .when(platforms: [.windows])),
+                .linkedLibrary("bcrypt", .when(platforms: [.windows])),
             ],
         ),
         .target(

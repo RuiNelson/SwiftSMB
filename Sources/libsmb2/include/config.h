@@ -5,6 +5,8 @@
 #include "../../../Vendored/libsmb2-SwiftSMB/include/linux/config.h"
 #elif defined(__APPLE__)
 #include "../../../Vendored/libsmb2-SwiftSMB/include/apple/config.h"
+#elif defined(_WIN32)
+#include "windows-config.h"
 #else
 #error Unsupported platform
 #endif
