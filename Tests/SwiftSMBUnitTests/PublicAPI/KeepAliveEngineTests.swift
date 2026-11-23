@@ -398,7 +398,12 @@ struct KeepAliveEngineTests {
             Issue.record("expected an answer, got \(outcome)")
             return
         }
-        #expect(roundTrip >= 0.1)
+        #if os(Windows)
+            // Thread.sleep and DispatchTime read different Windows clocks, so a 0.1 s sleep can measure slightly less.
+            #expect(roundTrip >= 0.09)
+        #else
+            #expect(roundTrip >= 0.1)
+        #endif
     }
 
     @Test("an echo that finished on the queue after the deadline is no response, whichever side notices")
