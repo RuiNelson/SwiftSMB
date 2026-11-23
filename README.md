@@ -15,7 +15,7 @@
 [![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
 [![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml)
 
-![SwiftSMB Banner](docs/banner.jpg)
+![SwiftSMB Banner](docs/banner.svg)
 
 SwiftSMB is a Swift Package Manager library for talking to SMB2 and SMB3 file shares from Swift. It wraps the proven [`libsmb2`](https://github.com/sahlberg/libsmb2) client library in a Swift-first API with typed configuration, friendly path handling, file and directory handles, share discovery, metadata operations, and convenience helpers for common upload and download workflows.
 
