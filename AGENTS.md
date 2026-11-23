@@ -19,7 +19,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   ├── Bridge                            # Internal libsmb2 bridge; no public API here.
 │   │   │   ├── Extensions
 │   │   │   │   ├── Int.swift                 # Extensions to `Int`.
-│   │   │   │   ├── String?.swift             # Extensions to `String?`.
+│   │   │   │   ├── OptionalString.swift      # Extensions to `String?`. (No `?` in file names: Windows forbids it.)
 │   │   │   │   └── SMB.Error.swift           # SMB.Error bridge factory and check() helper.
 │   │   │   ├── Bridge.swift                  # High-level async POSIX-like bridge calls on per-context queues.
 │   │   │   ├── BridgeTypes.swift             # Bridge structs/enums/options nested under `extension Bridge`.

@@ -1,6 +1,6 @@
 //
 // Part of SwiftSMB
-// String?.swift
+// OptionalString.swift
 //
 // Licensed under Apache License v2.0
 // Copyright its respective authors
