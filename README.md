@@ -10,12 +10,13 @@
 [![tvOS](https://img.shields.io/badge/tvOS-15+-lightgrey?logo=apple&logoColor=white)](Package.swift)
 [![Linux](https://img.shields.io/badge/Linux-supported-lightgrey?logo=linux&logoColor=white)](Scripts/LinuxBuild/build.sh)
 [![Android](https://img.shields.io/badge/Android-28+-lightgrey?logo=android&logoColor=white)](Scripts/AndroidBuild/build.sh)
+[![Windows](https://img.shields.io/badge/Windows-supported-lightgrey?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoMTEuNHYxMS40SDB6TTEyLjYgMEgyNHYxMS40SDEyLjZ6TTAgMTIuNmgxMS40VjI0SDB6TTEyLjYgMTIuNkgyNFYyNEgxMi42eiIvPjwvc3ZnPg%3D%3D)](.github/workflows/ci.yml)
 
 [![Swift Package Manager](https://img.shields.io/badge/SPM-supported-orange.svg)](https://swift.org/package-manager/)
 [![Release](https://img.shields.io/github/v/release/RuiNelson/SwiftSMB)](https://github.com/RuiNelson/SwiftSMB/releases)
 [![CI](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml/badge.svg)](https://github.com/RuiNelson/SwiftSMB/actions/workflows/ci.yml)
 
-![SwiftSMB Banner](docs/banner.jpg)
+![SwiftSMB Banner](docs/banner.svg)
 
 SwiftSMB is a Swift Package Manager library for talking to SMB2 and SMB3 file shares from Swift. It wraps the proven [`libsmb2`](https://github.com/sahlberg/libsmb2) client library in a Swift-first API with typed configuration, friendly path handling, file and directory handles, share discovery, metadata operations, and convenience helpers for common upload and download workflows.
 
@@ -217,7 +218,7 @@ dependencies: [
 The trait is disabled by default, so packages that don't enable it never resolve or fetch EXIFKit; without it, the
 `SwiftSMBEXIFKit` module is empty.
 
-SwiftSMB currently declares support for macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, visionOS 1+, and watchOS 9+. It also builds for Linux and Android (aarch64, API 28+). The package uses Swift tools version 6.4.
+SwiftSMB currently declares support for macOS 12+, iOS 16+, macCatalyst 15+, tvOS 15+, visionOS 1+, and watchOS 9+. It also builds for Linux, Android (aarch64, API 28+), and Windows. The package uses Swift tools version 6.4.
 
 ### Xcode Project
 

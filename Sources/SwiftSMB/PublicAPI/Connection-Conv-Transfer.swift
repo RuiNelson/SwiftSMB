@@ -11,6 +11,9 @@
 #endif
 import Foundation
 import PathWorks
+#if os(Windows)
+    import WinSDK
+#endif
 
 public extension SMB.Connection {
     /// The starting position for a file transfer.
@@ -1189,7 +1192,7 @@ private func assertValidLocalDestination(_ url: URL, operation: SMB.Error.Invali
 private func createUniqueLocalTempFile(near: URL, operation: SMB.Error.InvalidArgumentOperation) throws -> URL {
     let directory = near.deletingLastPathComponent()
     for _ in 0 ..< 100 {
-        let candidate = directory.appendingPathComponent("SwiftSMB.\(UUID().uuidString).tmp")
+        let candidate = directory.appendingPathComponent("SwiftSMB.\(Foundation.UUID().uuidString).tmp")
         if FileManager.default.createFile(atPath: candidate.path, contents: nil) {
             return candidate
         }
@@ -1763,7 +1766,7 @@ private func localFileSize(for url: URL, operation: SMB.Error.InvalidArgumentOpe
 /// Builds a temporary remote path that does not currently exist.
 private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.Connection) async throws -> String {
     for _ in 0 ..< 100 {
-        let name = "partial-xfer.\(UUID().uuidString).tmp"
+        let name = "partial-xfer.\(Foundation.UUID().uuidString).tmp"
         let directory = remote.removingLastPathComponent
         let candidate = directory.isEmpty ? name : directory.appendingPathComponent(name)
         if try await connection.itemExists(at: candidate) == .false {
@@ -1780,9 +1783,36 @@ private func uniqueRemoteTemporaryPath(near remote: String, on connection: SMB.C
 /// Moves a completed temporary file into its final destination.
 private func moveTempFile(_ temp: URL, to destination: URL) throws {
     if FileManager.default.fileExists(atPath: destination.path) {
-        _ = try FileManager.default.replaceItemAt(destination, withItemAt: temp)
+        try replaceItem(at: destination, withItemAt: temp)
     }
     else {
         try FileManager.default.moveItem(at: temp, to: destination)
     }
+}
+
+/// Replaces `destination` with `temp` in one step.
+private func replaceItem(at destination: URL, withItemAt temp: URL) throws {
+    #if os(Windows)
+        // Foundation has no `replaceItemAt` on Windows: it traps with "not yet implemented". `MoveFileExW` replaces an
+        // existing file in one call, as the Foundation method does elsewhere.
+        func windowsPath(_ url: URL) -> String {
+            url.withUnsafeFileSystemRepresentation { $0.map { String(cString: $0) } ?? url.path }
+        }
+        let moved = windowsPath(temp).withCString(encodedAs: UTF16.self) { source in
+            windowsPath(destination).withCString(encodedAs: UTF16.self) { target in
+                MoveFileExW(source, target, DWORD(MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED))
+            }
+        }
+        guard moved else {
+            throw CocoaError(
+                .fileWriteUnknown,
+                userInfo: [
+                    NSFilePathErrorKey: destination.path,
+                    NSUnderlyingErrorKey: NSError(domain: "Win32", code: Int(GetLastError())),
+                ]
+            )
+        }
+    #else
+        _ = try FileManager.default.replaceItemAt(destination, withItemAt: temp)
+    #endif
 }

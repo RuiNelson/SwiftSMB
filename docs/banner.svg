@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="smb-t">
+  <title id="smb-t">SwiftSMB — SMB2 and SMB3 file shares for Swift</title>
+  <style>
+    :root {
+      --bg0: #090B10; --bg1: #14171F;
+      --ink: #FFFFFF; --ink2: #B4B4BC; --ink3: #8E8E93; --eyebrow: #64B5FF;
+      --wa: #6FD6FF; --wb: #3D8BFF;
+      --lane: #FFFFFF; --packet: #FFFFFF; --glyph: #FFFFFF;
+      --card-a: #FFFFFF; --card-ao: 0.28; --card-b: #FFFFFF; --card-bo: 0.09;
+      --card-stroke: #FFFFFF;
+      --shadow-o: 0.35;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg0: #FFFFFF; --bg1: #EAF3FF;
+        --ink: #1D1D1F; --ink2: #55555C; --ink3: #6E6E73; --eyebrow: #0A63C9;
+        --wa: #0A84FF; --wb: #3D5AE6;
+        --lane: #1E8BFF; --packet: #1E8BFF; --glyph: #1E8BFF;
+        --card-a: #FFFFFF; --card-ao: 0.96; --card-b: #FFFFFF; --card-bo: 0.72;
+        --card-stroke: #1E8BFF;
+        --shadow-o: 0.14;
+      }
+    }
+    .bg0 { stop-color: var(--bg0); } .bg1 { stop-color: var(--bg1); }
+    .ink { fill: var(--ink); } .ink2 { fill: var(--ink2); } .ink3 { fill: var(--ink3); } .eyebrow { fill: var(--eyebrow); }
+    .wa { stop-color: var(--wa); } .wb { stop-color: var(--wb); }
+    .lane { stroke: var(--lane); } .tw { fill: var(--lane); } .packet { fill: var(--packet); }
+    .ca { stop-color: var(--card-a); stop-opacity: var(--card-ao); }
+    .cb { stop-color: var(--card-b); stop-opacity: var(--card-bo); }
+    .cstroke { stroke: var(--card-stroke); } .glyph { fill: var(--glyph); }
+    .shadow { flood-opacity: var(--shadow-o); }
+  </style>
+  <defs>
+    <linearGradient id="smb-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop class="bg0" offset="0"/>
+      <stop class="bg1" offset="1"/>
+    </linearGradient>
+    <radialGradient id="smb-glowL" cx="150" cy="160" r="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#64D2FF" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#64D2FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="smb-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6FD6FF"/>
+      <stop offset="0.55" stop-color="#1E8BFF"/>
+      <stop offset="1" stop-color="#5A4FE0"/>
+    </linearGradient>
+    <linearGradient id="smb-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.28"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="smb-word" x1="0" y1="0" x2="1" y2="0">
+      <stop class="wa" offset="0"/>
+      <stop class="wb" offset="1"/>
+    </linearGradient>
+    <!-- silk waves -->
+    <linearGradient id="smb-w1" gradientUnits="userSpaceOnUse" x1="520" y1="330" x2="1280" y2="30">
+      <stop offset="0" stop-color="#5A4FE0" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#1E8BFF" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#64D2FF" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="smb-w2" gradientUnits="userSpaceOnUse" x1="540" y1="340" x2="1280" y2="110">
+      <stop offset="0" stop-color="#1E8BFF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#1E8BFF" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#6FD6FF" stop-opacity="0.75"/>
+    </linearGradient>
+    <linearGradient id="smb-w3" gradientUnits="userSpaceOnUse" x1="600" y1="340" x2="1280" y2="220">
+      <stop offset="0" stop-color="#5A4FE0" stop-opacity="0"/>
+      <stop offset="0.6" stop-color="#5E5CE6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#1E8BFF" stop-opacity="0.8"/>
+    </linearGradient>
+    <linearGradient id="smb-card" x1="0" y1="0" x2="0" y2="1">
+      <stop class="ca" offset="0"/>
+      <stop class="cb" offset="1"/>
+    </linearGradient>
+    <filter id="smb-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#1E8BFF" flood-opacity="0.45"/>
+    </filter>
+    <filter id="smb-soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow class="shadow" dx="0" dy="6" stdDeviation="6" flood-color="#000"/>
+    </filter>
+    <!-- a share (folder) card, centred on the origin -->
+    <g id="smb-share">
+      <rect x="-32" y="-26" width="64" height="52" rx="12" fill="url(#smb-card)" class="cstroke" stroke-opacity="0.45"/>
+      <path d="M-16-8a3 3 0 0 1 3-3h8l4 4h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-26a3 3 0 0 1-3-3z" class="glyph" fill-opacity="0.92"/>
+    </g>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="320" fill="url(#smb-bg)"/>
+  <rect width="1280" height="320" fill="url(#smb-glowL)"/>
+
+  <!-- Silk waves -->
+  <path d="M520 330C700 330 780 130 970 150 1110 165 1180 90 1280 40V330Z" fill="url(#smb-w1)"/>
+  <path d="M540 340C740 330 800 200 980 215 1120 227 1190 170 1280 130V340Z" fill="url(#smb-w2)"/>
+  <path d="M600 340C780 340 850 260 1000 270 1120 278 1200 250 1280 230V340Z" fill="url(#smb-w3)"/>
+  <path d="M600 330C720 330 790 130 970 150 1110 165 1180 90 1280 40" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.5"/>
+  <path d="M640 338C760 328 810 200 980 215 1120 227 1190 170 1280 130" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.2"/>
+
+  <!-- Network links (hub at 990,160) -->
+  <g fill="none" class="lane" stroke-opacity="0.4" stroke-width="1.5" stroke-linecap="round">
+    <path d="M990 160 790 96"/>
+    <path d="M990 160 810 240"/>
+    <path d="M990 160 1160 70"/>
+    <path d="M990 160 1180 232"/>
+    <path d="M990 160 1060 258"/>
+  </g>
+
+  <!-- Packets travelling along the links -->
+  <g class="packet">
+    <circle r="3.5" opacity="0"><animateMotion dur="3.6s" repeatCount="indefinite" path="M990 160 790 96"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.6s" repeatCount="indefinite"/></circle>
+    <circle r="3.5" opacity="0"><animateMotion dur="3.6s" begin="-1.8s" repeatCount="indefinite" path="M790 96 990 160"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.6s" begin="-1.8s" repeatCount="indefinite"/></circle>
+    <circle r="3.5" opacity="0"><animateMotion dur="4.2s" begin="-0.6s" repeatCount="indefinite" path="M810 240 990 160"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="4.2s" begin="-0.6s" repeatCount="indefinite"/></circle>
+    <circle r="3.5" opacity="0"><animateMotion dur="3.2s" begin="-2s" repeatCount="indefinite" path="M990 160 1160 70"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.2s" begin="-2s" repeatCount="indefinite"/></circle>
+    <circle r="3.5" opacity="0"><animateMotion dur="3.8s" begin="-1s" repeatCount="indefinite" path="M1180 232 990 160"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.8s" begin="-1s" repeatCount="indefinite"/></circle>
+    <circle r="3.5" opacity="0"><animateMotion dur="3s" begin="-0.3s" repeatCount="indefinite" path="M990 160 1060 258"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3s" begin="-0.3s" repeatCount="indefinite"/></circle>
+  </g>
+
+  <!-- Share cards (gently floating) -->
+  <g filter="url(#smb-soft)">
+    <g transform="translate(790 96)"><g><use href="#smb-share"/><animateTransform attributeName="transform" type="translate" values="0 0;0 -6;0 0" dur="5s" repeatCount="indefinite"/></g></g>
+    <g transform="translate(810 240)"><g><use href="#smb-share"/><animateTransform attributeName="transform" type="translate" values="0 0;0 6;0 0" dur="6s" repeatCount="indefinite"/></g></g>
+    <g transform="translate(1160 70)"><g><use href="#smb-share"/><animateTransform attributeName="transform" type="translate" values="0 0;0 -5;0 0" dur="5.5s" repeatCount="indefinite"/></g></g>
+    <g transform="translate(1180 232)"><g><use href="#smb-share"/><animateTransform attributeName="transform" type="translate" values="0 0;0 5;0 0" dur="4.5s" repeatCount="indefinite"/></g></g>
+    <g transform="translate(1060 258) scale(0.8)"><g><use href="#smb-share"/><animateTransform attributeName="transform" type="translate" values="0 0;0 -5;0 0" dur="6.5s" repeatCount="indefinite"/></g></g>
+  </g>
+
+  <!-- Hub: server -->
+  <circle cx="990" cy="160" r="46" fill="none" class="lane" stroke-opacity="0.35">
+    <animate attributeName="r" values="40;62;40" dur="4s" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.45;0;0.45" dur="4s" repeatCount="indefinite"/>
+  </circle>
+  <g filter="url(#smb-glow)">
+    <rect x="954" y="124" width="72" height="72" rx="20" fill="url(#smb-tile)"/>
+  </g>
+  <rect x="954.5" y="124.5" width="71" height="71" rx="19.5" fill="none" stroke="#fff" stroke-opacity="0.4"/>
+  <rect x="967" y="140" width="46" height="16" rx="5" fill="#fff" fill-opacity="0.96"/>
+  <rect x="967" y="162" width="46" height="16" rx="5" fill="#fff" fill-opacity="0.96"/>
+  <circle cx="976" cy="148" r="2.4" fill="#1E8BFF"/>
+  <circle cx="976" cy="170" r="2.4" fill="#1E8BFF"/>
+  <rect x="984" y="146.5" width="21" height="3" rx="1.5" fill="#1E8BFF" fill-opacity="0.35"/>
+  <rect x="984" y="168.5" width="21" height="3" rx="1.5" fill="#1E8BFF" fill-opacity="0.35"/>
+
+  <!-- Twinkles -->
+  <g class="tw">
+    <circle cx="900" cy="40" r="1.8" opacity="0.5"><animate attributeName="opacity" values="0.15;0.8;0.15" dur="4s" repeatCount="indefinite"/></circle>
+    <circle cx="1100" cy="150" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.8;0.15;0.8" dur="5s" repeatCount="indefinite"/></circle>
+    <circle cx="1240" cy="150" r="2" opacity="0.5"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="3.5s" repeatCount="indefinite"/></circle>
+    <circle cx="700" cy="170" r="1.4" opacity="0.5"><animate attributeName="opacity" values="0.7;0.1;0.7" dur="4.5s" repeatCount="indefinite"/></circle>
+  </g>
+
+  <!-- App-icon tile -->
+  <g filter="url(#smb-glow)">
+    <rect x="80" y="96" width="128" height="128" rx="30" fill="url(#smb-tile)"/>
+  </g>
+  <rect x="80" y="96" width="128" height="128" rx="30" fill="url(#smb-sheen)"/>
+  <rect x="80.5" y="96.5" width="127" height="127" rx="29.5" fill="none" stroke="#fff" stroke-opacity="0.28"/>
+  <rect x="106" y="126" width="76" height="28" rx="9" fill="#fff" fill-opacity="0.96"/>
+  <rect x="106" y="162" width="76" height="28" rx="9" fill="#fff" fill-opacity="0.96"/>
+  <circle cx="121" cy="140" r="4" fill="#1E8BFF"/>
+  <circle cx="121" cy="176" r="4" fill="#1E8BFF"/>
+  <rect x="135" y="138" width="36" height="4" rx="2" fill="#1E8BFF" fill-opacity="0.35"/>
+  <rect x="135" y="174" width="36" height="4" rx="2" fill="#1E8BFF" fill-opacity="0.35"/>
+  <path d="M144 190v10M122 200h44" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="122" cy="202" r="4.5" fill="#fff"/>
+  <circle cx="144" cy="202" r="4.5" fill="#fff"/>
+  <circle cx="166" cy="202" r="4.5" fill="#fff"/>
+
+  <!-- Wordmark -->
+  <g font-family="'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif">
+    <text x="248" y="106" font-size="13" font-weight="600" letter-spacing="2.6" class="eyebrow">SWIFT PACKAGE</text>
+    <text x="246" y="164" font-size="62" font-weight="700" letter-spacing="-1.8" class="ink">Swift<tspan fill="url(#smb-word)">SMB</tspan></text>
+    <text x="248" y="198" font-size="22" font-weight="400" class="ink2">Feature-rich SMB2/SMB3 client in Swift</text>
+    <text x="248" y="238" font-size="15" font-weight="500" letter-spacing="0.3" class="ink3">Apple  ·  Linux  ·  Android  ·  Windows</text>
+  </g>
+</svg>

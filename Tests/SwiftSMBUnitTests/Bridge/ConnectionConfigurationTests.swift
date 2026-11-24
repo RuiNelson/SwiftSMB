@@ -97,7 +97,7 @@ struct ContextConfigurationTests {
             // `getFileAttributes` services the context itself; without a connection poll() ignores the descriptor.
             // Destroying the context afterwards runs the queued callbacks, which must not touch freed state.
             await #expect(throws: SMB.Error.posix(
-                code: POSIXErrorCode.ENOTCONN.rawValue,
+                code: ENOTCONN,
                 operation: "smb2_service",
                 message: "No connection exists"
             )) {

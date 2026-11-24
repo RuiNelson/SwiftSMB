@@ -172,11 +172,11 @@ extension Bridge {
         var rawValue: Int32 {
             switch self {
             case .readOnly:
-                O_RDONLY
+                OpenFlagValues.readOnly
             case .writeOnly:
-                O_WRONLY
+                OpenFlagValues.writeOnly
             case .readWrite:
-                O_RDWR
+                OpenFlagValues.readWrite
             }
         }
     }
@@ -184,12 +184,12 @@ extension Bridge {
     struct OpenOptions: OptionSet, Equatable, Sendable {
         let rawValue: Int32
 
-        static let synchronous = OpenOptions(rawValue: O_SYNC)
-        static let create = OpenOptions(rawValue: O_CREAT)
-        static let exclusive = OpenOptions(rawValue: O_EXCL)
-        static let truncate = OpenOptions(rawValue: O_TRUNC)
-        static let append = OpenOptions(rawValue: O_APPEND)
-        static let directory = OpenOptions(rawValue: O_DIRECTORY)
+        static let synchronous = OpenOptions(rawValue: OpenFlagValues.synchronous)
+        static let create = OpenOptions(rawValue: OpenFlagValues.create)
+        static let exclusive = OpenOptions(rawValue: OpenFlagValues.exclusive)
+        static let truncate = OpenOptions(rawValue: OpenFlagValues.truncate)
+        static let append = OpenOptions(rawValue: OpenFlagValues.append)
+        static let directory = OpenOptions(rawValue: OpenFlagValues.directory)
     }
 
     struct OpenFlags: Equatable, Sendable {

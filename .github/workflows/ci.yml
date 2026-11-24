@@ -80,3 +80,44 @@ jobs:
       android_sdk_pre_build_command: |
         git submodule update --init --recursive
       android_sdk_build_command: swift build --scratch-path /tmp/swift-android-build --traits EXIFKit -v
+
+  windows:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: Windows (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-latest
+            build_arch: amd64
+          - arch: arm64
+            runner: windows-11-arm
+            build_arch: arm64
+    timeout-minutes: 60
+    steps:
+      - name: Enable long paths
+        run: git config --system core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      # swift-actions/setup-swift does not support Windows.
+      - name: Setup Swift
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.4.3-release
+          swift-build: 6.4.3-RELEASE
+          build_arch: ${{ matrix.build_arch }}
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --scratch-path ${{ runner.temp }}\swift-build -v
+
+      - name: Test (unit)
+        run: swift test --scratch-path ${{ runner.temp }}\swift-test

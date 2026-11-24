@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB shares from Swift. It is cross-platform and aims to be compatible with Linux and Windows in addition to Apple platforms.
+SwiftSMB is a Swift Package Manager library that wraps `libsmb2` to access SMB shares from Swift. It is cross-platform: Apple platforms, Linux, Android, and Windows are built in CI (Windows on an x86_64 runner).
 
 The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (detailed guides). Keep those in sync when public APIs change.
 
@@ -19,7 +19,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   ├── Bridge                            # Internal libsmb2 bridge; no public API here.
 │   │   │   ├── Extensions
 │   │   │   │   ├── Int.swift                 # Extensions to `Int`.
-│   │   │   │   ├── String?.swift             # Extensions to `String?`.
+│   │   │   │   ├── OptionalString.swift      # Extensions to `String?`. (No `?` in file names: Windows forbids it.)
 │   │   │   │   └── SMB.Error.swift           # SMB.Error bridge factory and check() helper.
 │   │   │   ├── Bridge.swift                  # High-level async POSIX-like bridge calls on per-context queues.
 │   │   │   ├── BridgeTypes.swift             # Bridge structs/enums/options nested under `extension Bridge`.
@@ -27,6 +27,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 │   │   │   ├── Bridge-Links.swift            # Symlink read/create bridge calls.
 │   │   │   ├── Bridge-Locks.swift            # Byte-range lock bridge calls.
 │   │   │   ├── Bridge-Notifications.swift    # Directory change-notification bridge calls, and idle servicing.
+│   │   │   ├── Bridge-Platform.swift         # Per-platform pieces: Winsock start-up, waiting on the socket (poll / WSAPoll), O_* flag values.
 │   │   │   ├── Bridge-OpLockBreaks.swift     # Oplock/lease break callback, routing handler, and lease acknowledgements.
 │   │   │   ├── Bridge-ShareEnum.swift        # IPC$ share enumeration bridge calls.
 │   │   │   └── Bridge-URL.swift              # SMB URL parsing bridge calls.
@@ -177,6 +178,27 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
 - Share enumeration calls `smb2_share_enum_async` rather than `smb2_share_enum_sync`: only the callback carries the server's `WERROR`, as a positive status where libsmb2's own failures are negative errno values, and the sync wrapper reduces it to an error string. `Bridge.shareEnumError` maps `ERROR_ACCESS_DENIED` to `SMB.SMBStatus.accessDenied`, which is what Windows answers a `.full` (`SHARE_INFO_2`) request from a non-administrator with; Samba answers it for everyone, so the test server cannot exercise that path. The `passwd` field of `SHARE_INFO_2` is never exposed.
 - Retry `poll` on `EINTR` in Swift-owned service loops.
 
+## Windows
+
+- The Windows CI job builds and runs the unit tests. The integration tests need the Docker Samba server, which the
+  Windows runner does not have.
+- File names cannot contain `?`, `:`, `*` and the other characters Windows forbids (`Extensions/OptionalString.swift` used
+  to be `String?.swift`, which made the repository impossible to check out there), and two names must not differ only
+  in case.
+- `Sources/libsmb2/include/windows-config.h` is the Windows `config.h`, chosen by the selector for `_WIN32`. It sits in
+  SwiftSMB's glue, not in the fork where the Linux and Apple ones are; move it there, with a `MODS.md` entry, when the
+  fork is next changed. It defines `_WINDOWS` (libsmb2's own Windows switch, which Swift's clang does not define, and
+  which the Swift importer needs too, so it is not only on the command line), and `O_SYNC` and `O_DIRECTORY`, which
+  the CRT lacks: without `O_DIRECTORY`, `smb2_notify_change_async` would open its directory as a file.
+  `Package.swift` adds the `NEED_*` macros that select `lib/compat.c`'s replacements and links `ws2_32` and `bcrypt`.
+- libsmb2 does not call `WSAStartup`; `Bridge.installNetworking` does, once, before the first context.
+- `smb2_random_bytes` uses `arc4random_buf` (`HAVE_ARC4RANDOM_BUF` in the Windows config), which
+  `Sources/libsmb2/windows_compat.c` provides over `BCryptGenRandom`. Without it libsmb2 would fall back to `rand()`.
+- Waiting on the connection goes through `Bridge.waitForConnectionEvents` (`WSAPoll` on Windows). Do not call `poll`
+  elsewhere.
+- Foundation's `POSIXErrorCode` lacks `ETIMEDOUT`, `ENOTCONN` and `EOVERFLOW` on Windows: use the C constants. Qualify `UUID` as `Foundation.UUID` in files that import `SMB2`, whose headers pull in `<windows.h>`.
+- Windows timers and `DispatchTime` read different clocks, so timing tests on a `Thread.sleep` need a small tolerance.
+
 ## Public API
 
 - `SMB` is a `public final class` with no public initializers. Use static methods for top-level operations such as `connect`, `listShares`, and `parseURL`.
@@ -286,7 +308,7 @@ The user-facing cookbook lives in `README.md` (quick examples) and `docs/` (deta
   - Dockerfile with SAMBA configuration in `TestServer/Dockerfile`
   - Port: localhost:44445 (mapped from container 445)
 - If integration tests fail with connection refusals, check that the test server is running (`docker ps`).
-- The push/PR workflow (`.github/workflows/ci.yml`: macOS, Linux and an Android build) runs only the unit tests: it sets `SWIFTSMB_SKIP_INTEGRATION_TESTS` and `SWIFTSMB_SKIP_FUZZ_TESTS`. The fuzz tests (`.fuzzing` in `ReferenceCacheFuzzSupport.swift`: the seed-driven randomized cache tests and the simulation suite) keep every core busy for minutes and starve the timing-sensitive tests (the keep-alive engine's) on the small runners; run them locally. Give new seed-driven tests the `.fuzzing` trait. `.github/workflows/integration.yml` is a manual run (`gh workflow run integration.yml`, optional `-f filter=...`) that builds `TestServer/`, starts it on port 44445 and runs the whole suite in the `swift:6.4-resolute` container on the host network.
+- The push/PR workflow (`.github/workflows/ci.yml`: macOS, Linux, Windows and an Android build) runs only the unit tests: it sets `SWIFTSMB_SKIP_INTEGRATION_TESTS` and `SWIFTSMB_SKIP_FUZZ_TESTS`. The fuzz tests (`.fuzzing` in `ReferenceCacheFuzzSupport.swift`: the seed-driven randomized cache tests and the simulation suite) keep every core busy for minutes and starve the timing-sensitive tests (the keep-alive engine's) on the small runners; run them locally. Give new seed-driven tests the `.fuzzing` trait. `.github/workflows/integration.yml` is a manual run (`gh workflow run integration.yml`, optional `-f filter=...`) that builds `TestServer/`, starts it on port 44445 and runs the whole suite in the `swift:6.4-resolute` container on the host network.
 - Integration tests that wait for asynchronous events use `withTimeout(seconds:_:)` from `Tests/SwiftSMBTests/Utils` rather than sleeps.
 - AddressSanitizer (macOS): run `asan.sh`; extra arguments go to `swift test` (for example `zsh asan.sh --filter SMBNotify`). SwiftPM does not link the ASan runtime into the dynamic `libsmb2` product, so the script passes it to the linker. The Swift 6.4 toolchain reports a false `stack-buffer-overflow` (a 9-byte read in `_convertToAnyHashable`) when `#expect` compares an optional against an arithmetic expression, such as `#expect(optionalSize == 100 * 1024 * 1024)`; precompute the expected value in a constant instead.
 

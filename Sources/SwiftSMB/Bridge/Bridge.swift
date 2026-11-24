@@ -88,6 +88,7 @@ class Bridge {
     /// The new context is not shared yet, so this runs on the caller's thread.
     static func createContext() throws -> Context {
         installGCMSeal
+        installNetworking
         guard let raw = lifecycleLock.withLock({ _ in smb2_init_context() }) else {
             throw SMB.Error.contextCreationFailed
         }
@@ -265,10 +266,11 @@ class Bridge {
     }
 
     /// Returns the server GUID negotiated for a connected context as a native Swift UUID.
-    static func serverGUID(context: Context) async throws -> UUID {
+    // Qualified: on Windows the SMB2 module pulls in <windows.h>, whose own `UUID` would make the name ambiguous.
+    static func serverGUID(context: Context) async throws -> Foundation.UUID {
         try await perform(context: context) {
             guard let rawGUID = smb2_get_server_guid(context.raw) else {
-                return UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+                return Foundation.UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
             }
 
             var bytes = Array(UnsafeRawBufferPointer(start: rawGUID, count: 16))
@@ -278,7 +280,7 @@ class Bridge {
             bytes.swapAt(1, 2)
             bytes.swapAt(4, 5)
             bytes.swapAt(6, 7)
-            return UUID(uuid: (
+            return Foundation.UUID(uuid: (
                 bytes[0],
                 bytes[1],
                 bytes[2],
@@ -869,7 +871,7 @@ class Bridge {
             let (sum, overflow) = base.addingReportingOverflow(UInt64(offset))
             guard !overflow else {
                 throw SMB.Error.posix(
-                    code: POSIXErrorCode.EOVERFLOW.rawValue,
+                    code: EOVERFLOW,
                     operation: "smb2_lseek",
                     message: "Seek offset cannot be represented as Int64"
                 )
@@ -878,7 +880,7 @@ class Bridge {
         }
         guard destination <= UInt64(Int64.max) else {
             throw SMB.Error.posix(
-                code: POSIXErrorCode.EOVERFLOW.rawValue,
+                code: EOVERFLOW,
                 operation: "smb2_lseek",
                 message: "Seek offset cannot be represented as Int64"
             )
@@ -1397,29 +1399,14 @@ class Bridge {
     ) throws {
         let pollTimeoutMilliseconds = cancellation == nil ? 1000 : RequestCancellation.pollIntervalMilliseconds
         do {
-            var pfd = pollfd()
             while !state.isFinished {
                 try cancellation?.withdrawIfRequested(context: context)
-                // Without a connection, poll() ignores the descriptor and this loop would never finish. libsmb2's own
-                // synchronous wait loop fails in this case too.
-                pfd.fd = smb2_get_fd(context.raw)
-                guard pfd.fd >= 0 else {
-                    throw noConnectionError(operation: "smb2_service")
-                }
-                pfd.events = Int16(smb2_which_events(context.raw))
-                var rc: Int32 = 0
-                repeat {
-                    rc = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, pollTimeoutMilliseconds) }
-                }
-                while rc < 0 && errno == EINTR
-                if rc < 0 {
-                    throw SMB.Error.posix(
-                        code: errno,
-                        operation: "poll",
-                        message: "poll failed while waiting for SMB2 operation"
-                    )
-                }
-                if smb2_service(context.raw, Int32(pfd.revents)) < 0 {
+                let revents = try waitForConnectionEvents(
+                    context: context,
+                    timeoutMilliseconds: pollTimeoutMilliseconds,
+                    failureMessage: "poll failed while waiting for SMB2 operation"
+                )
+                if smb2_service(context.raw, revents) < 0 {
                     throw SMB.Error.fromBridge(context, operation: "smb2_service")
                 }
             }
@@ -1434,7 +1421,7 @@ class Bridge {
 
     /// The error thrown when a context has no connection to service.
     static func noConnectionError(operation: String) -> SMB.Error {
-        .posix(code: POSIXErrorCode.ENOTCONN.rawValue, operation: operation, message: "No connection exists")
+        .posix(code: ENOTCONN, operation: operation, message: "No connection exists")
     }
 
     /// Balances `Unmanaged.passRetained(state)` for a queued command once no callback can reference `state` any more.
